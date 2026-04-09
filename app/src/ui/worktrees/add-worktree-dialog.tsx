@@ -10,7 +10,7 @@ import { Button } from '../lib/button'
 import { Row } from '../lib/row'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 import { showOpenDialog } from '../main-process-proxy'
-import { addWorktree } from '../../lib/git/worktree'
+import { addWorktreeForBranchName } from '../../lib/git/worktree'
 
 interface IAddWorktreeDialogProps {
   readonly repository: Repository
@@ -72,9 +72,11 @@ export class AddWorktreeDialog extends React.Component<
     const worktreePath = Path.join(path, branchName)
 
     try {
-      await addWorktree(this.props.repository, worktreePath, {
-        createBranch: branchName.length > 0 ? branchName : undefined,
-      })
+      await addWorktreeForBranchName(
+        this.props.repository,
+        worktreePath,
+        branchName
+      )
     } catch (e) {
       dispatcher.postError(e)
       this.setState({ creating: false })

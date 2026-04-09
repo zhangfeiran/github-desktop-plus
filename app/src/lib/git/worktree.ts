@@ -3,6 +3,7 @@ import * as Fs from 'fs'
 import type { Repository } from '../../models/repository'
 import type { WorktreeEntry, WorktreeType } from '../../models/worktree'
 import { git } from './core'
+import { getBranches } from './for-each-ref'
 import { normalizePath } from '../helpers/path'
 
 function getDotGitPath(repositoryPath: string): string {
@@ -97,6 +98,29 @@ export async function addWorktree(
   }
 
   await git(args, repository.path, 'addWorktree')
+}
+
+export async function addWorktreeForBranchName(
+  repository: Repository,
+  path: string,
+  branchName: string
+): Promise<void> {
+  if (branchName.length === 0) {
+    await addWorktree(repository, path)
+    return
+  }
+
+  const localRef = `refs/heads/${branchName}`
+  const localBranches = await getBranches(
+    repository,
+    localRef
+  )
+  const hasLocalBranch = localBranches.some(branch => branch.ref === localRef)
+
+  await addWorktree(repository, path, {
+    branch: hasLocalBranch ? branchName : undefined,
+    createBranch: hasLocalBranch ? undefined : branchName,
+  })
 }
 
 export async function removeWorktree(
