@@ -36,11 +36,14 @@ const bundledGitEnvironmentKeys = new Set([
 ])
 
 const windowsDrivePathRe = /^[a-zA-Z]:[\\/]/
-const quotedWindowsDrivePathRe = /^"([a-zA-Z]:[\\/].*)"$/
-const quotedWslRepositoryPathRe = /^"(\\\\wsl\.localhost\\Ubuntu\\.*)"$/i
+const wslRepositoryPathRe =
+  /^(?:\\\\|\/\/)wsl\.localhost[\\/]Ubuntu[\\/]/i
+const quotedWindowsDrivePathRe = /^"([a-zA-Z]:[\\/].*)"$/i
+const quotedWslRepositoryPathRe =
+  /^"((?:\\\\|\/\/)wsl\.localhost[\\/]Ubuntu[\\/].*)"$/i
 
 const isWindowsAbsolutePath = (value: string) =>
-  windowsDrivePathRe.test(value) || /^\\\\wsl\.localhost\\Ubuntu\\/i.test(value)
+  windowsDrivePathRe.test(value) || wslRepositoryPathRe.test(value)
 
 const sanitizeWindowsGitEnv = (
   env: Record<string, string | undefined>

@@ -75,4 +75,15 @@ describe('git/source', () => {
       'E:\\Documents\\GitHub\\github-desktop-plus'
     )
   })
+
+  it('does not duplicate the UNC prefix when translating pseudo-UNC WSL paths', () => {
+    assert.equal(
+      fromWslPath('/wsl.localhost/Ubuntu/home/frz/mindspore-cli'),
+      '\\\\wsl.localhost\\Ubuntu\\home\\frz\\mindspore-cli'
+    )
+    assert.equal(
+      fromWslPath('//wsl.localhost/Ubuntu/home/frz/mindspore-cli'),
+      '\\\\wsl.localhost\\Ubuntu\\home\\frz\\mindspore-cli'
+    )
+  })
 })

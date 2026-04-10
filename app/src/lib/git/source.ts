@@ -1,9 +1,9 @@
-import * as Path from 'path'
 import type { RepositoryGitSource } from '../../models/repository-git-source'
 
 export const WslGitRepositoryPrefix = '\\\\wsl.localhost\\Ubuntu\\'
 
 const normalizedWslPrefix = WslGitRepositoryPrefix.toLowerCase()
+const normalizedForwardSlashWslPrefix = '//wsl.localhost/ubuntu/'
 
 const trackedRepositoryGitSources = new Map<string, RepositoryGitSource>()
 
@@ -103,6 +103,22 @@ export function fromWslPath(path: string): string {
     return path
   }
 
+  const normalizedForwardSlashes = path.replace(/\\/g, '/')
+
+  if (normalizedForwardSlashes.toLowerCase().startsWith('/wsl.localhost/ubuntu/')) {
+    return `\\\\${normalizedForwardSlashes
+      .slice(1)
+      .replace(/\//g, '\\')}`
+  }
+
+  if (
+    normalizedForwardSlashes
+      .toLowerCase()
+      .startsWith(normalizedForwardSlashWslPrefix)
+  ) {
+    return normalizedForwardSlashes.replace(/\//g, '\\')
+  }
+
   const driveMatch = /^\/mnt\/([a-zA-Z])(?:\/(.*))?$/.exec(path)
   if (driveMatch !== null) {
     const [, drive, rest = ''] = driveMatch
@@ -110,8 +126,10 @@ export function fromWslPath(path: string): string {
     return `${drive.toUpperCase()}:\\${suffix}`
   }
 
-  const suffix = path.replace(/^\/+/, '').replace(/\//g, '\\')
-  return Path.join(WslGitRepositoryPrefix, suffix)
+  const suffix = normalizedForwardSlashes
+    .replace(/^\/+/, '')
+    .replace(/\//g, '\\')
+  return `${WslGitRepositoryPrefix}${suffix}`
 }
 
 export function translateWslPathValue(path: string | null | undefined) {
