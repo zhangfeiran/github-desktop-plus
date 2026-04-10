@@ -1,6 +1,7 @@
-import { exec } from 'dugite'
 import { access, constants, readdir } from 'fs/promises'
-import { basename, join, resolve } from 'path'
+import { basename, isAbsolute, join, resolve } from 'path'
+import { execGitProcess } from '../git/process'
+import { translateWslPathValue } from '../git/source'
 
 const isExecutable = (path: string) =>
   access(path, constants.X_OK)
@@ -47,14 +48,20 @@ const knownHooks = [
  *               Including '*' will return all hooks.
  */
 export async function* getRepoHooks(path: string, filter?: string[]) {
-  const { exitCode, stdout } = await exec(
+  const { exitCode, stdout } = await execGitProcess(
     ['config', '-z', '--get', 'core.hooksPath'],
     path
   )
 
+  const configuredHooksPath = stdout.split('\0')[0]
+  const translatedHooksPath =
+    translateWslPathValue(configuredHooksPath) ?? configuredHooksPath
+
   const hooksPath =
     exitCode === 0
-      ? resolve(path, stdout.split('\0')[0])
+      ? isAbsolute(translatedHooksPath)
+        ? translatedHooksPath
+        : resolve(path, translatedHooksPath)
       : join(path, '.git', 'hooks')
 
   const files = await readdir(hooksPath, { withFileTypes: true })
@@ -66,7 +73,7 @@ export async function* getRepoHooks(path: string, filter?: string[]) {
   for (const file of files) {
     const hookName = basename(file.name, '.exe')
 
-    if (matchAll || filter?.includes(hookName) === false) {
+    if (!matchAll && filter?.includes(hookName) === false) {
       continue
     }
 

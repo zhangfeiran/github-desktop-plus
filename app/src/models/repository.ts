@@ -14,6 +14,11 @@ import { getRemotes } from '../lib/git'
 import { findDefaultRemote } from '../lib/stores/helpers/find-default-remote'
 import { isTrustedRemoteHost } from '../lib/api'
 import { EditorOverride } from './editor-override'
+import {
+  BundledGitSource,
+  RepositoryGitSource,
+} from './repository-git-source'
+import { normalizeRepositoryGitSource } from '../lib/git/source'
 
 export enum LoginSpecialValue {
   ForceNullLogin = 1,
@@ -75,6 +80,7 @@ export class Repository {
     public readonly defaultBranch: string | null = null,
     public readonly workflowPreferences: WorkflowPreferences = {},
     public readonly customEditorOverride: EditorOverride | null = null,
+    gitSourceOverride: RepositoryGitSource | null = null,
     /**
      * True if the repository is a tutorial repository created as part of the
      * onboarding flow. Tutorial repositories trigger a tutorial user experience
@@ -83,6 +89,10 @@ export class Repository {
     public readonly isTutorialRepository: boolean = false,
     public readonly overrideLogin: string | LoginSpecialValue | null = null
   ) {
+    this.gitSourceOverride = normalizeRepositoryGitSource(
+      path,
+      gitSourceOverride
+    )
     this.mainWorkTree = { path }
     this.name = (gitHubRepository && gitHubRepository.name) || getBaseName(path)
 
@@ -95,6 +105,7 @@ export class Repository {
       this.groupName,
       this.defaultBranch,
       getCustomOverrideHash(this.customEditorOverride),
+      getGitSourceOverrideHash(this.gitSourceOverride),
       this.workflowPreferences.forkContributionTarget,
       this.isTutorialRepository,
       this.overrideLogin
@@ -158,6 +169,8 @@ export class Repository {
       return this.gitHubRepository?.login ?? null
     }
   }
+
+  public readonly gitSourceOverride: RepositoryGitSource = BundledGitSource
 }
 
 /** A worktree linked to a main working tree (aka `Repository`) */
@@ -365,4 +378,8 @@ function getCustomOverrideHash(
     customEditorOverride?.customEditor?.path,
     customEditorOverride?.customEditor?.arguments
   )
+}
+
+function getGitSourceOverrideHash(gitSourceOverride: RepositoryGitSource): string {
+  return createEqualityHash(gitSourceOverride.kind, 'path' in gitSourceOverride ? gitSourceOverride.path : null)
 }

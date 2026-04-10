@@ -6,6 +6,9 @@ import { Row } from '../lib/row'
 import { RadioGroup } from '../lib/radio-group'
 import { LinkButton } from '../lib/link-button'
 import { assertNever } from '../../lib/fatal-error'
+import { Button } from '../lib/button'
+import { TextBox } from '../lib/text-box'
+import { InputError } from '../lib/input-description/input-error'
 import {
   IConfigValueOrigin,
   getOriginFilePath,
@@ -14,9 +17,13 @@ import {
 } from '../../lib/git/config'
 import { showItemInFolder } from '../main-process-proxy'
 import memoizeOne from 'memoize-one'
+import { RepositoryGitSource } from '../../models/repository-git-source'
 
 interface IGitConfigProps {
   readonly account: Account | null
+  readonly gitSource: RepositoryGitSource
+  readonly isWslRepository: boolean
+  readonly showInvalidExternalGitPathWarning: boolean
 
   readonly gitConfigLocation: GitConfigLocation
   readonly name: string
@@ -30,6 +37,9 @@ interface IGitConfigProps {
   readonly repositoryPath: string
 
   readonly onGitConfigLocationChanged: (value: GitConfigLocation) => void
+  readonly onGitSourceChanged: (kind: RepositoryGitSourceOption) => void
+  readonly onExternalGitPathChanged: (path: string) => void
+  readonly onChooseExternalGitPath: () => void
   readonly onNameChanged: (name: string) => void
   readonly onEmailChanged: (email: string) => void
 }
@@ -38,6 +48,8 @@ export enum GitConfigLocation {
   Global = 'Global',
   Local = 'Local',
 }
+
+type RepositoryGitSourceOption = RepositoryGitSource['kind']
 
 /** A view for creating or modifying the repository's gitignore file */
 export class GitConfig extends React.Component<IGitConfigProps> {
@@ -49,6 +61,11 @@ export class GitConfig extends React.Component<IGitConfigProps> {
   private onGitConfigLocationChanged = (value: GitConfigLocation) => {
     this.props.onGitConfigLocationChanged(value)
   }
+
+  private onGitSourceChanged = (value: RepositoryGitSourceOption) => {
+    this.props.onGitSourceChanged(value)
+  }
+
   private renderConfigOptionLabel = (key: GitConfigLocation) => {
     switch (key) {
       case GitConfigLocation.Global:
@@ -60,14 +77,44 @@ export class GitConfig extends React.Component<IGitConfigProps> {
     }
   }
 
+  private renderGitSourceOptionLabel = (key: RepositoryGitSourceOption) => {
+    switch (key) {
+      case 'bundled':
+        return 'Bundled Git'
+      case 'external':
+        return 'External Git executable'
+      case 'wsl':
+        return 'WSL Git (wsl.exe -- git)'
+      default:
+        return assertNever(key, `Unknown git source: ${key}`)
+    }
+  }
+
   public render() {
     const configOptions = [GitConfigLocation.Global, GitConfigLocation.Local]
+    const gitSourceOptions: ReadonlyArray<RepositoryGitSourceOption> =
+      this.props.isWslRepository
+        ? ['bundled', 'external', 'wsl']
+        : ['bundled', 'external']
     const selectionOption =
       configOptions.find(o => o === this.props.gitConfigLocation) ??
       GitConfigLocation.Global
 
     return (
       <DialogContent>
+        <div className="advanced-section">
+          <h2 id="git-source-heading">Git source</h2>
+          <Row>
+            <RadioGroup<RepositoryGitSourceOption>
+              ariaLabelledBy="git-source-heading"
+              selectedKey={this.props.gitSource.kind}
+              radioButtonKeys={gitSourceOptions}
+              onSelectionChanged={this.onGitSourceChanged}
+              renderRadioButtonLabelContents={this.renderGitSourceOptionLabel}
+            />
+          </Row>
+          {this.renderExternalGitPath()}
+        </div>
         <div className="advanced-section">
           <h2 id="git-config-heading">For this repository I wish to</h2>
           <Row>
@@ -99,6 +146,38 @@ export class GitConfig extends React.Component<IGitConfigProps> {
         </div>
         {this.renderConfigOrigin()}
       </DialogContent>
+    )
+  }
+
+  private renderExternalGitPath() {
+    if (this.props.gitSource.kind !== 'external') {
+      return null
+    }
+
+    return (
+      <>
+        <div className="custom-integration-form-path-container">
+          <TextBox
+            label="Path"
+            value={this.props.gitSource.path}
+            onValueChanged={this.props.onExternalGitPathChanged}
+            placeholder="Path to git.exe"
+            ariaDescribedBy="repository-external-git-path-error"
+          />
+          <Button onClick={this.props.onChooseExternalGitPath}>Choose…</Button>
+        </div>
+        {this.props.showInvalidExternalGitPathWarning && (
+          <div className="custom-integration-form-error">
+            <InputError
+              id="repository-external-git-path-error"
+              trackedUserInput={this.props.gitSource.path}
+              ariaLiveMessage="This path does not appear to be a valid git.exe executable."
+            >
+              This path does not appear to be a valid `git.exe` executable.
+            </InputError>
+          </div>
+        )}
+      </>
     )
   }
 

@@ -1,13 +1,13 @@
-import { spawn } from 'child_process'
-import { basename, resolve, join } from 'path'
+import { basename, join } from 'path'
 import { ProcessProxyConnection as Connection } from 'process-proxy'
 import type { HookCallbackOptions } from '../git'
-import { resolveGitBinary } from 'dugite'
 import { ShellEnvResult } from './get-shell-env'
 import { shellFriendlyNames } from './config'
 import { Writable } from 'stream'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
+import { spawnGitProcess } from '../git/process'
+import { getRepositoryGitSource } from '../git/source'
 
 const ignoredOnFailureHooks = [
   'post-applypatch',
@@ -145,8 +145,11 @@ export const createHooksProxy = (
     ]
 
     const terminalOutput: Buffer[] = []
-    const gitPath = resolveGitBinary(resolve(__dirname, 'git'))
-    const shellEnv = await getShellEnv(proxyCwd)
+    const gitSource = getRepositoryGitSource(proxyCwd)
+    const shellEnv =
+      gitSource.kind === 'wsl'
+        ? ({ kind: 'success', env: {} } satisfies ShellEnvResult)
+        : await getShellEnv(proxyCwd)
 
     if (shellEnv.kind === 'failure') {
       let errMsg = `Failed to load shell environment for hook ${hookName}.`
@@ -172,15 +175,17 @@ export const createHooksProxy = (
     }>((resolve, reject) => {
       conn.on('close', abort)
 
-      const child = spawn(gitPath, args, {
-        cwd: proxyCwd,
+      const child = spawnGitProcess(args, proxyCwd, {
         // GITHUB_DESKTOP lets hooks know they're run from GitHub Desktop.
         // See https://github.com/desktop/desktop/issues/19001
         env: { ...shellEnv.env, ...safeEnv, GITHUB_DESKTOP: '1' },
-        signal: abortController.signal,
       })
-        .on('close', (code, signal) => resolve({ code, signal }))
+      child
         .on('error', err => reject(err))
+        .on('close', (code, signal) => resolve({ code, signal }))
+      abortController.signal.addEventListener('abort', () => {
+        child.kill()
+      })
 
       // git-hook run takes care of ensuring we only get hook output on stderr
       // https://github.com/git/git/blob/4cf919bd7b946477798af5414a371b23fd68bf93/hook.c#L73C6-L73C22

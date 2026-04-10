@@ -39,6 +39,15 @@ import {
   TargetPathArgument,
 } from '../../lib/custom-integration'
 import { getAvailableEditors } from '../../lib/editors/lookup'
+import {
+  BundledGitSource,
+  RepositoryGitSource,
+  WslGitSource,
+  repositoryGitSourcesEqual,
+} from '../../models/repository-git-source'
+import { isWslRepositoryPath } from '../../lib/git/source'
+import { validateExternalGitExecutablePath } from '../../lib/git/validate-git-executable'
+import { showOpenDialog } from '../main-process-proxy'
 
 interface IRepositorySettingsProps {
   readonly initialSelectedTab?: RepositorySettingsTab
@@ -85,14 +94,24 @@ interface IRepositorySettingsState {
   readonly useCustomEditor: boolean
   readonly customEditor: ICustomIntegration
   readonly repositoryAccount: Account | null
+  readonly gitSourceKind: RepositoryGitSource['kind']
+  readonly externalGitPath: string
+  readonly initialGitSourceOverride: RepositoryGitSource
+  readonly isValidExternalGitPath: boolean
+  readonly showInvalidExternalGitPathWarning: boolean
+  readonly gitSourceSaveDisabled: boolean
 }
 
 export class RepositorySettings extends React.Component<
   IRepositorySettingsProps,
   IRepositorySettingsState
 > {
+  private externalGitValidationId = 0
+
   public constructor(props: IRepositorySettingsProps) {
     super(props)
+
+    const initialGitSourceOverride = props.repository.gitSourceOverride
 
     this.state = {
       selectedTab:
@@ -126,6 +145,17 @@ export class RepositorySettings extends React.Component<
         arguments: TargetPathArgument,
       },
       repositoryAccount: props.repositoryAccount,
+      gitSourceKind: initialGitSourceOverride.kind,
+      externalGitPath:
+        initialGitSourceOverride.kind === 'external'
+          ? initialGitSourceOverride.path
+          : '',
+      initialGitSourceOverride,
+      isValidExternalGitPath: initialGitSourceOverride.kind !== 'external',
+      showInvalidExternalGitPathWarning: false,
+      gitSourceSaveDisabled:
+        initialGitSourceOverride.kind === 'external' &&
+        initialGitSourceOverride.path.length === 0,
     }
   }
 
@@ -155,9 +185,18 @@ export class RepositorySettings extends React.Component<
     const editors = await getAvailableEditors()
     const availableEditors = editors.map(e => e.editor) ?? null
 
-    const globalCommitterName = (await getGlobalConfigValue('user.name')) || ''
+    const globalCommitterName =
+      (await getGlobalConfigValue(
+        'user.name',
+        undefined,
+        this.props.repository.path
+      )) || ''
     const globalCommitterEmail =
-      (await getGlobalConfigValue('user.email')) || ''
+      (await getGlobalConfigValue(
+        'user.email',
+        undefined,
+        this.props.repository.path
+      )) || ''
 
     const gitConfigLocation =
       localCommitterName === null && localCommitterEmail === null
@@ -183,6 +222,12 @@ export class RepositorySettings extends React.Component<
       log.warn('Failed to get config value origins', e)
     }
 
+    const currentGitSource = this.getCurrentGitSource()
+    const isValidExternalGitPath =
+      currentGitSource.kind !== 'external'
+        ? true
+        : await validateExternalGitExecutablePath(currentGitSource.path)
+
     this.setState({
       gitConfigLocation,
       committerName,
@@ -196,6 +241,11 @@ export class RepositorySettings extends React.Component<
       isLoadingGitConfig: false,
       nameOrigin,
       emailOrigin,
+      isValidExternalGitPath,
+      showInvalidExternalGitPathWarning:
+        currentGitSource.kind === 'external' && !isValidExternalGitPath,
+      gitSourceSaveDisabled:
+        currentGitSource.kind === 'external' && !isValidExternalGitPath,
     })
   }
 
@@ -262,7 +312,9 @@ export class RepositorySettings extends React.Component<
         <DialogFooter>
           <OkCancelButtonGroup
             okButtonText="Save"
-            okButtonDisabled={this.state.saveDisabled}
+            okButtonDisabled={
+              this.state.saveDisabled || this.state.gitSourceSaveDisabled
+            }
           />
         </DialogFooter>
       </Dialog>
@@ -320,8 +372,16 @@ export class RepositorySettings extends React.Component<
         return (
           <GitConfig
             account={this.props.repositoryAccount}
+            gitSource={this.getCurrentGitSource()}
+            isWslRepository={isWslRepositoryPath(this.props.repository.path)}
+            showInvalidExternalGitPathWarning={
+              this.state.showInvalidExternalGitPathWarning
+            }
             gitConfigLocation={this.state.gitConfigLocation}
             onGitConfigLocationChanged={this.onGitConfigLocationChanged}
+            onGitSourceChanged={this.onGitSourceChanged}
+            onExternalGitPathChanged={this.onExternalGitPathChanged}
+            onChooseExternalGitPath={this.onChooseExternalGitPath}
             name={this.state.committerName}
             email={this.state.committerEmail}
             globalName={this.state.globalCommitterName}
@@ -371,6 +431,7 @@ export class RepositorySettings extends React.Component<
   private onSubmit = async () => {
     this.setState({ disabled: true, errors: undefined })
     const errors = new Array<JSX.Element | string>()
+    const gitSourceOverride = this.getCurrentGitSource()
 
     if (this.state.remote && this.props.remote) {
       const trimmedUrl = this.state.remote.url.trim()
@@ -490,16 +551,28 @@ export class RepositorySettings extends React.Component<
     }
 
     if (
+      !repositoryGitSourcesEqual(
+        gitSourceOverride,
+        this.props.repository.gitSourceOverride
+      )
+    ) {
+      await this.props.dispatcher.updateRepositoryGitSourceOverride(
+        this.props.repository,
+        gitSourceOverride
+      )
+    }
+
+    if (
       this.state.useDefaultEditor !==
         !this.props.repository.customEditorOverride ||
       this.state.selectedExternalEditor !==
         this.props.repository.customEditorOverride?.selectedExternalEditor ||
       this.state.useCustomEditor !==
-        this.props.repository.customEditorOverride.useCustomEditor ||
+        (this.props.repository.customEditorOverride?.useCustomEditor ?? false) ||
       this.state.customEditor.path !==
-        this.props.repository.customEditorOverride.customEditor?.path ||
+        this.props.repository.customEditorOverride?.customEditor?.path ||
       this.state.customEditor.arguments !==
-        this.props.repository.customEditorOverride.customEditor.arguments
+        this.props.repository.customEditorOverride?.customEditor.arguments
     ) {
       await this.props.dispatcher.updateRepositoryEditorOverride(
         this.props.repository,
@@ -559,6 +632,18 @@ export class RepositorySettings extends React.Component<
     this.setState({ gitConfigLocation: value })
   }
 
+  private onGitSourceChanged = (gitSourceKind: RepositoryGitSource['kind']) => {
+    this.setState({
+      gitSourceKind,
+      gitSourceSaveDisabled:
+        gitSourceKind === 'external' ? !this.state.isValidExternalGitPath : false,
+      showInvalidExternalGitPathWarning:
+        gitSourceKind === 'external'
+          ? this.state.showInvalidExternalGitPathWarning
+          : false,
+    })
+  }
+
   private onCommitterNameChanged = (committerName: string) => {
     const errors = new Array<JSX.Element | string>()
 
@@ -590,5 +675,67 @@ export class RepositorySettings extends React.Component<
 
   private onCustomEditorChanged = (customEditor: ICustomIntegration) => {
     this.setState({ customEditor })
+  }
+
+  private onChooseExternalGitPath = async () => {
+    const path = await showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Git executable', extensions: ['exe'] }],
+    })
+
+    if (path !== null) {
+      await this.updateExternalGitPath(path)
+    }
+  }
+
+  private onExternalGitPathChanged = async (externalGitPath: string) => {
+    await this.updateExternalGitPath(externalGitPath)
+  }
+
+  private async updateExternalGitPath(externalGitPath: string) {
+    const validationId = ++this.externalGitValidationId
+
+    this.setState({
+      externalGitPath,
+      isValidExternalGitPath: false,
+      showInvalidExternalGitPathWarning: false,
+      gitSourceSaveDisabled:
+        this.state.gitSourceKind === 'external' && externalGitPath.length === 0,
+    })
+
+    if (externalGitPath.length === 0) {
+      return
+    }
+
+    const isValidExternalGitPath = await validateExternalGitExecutablePath(
+      externalGitPath
+    )
+
+    if (validationId !== this.externalGitValidationId) {
+      return
+    }
+
+    this.setState({
+      isValidExternalGitPath,
+      showInvalidExternalGitPathWarning: !isValidExternalGitPath,
+      gitSourceSaveDisabled:
+        this.state.gitSourceKind === 'external' && !isValidExternalGitPath,
+    })
+  }
+
+  private getCurrentGitSource(): RepositoryGitSource {
+    switch (this.state.gitSourceKind) {
+      case 'bundled':
+        return BundledGitSource
+      case 'external':
+        return { kind: 'external', path: this.state.externalGitPath }
+      case 'wsl':
+        return WslGitSource
+      default:
+        return assertNever(
+          this.state.gitSourceKind,
+          `Unknown git source kind: ${this.state.gitSourceKind}`
+        )
+    }
   }
 }

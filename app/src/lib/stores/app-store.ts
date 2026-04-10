@@ -156,6 +156,7 @@ import {
 import { ComputedAction } from '../../models/computed-action'
 import { DragElement } from '../../models/drag-drop'
 import { EditorOverride } from '../../models/editor-override'
+import { RepositoryGitSource } from '../../models/repository-git-source'
 import { ILastThankYou } from '../../models/last-thank-you'
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
 import { MenuLabelsEvent } from '../../models/menu-labels'
@@ -404,6 +405,7 @@ import {
 import { updateRemoteUrl } from './updates/update-remote-url'
 import { getRepoHooks } from '../hooks/get-repo-hooks'
 import pLimit from 'p-limit'
+import { setTrackedRepositoryGitSources } from '../git/source'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -1067,6 +1069,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.repositoriesStore.onDidUpdate(updateRepositories => {
       this.repositories = updateRepositories
+      setTrackedRepositoryGitSources(this.repositories)
       this.pruneSidebarWorktreeRefreshCache()
       this.updateRepositorySelectionAfterRepositoriesChanged()
       if (this.showWorktreesInSidebar) {
@@ -2541,6 +2544,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.accounts = accounts
     this.repositories = repositories
+    setTrackedRepositoryGitSources(this.repositories)
     this.pruneSidebarWorktreeRefreshCache()
 
     this.updateRepositorySelectionAfterRepositoriesChanged()
@@ -5194,6 +5198,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     await this.repositoriesStore.updateRepositoryEditorOverride(
       repository,
       customEditorOverride
+    )
+  }
+
+  public async _updateRepositoryGitSourceOverride(
+    repository: Repository,
+    gitSourceOverride: RepositoryGitSource | null
+  ): Promise<void> {
+    await this.repositoriesStore.updateRepositoryGitSourceOverride(
+      repository,
+      gitSourceOverride
     )
   }
 

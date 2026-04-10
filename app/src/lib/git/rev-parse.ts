@@ -1,6 +1,7 @@
 import { git } from './core'
 import { directoryExists } from '../directory-exists'
 import { resolve } from 'path'
+import { translateWslPathValue } from './source'
 
 export type RepositoryType =
   | { kind: 'bare' }
@@ -41,7 +42,10 @@ export async function getRepositoryType(path: string): Promise<RepositoryType> {
         result.stderr
       )
     if (unsafeMatch) {
-      return { kind: 'unsafe', path: unsafeMatch[1] }
+      return {
+        kind: 'unsafe',
+        path: translateWslPathValue(unsafeMatch[1]) ?? unsafeMatch[1],
+      }
     }
 
     return { kind: 'missing' }

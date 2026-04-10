@@ -8,6 +8,7 @@ import {
   ITrackingBranch,
 } from '../../models/branch'
 import { createForEachRefParser } from './git-delimiter-parser'
+import { translateWslPathValue } from './source'
 
 /** Get all the branches. */
 export async function getBranches(
@@ -114,11 +115,14 @@ export async function getBranchesDifferingFromUpstream(
   // - For local branches with upstream: name, ref, SHA and the upstream.
   // - For remote branches we only need the sha (and the ref as key).
   for (const ref of parse(result.stdout)) {
+    const worktreePath =
+      translateWslPathValue(ref.worktreePath) ?? ref.worktreePath
+
     if (ref.symref.length > 0 || ref.head === '*') {
       // Exclude symbolic refs and the current branch
       continue
     }
-    if (ref.worktreePath.length > 0 && ref.worktreePath !== repository.path) {
+    if (worktreePath.length > 0 && worktreePath !== repository.path) {
       // Exclude branches checked out in other worktrees, since they can't be fast-forwarded from here
       continue
     }

@@ -6,10 +6,15 @@ import {
   deleteMostRecentSSHCredential,
   removeMostRecentSSHCredential,
 } from '../ssh/ssh-credential-storage'
-import { GitError as DugiteError, exec } from 'dugite'
+import { GitError as DugiteError } from 'dugite'
 import memoizeOne from 'memoize-one'
 import { GitError, getDescriptionForError } from '../git/core'
-import { getDesktopAskpassTrampolineFilename } from 'desktop-trampoline'
+import {
+  getDesktopAskpassTrampolineFilename,
+  getDesktopCredentialHelperTrampolineFilename,
+} from 'desktop-trampoline'
+import { getGitVersionFromSource } from '../git/process'
+import { getRepositoryGitSource } from '../git/source'
 
 const hasRejectedCredentialsForEndpoint = new Map<string, Set<string>>()
 
@@ -58,11 +63,15 @@ export const getCredentialUrl = (cred: Map<string, string>) => {
   return new URL(`${protocol}://${user}${host}/${path}`)
 }
 
-export const GitUserAgent = memoizeOne(() =>
+const getGitUserAgentCacheKey = (path: string) => {
+  const source = getRepositoryGitSource(path)
+  return source.kind === 'external' ? `${source.kind}:${source.path}` : source.kind
+}
+
+export const GitUserAgent = memoizeOne((path: string, cacheKey: string) =>
   // Can't use git() as that will call withTrampolineEnv which calls this method
-  exec(['--version'], process.cwd())
+  getGitVersionFromSource(path)
     // https://github.com/git/git/blob/a9e066fa63149291a55f383cfa113d8bdbdaa6b3/help.c#L733-L739
-    .then(r => /git version (.*)/.exec(r.stdout)?.at(1) ?? 'unknown')
     .catch(e => {
       log.warn(`Could not get git version information`, e)
       return 'unknown'
@@ -140,9 +149,12 @@ export async function withTrampolineEnv<T>(
         //
         // See https://github.com/desktop/desktop/issues/18945
         // See https://github.com/git/git/blob/ed155187b429a/config.c#L664
-        GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=desktop'`,
+        GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=${getDesktopCredentialHelperTrampolinePath()}'`,
 
-        GIT_USER_AGENT: await GitUserAgent(),
+        GIT_USER_AGENT: await GitUserAgent(
+          path,
+          getGitUserAgentCacheKey(path)
+        ),
         ...sshEnv,
       })
     } catch (e) {
@@ -212,6 +224,14 @@ export function getDesktopAskpassTrampolinePath(): string {
     __dirname,
     'desktop-trampoline',
     getDesktopAskpassTrampolineFilename()
+  )
+}
+
+export function getDesktopCredentialHelperTrampolinePath(): string {
+  return Path.resolve(
+    __dirname,
+    'desktop-trampoline',
+    getDesktopCredentialHelperTrampolineFilename()
   )
 }
 

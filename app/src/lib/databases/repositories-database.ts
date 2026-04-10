@@ -4,6 +4,7 @@ import { WorkflowPreferences } from '../../models/workflow-preferences'
 import { assertNonNullable } from '../fatal-error'
 import { GitHubAccountType } from '../api'
 import { EditorOverride } from '../../models/editor-override'
+import { RepositoryGitSource } from '../../models/repository-git-source'
 
 export interface IDatabaseOwner {
   readonly id?: number
@@ -61,6 +62,7 @@ export interface IDatabaseRepository {
   readonly lastStashCheckDate?: number | null
 
   readonly customEditorOverride?: EditorOverride | null
+  readonly gitSourceOverride?: RepositoryGitSource | null
 
   readonly workflowPreferences?: WorkflowPreferences
 

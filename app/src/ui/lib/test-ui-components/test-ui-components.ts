@@ -485,7 +485,15 @@ export function showTestUI(
         repository.gitHubRepository.permissions,
         repository.gitHubRepository // This ensures the repository has a parent even if it's not a fork for easier testing purposes
       ),
-      repository.missing
+      repository.missing,
+      repository.alias,
+      repository.groupName,
+      repository.defaultBranch,
+      repository.workflowPreferences,
+      repository.customEditorOverride,
+      repository.gitSourceOverride,
+      repository.isTutorialRepository,
+      repository.overrideLogin
     )
 
     return dispatcher.showPopup({

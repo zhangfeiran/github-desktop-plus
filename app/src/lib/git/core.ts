@@ -1,5 +1,4 @@
 import {
-  exec,
   GitError as DugiteError,
   parseError,
   IGitResult as DugiteResult,
@@ -17,6 +16,8 @@ import { kStringMaxLength } from 'buffer'
 import { withHooksEnv } from '../hooks/with-hooks-env'
 import { coerceToString } from './coerce-to-string'
 import { pushTerminalChunk } from './push-terminal-chunk'
+import { execGitProcess } from './process'
+import { translateWslPathValue } from './source'
 
 export const isMaxBufferExceededError = (
   error: unknown
@@ -280,19 +281,23 @@ export async function git(
           const commandName = `${name}: git ${args.join(' ')}`
 
           const result = await GitPerf.measure(commandName, () =>
-            exec(args, path, {
-              ...opts,
-              env: {
-                // Explicitly set TERM to 'dumb' so that if Desktop was launched
-                // from a terminal or if the system environment variables
-                // have TERM set Git won't consider us as a smart terminal.
-                // See https://github.com/git/git/blob/a7312d1a2/editor.c#L11-L15
-                TERM: 'dumb',
-                ...opts.env,
-                ...hooksEnv,
-                ...env,
-              },
-            })
+            execGitProcess(
+              args,
+              path,
+              {
+                ...opts,
+                env: {
+                  // Explicitly set TERM to 'dumb' so that if Desktop was launched
+                  // from a terminal or if the system environment variables
+                  // have TERM set Git won't consider us as a smart terminal.
+                  // See https://github.com/git/git/blob/a7312d1a2/editor.c#L11-L15
+                  TERM: 'dumb',
+                  ...opts.env,
+                  ...hooksEnv,
+                  ...env,
+                },
+              } as DugiteExecutionOptions
+            )
           ).catch(err => {
             // If this is an exception thrown by Node.js (as opposed to
             // dugite) let's keep the salient details but include the name of
@@ -434,11 +439,15 @@ export function parseConfigLockFilePathFromError(result: IGitResult) {
     return null
   }
 
+  const translatedPath = translateWslPathValue(match[1]) ?? match[1]
+
   // Git on Windows may print the config file path using forward slashes.
   // Luckily for us forward slashes are not allowed in Windows file or
   // directory names so we can simply replace any instance of forward
   // slashes with backslashes.
-  const normalized = __WIN32__ ? match[1].replace('/', '\\') : match[1]
+  const normalized = __WIN32__
+    ? translatedPath.replaceAll('/', '\\')
+    : translatedPath
 
   // https://github.com/git/git/blob/232378479/lockfile.h#L117-L119
   return Path.resolve(result.path, `${normalized}.lock`)

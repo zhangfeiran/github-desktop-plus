@@ -1,6 +1,7 @@
-import { spawn, IGitSpawnOptions } from 'dugite'
+import { IGitSpawnOptions } from 'dugite'
 import * as GitPerf from '../../ui/lib/git-perf'
 import { withTrampolineEnv } from '../trampoline/trampoline-environment'
+import { spawnGitProcess } from './process'
 
 type SpawnOptions = IGitSpawnOptions & {
   /**
@@ -27,7 +28,7 @@ export const spawnGit = (
   withTrampolineEnv(
     trampolineEnv =>
       GitPerf.measure(`${name}: git ${args.join(' ')}`, async () =>
-        spawn(args, path, {
+        spawnGitProcess(args, path, {
           ...options,
           env: { ...options?.env, ...trampolineEnv },
         })

@@ -232,6 +232,7 @@ export function toSortedRepositoryListItems({
         sourceRepository.defaultBranch,
         sourceRepository.workflowPreferences,
         sourceRepository.customEditorOverride,
+        sourceRepository.gitSourceOverride,
         sourceRepository.isTutorialRepository,
         sourceRepository.overrideLogin
       )

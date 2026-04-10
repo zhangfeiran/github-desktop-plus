@@ -1,6 +1,7 @@
 import { git } from './core'
 import { Repository } from '../../models/repository'
-import { normalize } from 'path'
+import { isAbsolute, normalize } from 'path'
+import { toWslPath, translateWslPathValue } from './source'
 
 /**
  * Look up a config value by name in the repository.
@@ -23,9 +24,10 @@ export function getGlobalConfigValue(
   name: string,
   env?: {
     HOME: string
-  }
+  },
+  sourcePath?: string
 ): Promise<string | null> {
-  return getConfigValueInPath(name, null, false, undefined, env)
+  return getConfigValueInPath(name, null, false, undefined, env, sourcePath)
 }
 
 /**
@@ -64,9 +66,17 @@ export async function getGlobalBooleanConfigValue(
   name: string,
   env?: {
     HOME: string
-  }
+  },
+  sourcePath?: string
 ): Promise<boolean | null> {
-  const value = await getConfigValueInPath(name, null, false, 'bool', env)
+  const value = await getConfigValueInPath(
+    name,
+    null,
+    false,
+    'bool',
+    env,
+    sourcePath
+  )
   return value === null ? null : value !== 'false'
 }
 
@@ -92,7 +102,8 @@ async function getConfigValueInPath(
   type?: 'bool' | 'int' | 'bool-or-int' | 'path' | 'expiry-date' | 'color',
   env?: {
     HOME: string
-  }
+  },
+  sourcePath?: string
 ): Promise<string | null> {
   const flags = ['config', '-z']
   if (!path) {
@@ -107,10 +118,15 @@ async function getConfigValueInPath(
 
   flags.push(name)
 
-  const result = await git(flags, path || __dirname, 'getConfigValueInPath', {
-    successExitCodes: new Set([0, 1]),
-    env,
-  })
+  const result = await git(
+    flags,
+    sourcePath ?? path ?? __dirname,
+    'getConfigValueInPath',
+    {
+      successExitCodes: new Set([0, 1]),
+      env,
+    }
+  )
 
   // Git exits with 1 if the value isn't found. That's OK.
   if (result.exitCode === 1) {
@@ -130,13 +146,24 @@ async function getConfigValueInPath(
  * is to support opening the global git config for editing.
  */
 export const getGlobalConfigPath = (env?: { HOME: string }) =>
-  git(['config', '--edit', '--global'], __dirname, 'getGlobalConfigPath', {
-    // We're using printf instead of echo because echo could attempt to decode
-    // escape sequences like \n which would be bad in a case like
-    // c:\Users\niik\.gitconfig
-    //         ^^
-    env: { ...env, GIT_EDITOR: 'printf %s' },
-  }).then(x => normalize(x.stdout))
+  getGlobalConfigPathForSource(env)
+
+export const getGlobalConfigPathForSource = (
+  env?: { HOME: string },
+  sourcePath?: string
+) =>
+  git(
+    ['config', '--edit', '--global'],
+    sourcePath ?? __dirname,
+    'getGlobalConfigPath',
+    {
+      // We're using printf instead of echo because echo could attempt to decode
+      // escape sequences like \n which would be bad in a case like
+      // c:\Users\niik\.gitconfig
+      //         ^^
+      env: { ...env, GIT_EDITOR: 'printf %s' },
+    }
+  ).then(x => normalize(translateWslPathValue(x.stdout) ?? x.stdout))
 
 /** Set the local config value by name. */
 export async function setConfigValue(
@@ -156,19 +183,21 @@ export async function setGlobalConfigValue(
   value: string,
   env?: {
     HOME: string
-  }
+  },
+  sourcePath?: string
 ): Promise<void> {
-  return setConfigValueInPath(name, value, null, env)
+  return setConfigValueInPath(name, value, null, env, sourcePath)
 }
 
 /** Set the global config value by name. */
 export async function addGlobalConfigValue(
   name: string,
-  value: string
+  value: string,
+  sourcePath?: string
 ): Promise<void> {
   await git(
     ['config', '--global', '--add', name, value],
-    __dirname,
+    sourcePath ?? __dirname,
     'addGlobalConfigValue'
   )
 }
@@ -179,29 +208,39 @@ export async function addGlobalConfigValue(
  * if the path is owner by a different user than the current.
  */
 export async function addSafeDirectory(path: string) {
+  const gitSafeDirectoryPath = path.startsWith('\\\\wsl.localhost\\Ubuntu\\')
+    ? toWslPath(path)
+    : path
+
   // UNC-paths on Windows need to be prefixed with `%(prefix)/`, see
   // https://github.com/git-for-windows/git/commit/e394a16023cbb62784e380f70ad8a833fb960d68
-  if (__WIN32__ && path[0] === '/') {
-    path = `%(prefix)/${path}`
+  if (__WIN32__ && gitSafeDirectoryPath[0] === '/') {
+    await addGlobalConfigValueIfMissing(
+      'safe.directory',
+      gitSafeDirectoryPath,
+      path
+    )
+    return
   }
 
-  await addGlobalConfigValueIfMissing('safe.directory', path)
+  await addGlobalConfigValueIfMissing('safe.directory', gitSafeDirectoryPath)
 }
 
 /** Set the global config value by name. */
 export async function addGlobalConfigValueIfMissing(
   name: string,
-  value: string
+  value: string,
+  sourcePath?: string
 ): Promise<void> {
   const { stdout, exitCode } = await git(
     ['config', '--global', '-z', '--get-all', name, value],
-    __dirname,
+    sourcePath ?? __dirname,
     'addGlobalConfigValue',
     { successExitCodes: new Set([0, 1]) }
   )
 
   if (exitCode === 1 || !stdout.split('\0').includes(value)) {
-    await addGlobalConfigValue(name, value)
+    await addGlobalConfigValue(name, value, sourcePath)
   }
 }
 
@@ -219,7 +258,8 @@ async function setConfigValueInPath(
   path: string | null,
   env?: {
     HOME: string
-  }
+  },
+  sourcePath?: string
 ): Promise<void> {
   const options = env ? { env } : undefined
 
@@ -231,7 +271,12 @@ async function setConfigValueInPath(
 
   flags.push('--replace-all', name, value)
 
-  await git(flags, path || __dirname, 'setConfigValueInPath', options)
+  await git(
+    flags,
+    sourcePath ?? path ?? __dirname,
+    'setConfigValueInPath',
+    options
+  )
 }
 
 /** Remove the local config value by name. */
@@ -250,9 +295,10 @@ export async function removeGlobalConfigValue(
   name: string,
   env?: {
     HOME: string
-  }
+  },
+  sourcePath?: string
 ): Promise<void> {
-  return removeConfigValueInPath(name, null, env)
+  return removeConfigValueInPath(name, null, env, sourcePath)
 }
 
 /**
@@ -268,7 +314,8 @@ async function removeConfigValueInPath(
   path: string | null,
   env?: {
     HOME: string
-  }
+  },
+  sourcePath?: string
 ): Promise<void> {
   const options = env ? { env } : undefined
 
@@ -280,7 +327,12 @@ async function removeConfigValueInPath(
 
   flags.push('--unset-all', name)
 
-  await git(flags, path || __dirname, 'removeConfigValueInPath', options)
+  await git(
+    flags,
+    sourcePath ?? path ?? __dirname,
+    'removeConfigValueInPath',
+    options
+  )
 }
 
 export interface IConfigValueOrigin {
@@ -311,9 +363,16 @@ export async function getConfigValueWithOrigin(
 
   const parts = result.stdout.split('\0')
   if (parts.length >= 3) {
+    const origin = parts[1]
+    const originPath = origin.replace(/^file:/, '')
+    const translatedOriginPath = translateWslPathValue(originPath) ?? originPath
+
     return {
       scope: parts[0],
-      origin: parts[1],
+      origin:
+        originPath === translatedOriginPath
+          ? origin
+          : `file:${translatedOriginPath}`,
       value: parts[2],
     }
   }
@@ -330,9 +389,11 @@ export function getOriginFilePath(
   origin: IConfigValueOrigin,
   repositoryPath?: string
 ): string {
-  const filePath = origin.origin.replace(/^file:/, '')
+  const filePath =
+    translateWslPathValue(origin.origin.replace(/^file:/, '')) ??
+    origin.origin.replace(/^file:/, '')
   // Git returns relative paths for local/worktree scope (e.g. `.git/config`)
-  if (repositoryPath && !/^([a-zA-Z]:|[/\\])/.test(filePath)) {
+  if (repositoryPath && !isAbsolute(filePath)) {
     const base = repositoryPath.replace(/[\\/]+$/, '')
     return `${base}/${filePath}`
   }
@@ -376,7 +437,9 @@ export function formatConfigPath(
   origin: IConfigValueOrigin,
   repositoryPath: string
 ): string {
-  const rawPath = origin.origin.replace(/^file:/, '')
+  const rawPath =
+    translateWslPathValue(origin.origin.replace(/^file:/, '')) ??
+    origin.origin.replace(/^file:/, '')
   if (origin.scope === 'local' || origin.scope === 'worktree') {
     // Git returns relative paths for local scope (e.g. `.git/config`)
     if (!/^([a-zA-Z]:|[/\\])/.test(rawPath)) {

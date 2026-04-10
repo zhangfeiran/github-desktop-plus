@@ -32,6 +32,13 @@ import { IMatchedGitHubRepository } from '../repository-matching'
 import { shallowEquals } from '../equality'
 import { EditorOverride } from '../../models/editor-override'
 import { Account } from '../../models/account'
+import { RepositoryGitSource } from '../../models/repository-git-source'
+import {
+  deleteTrackedRepositoryGitSource,
+  getRepositoryGitSource,
+  normalizeRepositoryGitSource,
+  setTrackedRepositoryGitSource,
+} from '../git/source'
 
 type AddRepositoryOptions = {
   missing?: boolean
@@ -164,6 +171,7 @@ export class RepositoriesStore extends TypedBaseStore<
       repo.defaultBranch,
       repo.workflowPreferences,
       repo.customEditorOverride,
+      repo.gitSourceOverride,
       repo.isTutorialRepository,
       repo.login
     )
@@ -237,12 +245,15 @@ export class RepositoriesStore extends TypedBaseStore<
           gitHubRepositoryID: ghRepo.dbID,
           missing: false,
           lastStashCheckDate: null,
+          gitSourceOverride:
+            existingRepo?.gitSourceOverride ?? getRepositoryGitSource(path),
           isTutorialRepository: true,
           login,
         })
       }
     )
 
+    setTrackedRepositoryGitSource(path, getRepositoryGitSource(path))
     this.emitUpdatedRepositories()
   }
 
@@ -276,6 +287,7 @@ export class RepositoriesStore extends TypedBaseStore<
           alias: null,
           groupName: null,
           defaultBranch: null,
+          gitSourceOverride: getRepositoryGitSource(path),
           login,
         }
         const id = await this.db.repositories.add(dbRepo)
@@ -283,6 +295,7 @@ export class RepositoriesStore extends TypedBaseStore<
       }
     )
 
+    setTrackedRepositoryGitSource(repository.path, repository.gitSourceOverride)
     this.emitUpdatedRepositories()
 
     return repository
@@ -291,6 +304,7 @@ export class RepositoriesStore extends TypedBaseStore<
   /** Remove the given repository. */
   public async removeRepository(repository: Repository): Promise<void> {
     await this.db.repositories.delete(repository.id)
+    deleteTrackedRepositoryGitSource(repository.path)
     clearTagsToPush(repository)
 
     this.emitUpdatedRepositories()
@@ -315,6 +329,7 @@ export class RepositoriesStore extends TypedBaseStore<
       repository.defaultBranch,
       repository.workflowPreferences,
       repository.customEditorOverride,
+      repository.gitSourceOverride,
       repository.isTutorialRepository,
       repository.overrideLogin
     )
@@ -374,6 +389,7 @@ export class RepositoriesStore extends TypedBaseStore<
       defaultBranch,
       repository.workflowPreferences,
       repository.customEditorOverride,
+      repository.gitSourceOverride,
       repository.isTutorialRepository,
       repository.overrideLogin
     )
@@ -405,6 +421,7 @@ export class RepositoriesStore extends TypedBaseStore<
       repository.defaultBranch,
       repository.workflowPreferences,
       repository.customEditorOverride,
+      repository.gitSourceOverride,
       repository.isTutorialRepository,
       account?.login ?? LoginSpecialValue.ForceNullLogin
     )
@@ -418,6 +435,26 @@ export class RepositoriesStore extends TypedBaseStore<
       customEditorOverride,
     })
 
+    this.emitUpdatedRepositories()
+  }
+
+  public async updateRepositoryGitSourceOverride(
+    repository: Repository,
+    gitSourceOverride: RepositoryGitSource | null
+  ): Promise<void> {
+    const normalizedGitSourceOverride = normalizeRepositoryGitSource(
+      repository.path,
+      gitSourceOverride
+    )
+
+    await this.db.repositories.update(repository.id, {
+      gitSourceOverride: normalizedGitSourceOverride,
+    })
+
+    setTrackedRepositoryGitSource(
+      repository.path,
+      normalizedGitSourceOverride
+    )
     this.emitUpdatedRepositories()
   }
 
@@ -441,8 +478,19 @@ export class RepositoriesStore extends TypedBaseStore<
     repository: Repository,
     path: string
   ): Promise<Repository> {
-    await this.db.repositories.update(repository.id, { missing: false, path })
+    const gitSourceOverride = normalizeRepositoryGitSource(
+      path,
+      repository.gitSourceOverride
+    )
 
+    await this.db.repositories.update(repository.id, {
+      missing: false,
+      path,
+      gitSourceOverride,
+    })
+
+    deleteTrackedRepositoryGitSource(repository.path)
+    setTrackedRepositoryGitSource(path, gitSourceOverride)
     this.emitUpdatedRepositories()
 
     return new Repository(
@@ -455,6 +503,7 @@ export class RepositoriesStore extends TypedBaseStore<
       repository.defaultBranch,
       repository.workflowPreferences,
       repository.customEditorOverride,
+      gitSourceOverride,
       repository.isTutorialRepository,
       repository.overrideLogin
     )
@@ -628,6 +677,7 @@ export class RepositoriesStore extends TypedBaseStore<
       repo.defaultBranch,
       repo.workflowPreferences,
       repo.customEditorOverride,
+      repo.gitSourceOverride,
       repo.isTutorialRepository,
       repo.overrideLogin
     )

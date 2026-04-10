@@ -5,6 +5,7 @@ import type { WorktreeEntry, WorktreeType } from '../../models/worktree'
 import { git } from './core'
 import { getBranches } from './for-each-ref'
 import { normalizePath } from '../helpers/path'
+import { translateWslPathValue } from './source'
 
 function getDotGitPath(repositoryPath: string): string {
   return Path.join(repositoryPath, '.git')
@@ -66,7 +67,10 @@ export async function listWorktrees(
     'listWorktrees'
   )
 
-  return parseWorktreePorcelainOutput(result.stdout)
+  return parseWorktreePorcelainOutput(result.stdout).map(worktree => ({
+    ...worktree,
+    path: translateWslPathValue(worktree.path) ?? worktree.path,
+  }))
 }
 
 export async function addWorktree(

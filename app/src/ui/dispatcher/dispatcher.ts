@@ -135,6 +135,7 @@ import { CLIAction } from '../../lib/cli-action'
 import { IBranchNamePreset } from '../../models/branch-preset'
 import { BypassReasonType } from '../secret-scanning/bypass-push-protection-dialog'
 import { EditorOverride } from '../../models/editor-override'
+import { RepositoryGitSource } from '../../models/repository-git-source'
 import { convertToCopyPath } from '../../lib/helpers/path'
 import { EOL } from 'os'
 
@@ -941,6 +942,16 @@ export class Dispatcher {
     return this.appStore._updateRepositoryEditorOverride(
       repository,
       customEditorOverride
+    )
+  }
+
+  public updateRepositoryGitSourceOverride(
+    repository: Repository,
+    gitSourceOverride: RepositoryGitSource | null
+  ): Promise<void> {
+    return this.appStore._updateRepositoryGitSourceOverride(
+      repository,
+      gitSourceOverride
     )
   }
 
