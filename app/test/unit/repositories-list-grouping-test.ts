@@ -8,6 +8,7 @@ import { Repository, ILocalRepositoryState } from '../../src/models/repository'
 import { CloningRepository } from '../../src/models/cloning-repository'
 import { gitHubRepoFixture } from '../helpers/github-repo-builder'
 import { WorktreeEntry } from '../../src/models/worktree'
+import { toWslPath } from '../../src/lib/git/source'
 
 describe('repository list grouping', () => {
   const repositories: Array<Repository | CloningRepository> = [
@@ -204,6 +205,111 @@ describe('repository list grouping', () => {
       assert.equal(grouped[0].items[1].repository.path, linkedRepoPath)
       assert.equal(grouped[0].items[1].isNestedWorktree, true)
       assert.equal(grouped[0].items[1].mainWorktreeName, 'repo')
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('nests linked worktrees that use WSL absolute gitdir paths', async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), 'github-desktop-plus-wsl-worktree-grouping-')
+    )
+    try {
+      const mainRepoPath = path.join(tempRoot, 'repo')
+      const linkedRepoPath = path.join(tempRoot, 'repo-feature-worktree')
+      const worktreeGitDir = path.join(
+        mainRepoPath,
+        '.git',
+        'worktrees',
+        'fix-node'
+      )
+
+      await mkdir(path.join(mainRepoPath, '.git'), { recursive: true })
+      await mkdir(worktreeGitDir, { recursive: true })
+      await mkdir(linkedRepoPath, { recursive: true })
+      await writeFile(
+        path.join(linkedRepoPath, '.git'),
+        `gitdir: ${toWslPath(worktreeGitDir)}\n`
+      )
+      await writeFile(path.join(worktreeGitDir, 'commondir'), '../..\n')
+
+      const mainRepo = new Repository(
+        mainRepoPath,
+        30,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+      const linkedRepo = new Repository(
+        linkedRepoPath,
+        31,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+
+      const grouped = groupRepositories([linkedRepo, mainRepo], cache, [], {
+        showWorktreesInSidebar: true,
+      })
+
+      assert.equal(grouped.length, 1)
+      assert.equal(grouped[0].items.length, 2)
+      assert.equal(grouped[0].items[0].repository.path, mainRepoPath)
+      assert.equal(grouped[0].items[1].repository.path, linkedRepoPath)
+      assert.equal(grouped[0].items[1].isNestedWorktree, true)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('nests stored linked worktrees using their parent repository group', async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), 'github-desktop-plus-worktree-parent-group-')
+    )
+    try {
+      const mainRepoPath = path.join(tempRoot, 'repo')
+      const linkedRepoPath = path.join(tempRoot, 'repo-feature-worktree')
+
+      await mkdir(path.join(mainRepoPath, '.git'), { recursive: true })
+      await mkdir(path.join(mainRepoPath, '.git', 'worktrees', 'fix-node'), {
+        recursive: true,
+      })
+      await mkdir(linkedRepoPath, { recursive: true })
+      await writeFile(
+        path.join(linkedRepoPath, '.git'),
+        'gitdir: ../repo/.git/worktrees/fix-node\n'
+      )
+      await writeFile(
+        path.join(mainRepoPath, '.git', 'worktrees', 'fix-node', 'commondir'),
+        '../..\n'
+      )
+
+      const mainRepo = new Repository(
+        mainRepoPath,
+        40,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+      const linkedRepoWithoutGitHubMetadata = new Repository(
+        linkedRepoPath,
+        41,
+        null,
+        false
+      )
+
+      const grouped = groupRepositories(
+        [linkedRepoWithoutGitHubMetadata, mainRepo],
+        cache,
+        [],
+        {
+          showWorktreesInSidebar: true,
+        }
+      )
+
+      assert.equal(grouped.length, 1)
+      assert.equal(grouped[0].identifier.kind, 'dotcom')
+      assert.equal(grouped[0].items.length, 2)
+      assert.equal(grouped[0].items[0].repository.path, mainRepoPath)
+      assert.equal(grouped[0].items[1].repository.path, linkedRepoPath)
+      assert.equal(grouped[0].items[1].isNestedWorktree, true)
     } finally {
       await rm(tempRoot, { recursive: true, force: true })
     }

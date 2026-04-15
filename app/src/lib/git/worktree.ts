@@ -11,6 +11,13 @@ function getDotGitPath(repositoryPath: string): string {
   return Path.join(repositoryPath, '.git')
 }
 
+function resolveGitPath(basePath: string, path: string): string {
+  const translatedPath =
+    process.platform === 'win32' ? translateWslPathValue(path) ?? path : path
+
+  return Path.resolve(basePath, translatedPath)
+}
+
 export interface IWorktreePathInfo {
   readonly isLinkedWorktree: boolean
   readonly mainWorktreePath: string | null
@@ -115,10 +122,7 @@ export async function addWorktreeForBranchName(
   }
 
   const localRef = `refs/heads/${branchName}`
-  const localBranches = await getBranches(
-    repository,
-    localRef
-  )
+  const localBranches = await getBranches(repository, localRef)
   const hasLocalBranch = localBranches.some(branch => branch.ref === localRef)
 
   await addWorktree(repository, path, {
@@ -192,7 +196,7 @@ export function getWorktreePathInfoSync(
       return null
     }
 
-    const gitDirPath = Path.resolve(
+    const gitDirPath = resolveGitPath(
       repositoryPath,
       contents.substring('gitdir: '.length)
     )
@@ -206,7 +210,7 @@ export function getWorktreePathInfoSync(
       return null
     }
 
-    const commonGitDir = Path.resolve(gitDirPath, commondir)
+    const commonGitDir = resolveGitPath(gitDirPath, commondir)
     return {
       isLinkedWorktree: true,
       mainWorktreePath: Path.dirname(commonGitDir),

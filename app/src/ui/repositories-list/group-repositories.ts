@@ -7,7 +7,7 @@ import {
 import { CloningRepository } from '../../models/cloning-repository'
 import { getHTMLURL } from '../../lib/api'
 import { compare } from '../../lib/compare'
-import { IFilterListGroup, IFilterListItem } from '../lib/filter-list'
+import type { IFilterListGroup, IFilterListItem } from '../lib/filter-list'
 import { IAheadBehind } from '../../models/branch'
 import { assertNever } from '../../lib/fatal-error'
 import { isGHE, isGHES } from '../../lib/endpoint-capabilities'
@@ -115,6 +115,7 @@ export function groupRepositories(
   recentRepositories: ReadonlyArray<number>,
   options: IGroupRepositoriesOptions = {}
 ): ReadonlyArray<IFilterListGroup<IRepositoryListItem, RepositoryListGroup>> {
+  const showWorktreesInSidebar = options.showWorktreesInSidebar ?? false
   const includeRecentGroup = repositories.length > recentRepositoriesThreshold
   const recentSet = includeRecentGroup ? new Set(recentRepositories) : undefined
   const groups = new Map<string, RepoGroupItem>()
@@ -147,7 +148,14 @@ export function groupRepositories(
       addToGroup({ kind: 'recent', displayName: repo.groupName }, repo)
     }
 
-    addToGroup(getGroupForRepository(repo), repo)
+    const parentRepo =
+      showWorktreesInSidebar &&
+      repo instanceof Repository &&
+      repo.isLinkedWorktree
+        ? repositoryByPath.get(normalizePath(repo.mainWorktreePath))
+        : undefined
+
+    addToGroup(getGroupForRepository(parentRepo ?? repo), repo)
   }
 
   return Array.from(groups)
