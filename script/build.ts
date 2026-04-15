@@ -333,7 +333,7 @@ function copyDependencies() {
   console.log('  Installing dependencies via yarn…')
   cp.execSync('yarn install', { cwd: outRoot, env: process.env })
 
-  console.log('  Copying desktop-askpass-trampoline…')
+  console.log('  Copying desktop trampoline executables…')
   const trampolineSource = path.resolve(
     projectRoot,
     'app/node_modules/desktop-trampoline/build/Release'
@@ -343,12 +343,21 @@ function copyDependencies() {
     process.platform === 'win32'
       ? 'desktop-askpass-trampoline.exe'
       : 'desktop-askpass-trampoline'
+  const desktopCredentialHelperTrampolineFile =
+    process.platform === 'win32'
+      ? 'desktop-credential-helper-trampoline.exe'
+      : 'desktop-credential-helper-trampoline'
 
   rmSync(desktopTrampolineDir, { recursive: true, force: true })
   mkdirSync(desktopTrampolineDir, { recursive: true })
   cpSync(
     path.resolve(trampolineSource, desktopAskpassTrampolineFile),
     path.resolve(desktopTrampolineDir, desktopAskpassTrampolineFile),
+    { recursive: true, verbatimSymlinks: true }
+  )
+  cpSync(
+    path.resolve(trampolineSource, desktopCredentialHelperTrampolineFile),
+    path.resolve(desktopTrampolineDir, desktopCredentialHelperTrampolineFile),
     { recursive: true, verbatimSymlinks: true }
   )
 
@@ -434,11 +443,6 @@ function copyDependencies() {
     process.platform === 'win32'
       ? path.resolve(outRoot, 'git', mingw, 'libexec', 'git-core')
       : path.resolve(outRoot, 'git', 'libexec', 'git-core')
-
-  const desktopCredentialHelperTrampolineFile =
-    process.platform === 'win32'
-      ? 'desktop-credential-helper-trampoline.exe'
-      : 'desktop-credential-helper-trampoline'
 
   const desktopCredentialHelperFile = `git-credential-desktop${
     process.platform === 'win32' ? '.exe' : ''

@@ -15,6 +15,7 @@ import {
 } from 'desktop-trampoline'
 import { getGitVersionFromSource } from '../git/process'
 import { getRepositoryGitSource } from '../git/source'
+import { formatCredentialHelperPathForGitConfig } from './credential-helper-config'
 
 const hasRejectedCredentialsForEndpoint = new Map<string, Set<string>>()
 
@@ -65,7 +66,9 @@ export const getCredentialUrl = (cred: Map<string, string>) => {
 
 const getGitUserAgentCacheKey = (path: string) => {
   const source = getRepositoryGitSource(path)
-  return source.kind === 'external' ? `${source.kind}:${source.path}` : source.kind
+  return source.kind === 'external'
+    ? `${source.kind}:${source.path}`
+    : source.kind
 }
 
 export const GitUserAgent = memoizeOne((path: string, cacheKey: string) =>
@@ -149,12 +152,11 @@ export async function withTrampolineEnv<T>(
         //
         // See https://github.com/desktop/desktop/issues/18945
         // See https://github.com/git/git/blob/ed155187b429a/config.c#L664
-        GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=${getDesktopCredentialHelperTrampolinePath()}'`,
+        GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=${formatCredentialHelperPathForGitConfig(
+          getDesktopCredentialHelperTrampolinePath()
+        )}'`,
 
-        GIT_USER_AGENT: await GitUserAgent(
-          path,
-          getGitUserAgentCacheKey(path)
-        ),
+        GIT_USER_AGENT: await GitUserAgent(path, getGitUserAgentCacheKey(path)),
         ...sshEnv,
       })
     } catch (e) {

@@ -36,8 +36,7 @@ const bundledGitEnvironmentKeys = new Set([
 ])
 
 const windowsDrivePathRe = /^[a-zA-Z]:[\\/]/
-const wslRepositoryPathRe =
-  /^(?:\\\\|\/\/)wsl\.localhost[\\/]Ubuntu[\\/]/i
+const wslRepositoryPathRe = /^(?:\\\\|\/\/)wsl\.localhost[\\/]Ubuntu[\\/]/i
 const quotedWindowsDrivePathRe = /^"([a-zA-Z]:[\\/].*)"$/i
 const quotedWslRepositoryPathRe =
   /^"((?:\\\\|\/\/)wsl\.localhost[\\/]Ubuntu[\\/].*)"$/i
@@ -79,14 +78,24 @@ const translateQuotedWslPathArgument = (value: string): string => {
   return value
 }
 
-const translateWslGitConfigParameters = (value: string): string =>
-  value.replace(/'([^'=]+)=([^']*)'/g, (_, key: string, configValue: string) => {
-    if (configValue.length === 0) {
-      return `'${key}='`
-    }
+const translateWslGitConfigValue = (value: string): string =>
+  value.startsWith('!')
+    ? `!${translateQuotedWslPathArgument(
+        translateWslPathArgument(value.substring(1))
+      )}`
+    : translateQuotedWslPathArgument(translateWslPathArgument(value))
 
-    return `'${key}=${translateWslPathArgument(configValue)}'`
-  })
+export const translateWslGitConfigParameters = (value: string): string =>
+  value.replace(
+    /'([^'=]+)=([^']*)'/g,
+    (_, key: string, configValue: string) => {
+      if (configValue.length === 0) {
+        return `'${key}='`
+      }
+
+      return `'${key}=${translateWslGitConfigValue(configValue)}'`
+    }
+  )
 
 const translateWslEnv = (
   env: Record<string, string | undefined>
@@ -211,11 +220,12 @@ export async function execGitProcess(
   path: string,
   options?: DugiteExecutionOptions
 ): Promise<IGitResult> {
-  const { command, args: commandArgs, cwd, env } = resolveGitCommand(
-    args,
-    path,
-    options?.env
-  )
+  const {
+    command,
+    args: commandArgs,
+    cwd,
+    env,
+  } = resolveGitCommand(args, path, options?.env)
 
   const execOptions = {
     cwd,
@@ -227,15 +237,20 @@ export async function execGitProcess(
   }
 
   return new Promise((resolve, reject) => {
-    const cp = execFile(command, commandArgs, execOptions, (err, stdout, stderr) => {
-      if (!err || typeof err.code === 'number') {
-        const exitCode = typeof err?.code === 'number' ? err.code : 0
-        resolve({ stdout, stderr, exitCode })
-        return
-      }
+    const cp = execFile(
+      command,
+      commandArgs,
+      execOptions,
+      (err, stdout, stderr) => {
+        if (!err || typeof err.code === 'number') {
+          const exitCode = typeof err?.code === 'number' ? err.code : 0
+          resolve({ stdout, stderr, exitCode })
+          return
+        }
 
-      reject(new ExecError(err.message, stdout, stderr, err))
-    })
+        reject(new ExecError(err.message, stdout, stderr, err))
+      }
+    )
 
     ignoreClosedInputStream(cp)
 
@@ -256,11 +271,12 @@ export const spawnGitProcess = (
   path: string,
   options?: IGitSpawnOptions
 ): ChildProcessWithoutNullStreams => {
-  const { command, args: commandArgs, cwd, env } = resolveGitCommand(
-    args,
-    path,
-    options?.env
-  )
+  const {
+    command,
+    args: commandArgs,
+    cwd,
+    env,
+  } = resolveGitCommand(args, path, options?.env)
 
   const child = spawn(command, commandArgs, {
     cwd,
