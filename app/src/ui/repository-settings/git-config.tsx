@@ -84,18 +84,17 @@ export class GitConfig extends React.Component<IGitConfigProps> {
       case 'external':
         return 'External Git executable'
       case 'wsl':
-        return 'WSL Git (wsl.exe -- git)'
+        return 'WSL Git'
       default:
         return assertNever(key, `Unknown git source: ${key}`)
     }
   }
 
   public render() {
+    const { isWslRepository } = this.props
     const configOptions = [GitConfigLocation.Global, GitConfigLocation.Local]
     const gitSourceOptions: ReadonlyArray<RepositoryGitSourceOption> =
-      this.props.isWslRepository
-        ? ['bundled', 'external', 'wsl']
-        : ['bundled', 'external']
+      isWslRepository ? ['bundled', 'external', 'wsl'] : ['bundled', 'external']
     const selectionOption =
       configOptions.find(o => o === this.props.gitConfigLocation) ??
       GitConfigLocation.Global

@@ -18,6 +18,7 @@ import {
 } from 'dugite'
 import type { RepositoryGitSource } from '../../models/repository-git-source'
 import { getRepositoryGitSource, toWslPath } from './source'
+import { execWslGitProcess } from './wsl-git-runner'
 
 type GitCommand = {
   readonly command: string
@@ -25,6 +26,11 @@ type GitCommand = {
   readonly cwd: string
   readonly env: Record<string, string | undefined>
   readonly source: RepositoryGitSource
+  readonly wsl?: {
+    readonly args: ReadonlyArray<string>
+    readonly cwd: string
+    readonly env: ReadonlyArray<string>
+  }
 }
 
 const bundledGitEnvironmentKeys = new Set([
@@ -34,6 +40,8 @@ const bundledGitEnvironmentKeys = new Set([
   'GIT_CONFIG_SYSTEM',
   'PREFIX',
 ])
+
+const wslInteropEnvKeys = ['DESKTOP_PORT', 'DESKTOP_TRAMPOLINE_TOKEN']
 
 const windowsDrivePathRe = /^[a-zA-Z]:[\\/]/
 const wslRepositoryPathRe = /^(?:\\\\|\/\/)wsl\.localhost[\\/]Ubuntu[\\/]/i
@@ -97,7 +105,21 @@ export const translateWslGitConfigParameters = (value: string): string =>
     }
   )
 
-const translateWslEnv = (
+const appendWslInteropEnvKeys = (value: string | undefined): string => {
+  const entries =
+    value === undefined || value.length === 0 ? [] : value.split(':')
+  const existingKeys = new Set(entries.map(entry => entry.split('/')[0]))
+
+  for (const key of wslInteropEnvKeys) {
+    if (!existingKeys.has(key)) {
+      entries.push(key)
+    }
+  }
+
+  return entries.join(':')
+}
+
+export const translateWslEnv = (
   env: Record<string, string | undefined>
 ): ReadonlyArray<string> => {
   const translated = new Array<string>()
@@ -108,6 +130,10 @@ const translateWslEnv = (
     }
 
     if (key === 'PATH' && rawValue.includes(';')) {
+      continue
+    }
+
+    if (key === 'WSLENV') {
       continue
     }
 
@@ -130,6 +156,18 @@ const translateWslEnv = (
     }
 
     translated.push(`${key}=${value}`)
+  }
+
+  const rawWslEnv = env.WSLENV ?? process.env.WSLENV
+  const hasWslInteropEnvKeys = wslInteropEnvKeys.some(
+    key => env[key] !== undefined
+  )
+
+  if (rawWslEnv !== undefined || hasWslInteropEnvKeys) {
+    const wslEnv = hasWslInteropEnvKeys
+      ? appendWslInteropEnvKeys(rawWslEnv)
+      : rawWslEnv
+    translated.push(`WSLENV=${wslEnv}`)
   }
 
   return translated
@@ -181,12 +219,13 @@ const resolveGitCommand = (
     case 'wsl': {
       const translatedEnv = translateWslEnv(env)
       const translatedArgs = args.map(translateWslGitArgument)
+      const translatedCwd = toWslPath(path)
 
       return {
         command: 'wsl.exe',
         args: [
           '--cd',
-          toWslPath(path),
+          translatedCwd,
           '--exec',
           ...(translatedEnv.length > 0 ? ['env', ...translatedEnv] : []),
           'git',
@@ -195,6 +234,11 @@ const resolveGitCommand = (
         cwd: process.cwd(),
         env: sanitizeWindowsGitEnv({}),
         source,
+        wsl: {
+          args: translatedArgs,
+          cwd: translatedCwd,
+          env: translatedEnv,
+        },
       }
     }
   }
@@ -220,26 +264,37 @@ export async function execGitProcess(
   path: string,
   options?: DugiteExecutionOptions
 ): Promise<IGitResult> {
-  const {
-    command,
-    args: commandArgs,
-    cwd,
-    env,
-  } = resolveGitCommand(args, path, options?.env)
+  const command = resolveGitCommand(args, path, options?.env)
 
   const execOptions = {
-    cwd,
-    env,
+    cwd: command.cwd,
+    env: command.env,
     encoding: options?.encoding ?? 'utf8',
     maxBuffer: options?.maxBuffer ?? Infinity,
     signal: options?.signal,
     killSignal: options?.killSignal,
   }
 
+  if (command.source.kind === 'wsl' && command.wsl !== undefined) {
+    return execWslGitProcess({
+      args: command.wsl.args,
+      cwd: command.wsl.cwd,
+      env: command.wsl.env,
+      processEnv: execOptions.env,
+      encoding: execOptions.encoding,
+      maxBuffer: execOptions.maxBuffer,
+      stdin: options?.stdin,
+      stdinEncoding: options?.stdinEncoding,
+      signal: options?.signal,
+      killSignal: options?.killSignal,
+      processCallback: options?.processCallback,
+    })
+  }
+
   return new Promise((resolve, reject) => {
     const cp = execFile(
-      command,
-      commandArgs,
+      command.command,
+      command.args,
       execOptions,
       (err, stdout, stderr) => {
         if (!err || typeof err.code === 'number') {
