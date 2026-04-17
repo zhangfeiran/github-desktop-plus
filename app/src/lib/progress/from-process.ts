@@ -8,6 +8,7 @@ import { IGitExecutionOptions } from '../git/core'
 import { merge } from '../merge'
 import { GitLFSProgressParser, createLFSProgressFile } from './lfs'
 import { tailByLine } from '../file-system'
+import { coerceToString } from '../git/coerce-to-string'
 
 /**
  * Merges an instance of IGitExecutionOptions with a process callback provided
@@ -88,8 +89,8 @@ function createProgressProcessCallback(
     // If Node.js encounters a synchronous runtime error while spawning
     // `stderr` will be undefined and the error will be emitted asynchronously
     if (process.stderr) {
-      byline(process.stderr).on('data', (line: string) => {
-        const progress = parser.parse(line)
+      byline(process.stderr).on('data', (line: string | Buffer) => {
+        const progress = parser.parse(coerceToString(line))
 
         if (lfsProgressActive) {
           // While we're sending LFS progress we don't want to mix

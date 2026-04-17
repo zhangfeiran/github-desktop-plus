@@ -146,9 +146,15 @@ class WslGitProcess extends EventEmitter {
   public signalCode: NodeJS.Signals | null = null
 
   public constructor(
-    private readonly onKill: (signal?: NodeJS.Signals | number) => boolean
+    private readonly onKill: (signal?: NodeJS.Signals | number) => boolean,
+    encoding: BufferEncoding | 'buffer'
   ) {
     super()
+
+    if (encoding !== 'buffer') {
+      this.stdout.setEncoding(encoding)
+      this.stderr.setEncoding(encoding)
+    }
   }
 
   public kill(signal?: NodeJS.Signals | number) {
@@ -206,8 +212,9 @@ class WslGitRunner {
           ? options.stdin
           : Buffer.from(options.stdin, options.stdinEncoding ?? 'utf8')
       let active: ActiveRequest
-      const proxy = new WslGitProcess(signal =>
-        this.killActiveRequest(active, signal)
+      const proxy = new WslGitProcess(
+        signal => this.killActiveRequest(active, signal),
+        options.encoding
       )
       active = {
         id,

@@ -31,6 +31,7 @@ import { Branch } from '../../models/branch'
 import { readFile } from 'fs/promises'
 import { pathExists } from '../../ui/lib/path-exists'
 import { dotGitPath } from '../helpers/git-dir'
+import { coerceToString } from './coerce-to-string'
 
 /** The app-specific results from attempting to rebase a repository */
 export enum RebaseResult {
@@ -334,8 +335,8 @@ function configureOptionsForRebase<T extends IGitExecutionOptions>(
       }
       const parser = new GitRebaseParser(commits)
 
-      byline(process.stderr).on('data', (line: string) => {
-        const progress = parser.parse(line)
+      byline(process.stderr).on('data', (line: string | Buffer) => {
+        const progress = parser.parse(coerceToString(line))
 
         if (progress != null) {
           progressCallback(progress)
