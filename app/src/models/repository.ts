@@ -107,6 +107,7 @@ export class Repository {
       getCustomOverrideHash(this.customEditorOverride),
       getGitSourceOverrideHash(this.gitSourceOverride),
       this.workflowPreferences.forkContributionTarget,
+      this.workflowPreferences.periodicFetchEnabled,
       this.isTutorialRepository,
       this.overrideLogin
     )
@@ -355,6 +356,13 @@ export function getForkContributionTarget(
   return repository.workflowPreferences.forkContributionTarget !== undefined
     ? repository.workflowPreferences.forkContributionTarget
     : ForkContributionTarget.Parent
+}
+
+/**
+ * Returns whether automatic periodic fetches are enabled for a repository.
+ */
+export function isPeriodicFetchEnabled(repository: Repository): boolean {
+  return repository.workflowPreferences.periodicFetchEnabled === true
 }
 
 /**

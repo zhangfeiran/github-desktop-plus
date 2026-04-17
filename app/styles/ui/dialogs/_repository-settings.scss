@@ -36,6 +36,12 @@
     }
   }
 
+  .git-settings-description {
+    margin-top: var(--spacing);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary-color);
+  }
+
   .no-remote-publish-message {
     .link-button-component {
       display: inline;

@@ -5,6 +5,7 @@ import {
   isRepositoryWithGitHubRepository,
   isRepositoryWithForkedGitHubRepository,
   getGitHubHtmlUrl,
+  isPeriodicFetchEnabled,
   isForkedRepositoryContributingToParent,
 } from '../../src/models/repository'
 import { GitHubRepository } from '../../src/models/github-repository'
@@ -130,6 +131,43 @@ describe('Repository type guards', () => {
       const repo = createForkedGitHubRepository()
       // Default fork contribution target is Parent
       assert.equal(isForkedRepositoryContributingToParent(repo), true)
+    })
+  })
+
+  describe('isPeriodicFetchEnabled', () => {
+    it('returns false by default', () => {
+      const repo = createPlainRepository()
+      assert.equal(isPeriodicFetchEnabled(repo), false)
+    })
+
+    it('returns true when periodic fetches are enabled', () => {
+      const repo = new Repository(
+        '/path/to/repo',
+        1,
+        null,
+        false,
+        null,
+        null,
+        null,
+        { periodicFetchEnabled: true }
+      )
+      assert.equal(isPeriodicFetchEnabled(repo), true)
+    })
+
+    it('includes periodic fetch preferences in the repository hash', () => {
+      const disabled = new Repository('/path/to/repo', 1, null, false)
+      const enabled = new Repository(
+        '/path/to/repo',
+        1,
+        null,
+        false,
+        null,
+        null,
+        null,
+        { periodicFetchEnabled: true }
+      )
+
+      assert.notEqual(disabled.hash, enabled.hash)
     })
   })
 })

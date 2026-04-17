@@ -6,6 +6,7 @@ import { Account } from '../../models/account'
 import { AccountPicker } from '../account-picker'
 import { Repository } from '../../models/repository'
 import { getDotComAPIEndpoint, getEndpointForRepository } from '../../lib/api'
+import { Checkbox, CheckboxValue } from '../lib/checkbox'
 
 interface IRemoteProps {
   /** The remote being shown. */
@@ -28,6 +29,12 @@ interface IRemoteProps {
 
   /** The function to call when the account is changed by the user. */
   readonly onSelectedAccountChanged: (account: Account) => void
+
+  /** Whether automatic periodic fetches are enabled for this repository. */
+  readonly periodicFetchEnabled: boolean
+
+  /** The function to call when automatic periodic fetches are toggled. */
+  readonly onPeriodicFetchEnabledChanged: (enabled: boolean) => void
 }
 
 /** The Remote component. */
@@ -79,6 +86,26 @@ export class Remote extends React.Component<IRemoteProps, {}> {
           />
         </div>
         <div className="config-row">
+          <Checkbox
+            label="Periodically fetch this repository"
+            value={
+              this.props.periodicFetchEnabled
+                ? CheckboxValue.On
+                : CheckboxValue.Off
+            }
+            onChange={this.onPeriodicFetchEnabledChanged}
+            ariaDescribedBy="repository-periodic-fetch-description"
+          />
+          <div
+            id="repository-periodic-fetch-description"
+            className="git-settings-description"
+          >
+            Automatic fetches keep branch counts and repository list status
+            current. Manual fetch, pull, and push operations still work when
+            this is off.
+          </div>
+        </div>
+        <div className="config-row">
           <TextBox
             placeholder="Endpoint"
             readOnly={true}
@@ -88,5 +115,11 @@ export class Remote extends React.Component<IRemoteProps, {}> {
         </div>
       </DialogContent>
     )
+  }
+
+  private onPeriodicFetchEnabledChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    this.props.onPeriodicFetchEnabledChanged(event.currentTarget.checked)
   }
 }

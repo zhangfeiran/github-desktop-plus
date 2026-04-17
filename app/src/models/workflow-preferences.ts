@@ -11,4 +11,9 @@ export type WorkflowPreferences = {
    * What repo does the user want to contribute to with this fork?
    */
   readonly forkContributionTarget?: ForkContributionTarget
+
+  /**
+   * Whether this repository should perform automatic periodic fetches.
+   */
+  readonly periodicFetchEnabled?: boolean
 }

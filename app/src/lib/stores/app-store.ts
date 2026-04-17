@@ -63,6 +63,7 @@ import {
   getNonForkGitHubRepository,
   ILocalRepositoryState,
   isForkedRepositoryContributingToParent,
+  isPeriodicFetchEnabled,
   isRepositoryWithGitHubRepository,
   nameOf,
   Repository,
@@ -2467,6 +2468,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     lastPush: Date | null
   ): Promise<boolean> {
+    if (!isPeriodicFetchEnabled(repository)) {
+      const repoName = nameOf(repository)
+      log.debug(
+        `Skipping periodic fetch for '${repoName}' because it is disabled in repository settings`
+      )
+      return false
+    }
+
     const gitStore = this.gitStoreCache.get(repository)
     const lastFetched = await gitStore.updateLastFetched()
 
@@ -2513,6 +2522,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     if (!repository.gitHubRepository) {
+      return
+    }
+
+    if (!isPeriodicFetchEnabled(repository)) {
       return
     }
 

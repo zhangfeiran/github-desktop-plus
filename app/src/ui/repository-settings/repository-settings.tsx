@@ -9,6 +9,7 @@ import { PopupType } from '../../models/popup'
 import {
   Repository,
   getForkContributionTarget,
+  isPeriodicFetchEnabled,
   isRepositoryWithForkedGitHubRepository,
 } from '../../models/repository'
 import { Dialog, DialogError, DialogFooter } from '../dialog'
@@ -85,6 +86,7 @@ interface IRepositorySettingsState {
   readonly initialCommitterEmail: string | null
   readonly errors?: ReadonlyArray<JSX.Element | string>
   readonly forkContributionTarget: ForkContributionTarget
+  readonly periodicFetchEnabled: boolean
   readonly isLoadingGitConfig: boolean
   readonly nameOrigin: IConfigValueOrigin | null
   readonly emailOrigin: IConfigValueOrigin | null
@@ -122,6 +124,7 @@ export class RepositorySettings extends React.Component<
       ignoreTextHasChanged: false,
       disabled: false,
       forkContributionTarget: getForkContributionTarget(props.repository),
+      periodicFetchEnabled: isPeriodicFetchEnabled(props.repository),
       saveDisabled: false,
       gitConfigLocation: GitConfigLocation.Global,
       committerName: '',
@@ -337,6 +340,8 @@ export class RepositorySettings extends React.Component<
               onRemoteUrlChanged={this.onRemoteUrlChanged}
               onDefaultBranchChanged={this.onDefaultBranchChanged}
               onSelectedAccountChanged={this.onSelectedAccountChanged}
+              periodicFetchEnabled={this.state.periodicFetchEnabled}
+              onPeriodicFetchEnabledChanged={this.onPeriodicFetchEnabledChanged}
             />
           )
         } else {
@@ -500,13 +505,23 @@ export class RepositorySettings extends React.Component<
     // only update this if it will be different from what we have stored
     if (
       this.state.forkContributionTarget !==
-      this.props.repository.workflowPreferences.forkContributionTarget
+        this.props.repository.workflowPreferences.forkContributionTarget ||
+      this.state.periodicFetchEnabled !==
+        isPeriodicFetchEnabled(this.props.repository)
     ) {
+      const workflowPreferences = {
+        ...this.props.repository.workflowPreferences,
+      }
+      delete workflowPreferences.periodicFetchEnabled
+
       await this.props.dispatcher.updateRepositoryWorkflowPreferences(
         this.props.repository,
         {
-          ...this.props.repository.workflowPreferences,
+          ...workflowPreferences,
           forkContributionTarget: this.state.forkContributionTarget,
+          ...(this.state.periodicFetchEnabled
+            ? { periodicFetchEnabled: true }
+            : {}),
         }
       )
     }
@@ -618,6 +633,10 @@ export class RepositorySettings extends React.Component<
     this.setState({
       forkContributionTarget,
     })
+  }
+
+  private onPeriodicFetchEnabledChanged = (periodicFetchEnabled: boolean) => {
+    this.setState({ periodicFetchEnabled })
   }
 
   private onDefaultBranchChanged = (branch: string) => {
