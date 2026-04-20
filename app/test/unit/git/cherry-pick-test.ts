@@ -221,6 +221,13 @@ describe('git/cherry-pick', () => {
     assert.equal(result, CherryPickResult.UnableToStart)
   })
 
+  it('does not continue when no cherry-pick is in progress', async t => {
+    const { repository } = await setup(t)
+
+    const result = await continueCherryPick(repository, [])
+    assert.equal(result, CherryPickResult.UnableToStart)
+  })
+
   it('fails to cherry-pick when working tree is not clean', async t => {
     const { repository, featureBranch } = await setup(t)
 

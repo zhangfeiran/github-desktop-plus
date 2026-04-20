@@ -163,17 +163,23 @@ export async function cherryPick(
     )
   }
 
-  // --empty=keep follows pattern of making sure someone cherry
-  //  picked commit summaries appear in target branch history even tho they may
-  //  be empty. This flag also results in the ability to cherry pick empty
-  //  commits (thus, --allow-empty is not required.)
+  // --allow-empty and --keep-redundant-commits follow pattern of making sure
+  // cherry-picked commit summaries appear in target branch history even tho
+  // they may be empty. This keeps compatibility with older WSL Git versions
+  // that don't support --empty=keep.
   //
   // -m 1 makes it so a merge commit always takes the first parent's history
   //  (the branch you are cherry-picking from) for the commit. It also means
   //  there could be multiple empty commits. I.E. If user does a range that
   //  includes commits from that merge.
   const result = await git(
-    ['cherry-pick', ...commits.map(c => c.sha), '--empty=keep', '-m 1'],
+    [
+      'cherry-pick',
+      ...commits.map(c => c.sha),
+      '--allow-empty',
+      '--keep-redundant-commits',
+      '-m 1',
+    ],
     repository.path,
     'cherry-pick',
     baseOptions
@@ -403,7 +409,7 @@ export async function continueCherryPick(
   }
 
   // make sure cherry pick is still in progress to continue
-  if (await !isCherryPickHeadFound(repository)) {
+  if (!(await isCherryPickHeadFound(repository))) {
     return CherryPickResult.UnableToStart
   }
 
