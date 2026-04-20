@@ -80,6 +80,23 @@ export async function listWorktrees(
   }))
 }
 
+export function findWorktreeEntryForBranchRef(
+  worktrees: ReadonlyArray<WorktreeEntry>,
+  branchRef: string,
+  currentPath: string
+): WorktreeEntry | null {
+  const normalizedCurrentPath = normalizePath(currentPath)
+
+  return (
+    worktrees.find(
+      worktree =>
+        worktree.branch === branchRef &&
+        !worktree.isPrunable &&
+        normalizePath(worktree.path) !== normalizedCurrentPath
+    ) ?? null
+  )
+}
+
 export async function addWorktree(
   repository: Repository,
   path: string,

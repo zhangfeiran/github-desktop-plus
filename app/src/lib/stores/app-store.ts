@@ -209,6 +209,7 @@ import { updateStore } from '../../ui/lib/update-store'
 import {
   getPreferredWorktreePath,
   clearPreferredWorktreePath,
+  setPreferredWorktreePath,
 } from '../worktree-preferences'
 import { normalizePath } from '../helpers/path'
 import { resizableComponentClass } from '../../ui/resizable'
@@ -310,7 +311,7 @@ import {
 } from '../git/lfs'
 import { getConfigValueWithOrigin, IConfigValueOrigin } from '../git/config'
 import { determineMergeability } from '../git/merge-tree'
-import { listWorktrees } from '../git/worktree'
+import { findWorktreeEntryForBranchRef, listWorktrees } from '../git/worktree'
 import { reorder } from '../git/reorder'
 import { squash } from '../git/squash'
 import { stageResolvedConflictFiles } from '../git/stage'
@@ -8609,6 +8610,75 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return true
   }
 
+  private async getOrAddRepositoryAtPath(
+    path: string,
+    login: string | null
+  ): Promise<Repository | null> {
+    const existing = matchExistingRepository(this.repositories, path)
+    if (existing !== undefined) {
+      return existing
+    }
+
+    const addedRepositories = await this._addRepositories([path], login)
+    return addedRepositories[0] ?? null
+  }
+
+  /**
+   * If `branch` is already checked out in another worktree, select that
+   * worktree and return its repository. Otherwise return `repository`.
+   *
+   * This keeps operations such as cherry-pick from attempting a checkout that
+   * Git will reject with "is already used by worktree".
+   */
+  public async _switchToWorktreeForBranchIfNeeded(
+    repository: Repository,
+    branch: Branch
+  ): Promise<Repository> {
+    if (branch.type !== BranchType.Local) {
+      return repository
+    }
+
+    const worktrees = await listWorktrees(repository)
+    const targetWorktree = findWorktreeEntryForBranchRef(
+      worktrees,
+      branch.ref,
+      repository.path
+    )
+
+    if (targetWorktree === null) {
+      return repository
+    }
+
+    const targetPathExists = await pathExists(targetWorktree.path)
+    if (!targetPathExists) {
+      log.warn(
+        `[AppStore] Branch ${branch.name} is checked out in missing worktree ${targetWorktree.path}`
+      )
+      return repository
+    }
+
+    const targetRepository = await this.getOrAddRepositoryAtPath(
+      targetWorktree.path,
+      repository.login
+    )
+
+    if (targetRepository === null) {
+      return repository
+    }
+
+    const mainWorktree = worktrees.find(worktree => worktree.type === 'main')
+    if (mainWorktree !== undefined) {
+      setPreferredWorktreePath(mainWorktree.path, targetWorktree.path)
+    }
+
+    const selectedRepository =
+      (await this._selectRepository(targetRepository, true, false)) ??
+      targetRepository
+    await this._refreshRepository(selectedRepository)
+
+    return selectedRepository
+  }
+
   /**
    * Attempts to checkout target branch and return it's name after checkout.
    * This is useful if you want the local name when checking out a potentially
@@ -8735,6 +8805,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
     sourceBranch: Branch | null
   ) {
     if (sourceBranch === null) {
+      return
+    }
+
+    const sourceRepository = await this._switchToWorktreeForBranchIfNeeded(
+      repository,
+      sourceBranch
+    )
+
+    if (
+      normalizePath(sourceRepository.path) !== normalizePath(repository.path)
+    ) {
       return
     }
 

@@ -1,6 +1,9 @@
 import assert from 'node:assert'
 import { describe, it } from 'node:test'
-import { parseWorktreePorcelainOutput } from '../../../src/lib/git/worktree'
+import {
+  findWorktreeEntryForBranchRef,
+  parseWorktreePorcelainOutput,
+} from '../../../src/lib/git/worktree'
 
 describe('git/worktree', () => {
   describe('parseWorktreePorcelainOutput', () => {
@@ -159,6 +162,87 @@ describe('git/worktree', () => {
       assert.strictEqual(entries[1].isLocked, true)
       assert.strictEqual(entries[1].isPrunable, true)
       assert.strictEqual(entries[1].branch, null)
+    })
+  })
+
+  describe('findWorktreeEntryForBranchRef', () => {
+    it('finds the other worktree using the branch ref', () => {
+      const worktrees = parseWorktreePorcelainOutput(
+        [
+          'worktree /path/to/repo',
+          'HEAD abc1234abc1234abc1234abc1234abc1234abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /path/to/linked',
+          'HEAD def5678def5678def5678def5678def5678def567',
+          'branch refs/heads/feature',
+          '',
+        ].join('\n')
+      )
+
+      const worktree = findWorktreeEntryForBranchRef(
+        worktrees,
+        'refs/heads/feature',
+        '/path/to/repo'
+      )
+
+      assert.strictEqual(worktree?.path, '/path/to/linked')
+    })
+
+    it('finds the main worktree when the current path is linked', () => {
+      const worktrees = parseWorktreePorcelainOutput(
+        [
+          'worktree /path/to/repo',
+          'HEAD abc1234abc1234abc1234abc1234abc1234abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /path/to/linked',
+          'HEAD def5678def5678def5678def5678def5678def567',
+          'branch refs/heads/feature',
+          '',
+        ].join('\n')
+      )
+
+      const worktree = findWorktreeEntryForBranchRef(
+        worktrees,
+        'refs/heads/main',
+        '/path/to/linked'
+      )
+
+      assert.strictEqual(worktree?.path, '/path/to/repo')
+    })
+
+    it('ignores the current worktree and prunable worktrees', () => {
+      const worktrees = parseWorktreePorcelainOutput(
+        [
+          'worktree /path/to/repo',
+          'HEAD abc1234abc1234abc1234abc1234abc1234abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /path/to/stale',
+          'HEAD def5678def5678def5678def5678def5678def567',
+          'branch refs/heads/feature',
+          'prunable gitdir file points to non-existent location',
+          '',
+        ].join('\n')
+      )
+
+      assert.strictEqual(
+        findWorktreeEntryForBranchRef(
+          worktrees,
+          'refs/heads/main',
+          '/path/to/repo'
+        ),
+        null
+      )
+      assert.strictEqual(
+        findWorktreeEntryForBranchRef(
+          worktrees,
+          'refs/heads/feature',
+          '/path/to/repo'
+        ),
+        null
+      )
     })
   })
 })
