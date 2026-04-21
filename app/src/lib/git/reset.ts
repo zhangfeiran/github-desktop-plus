@@ -1,6 +1,7 @@
 import { git } from './core'
 import { Repository } from '../../models/repository'
 import { assertNever } from '../fatal-error'
+import { getRepositoryGitSource } from './source'
 
 /** The reset modes which are supported. */
 export const enum GitResetMode {
@@ -48,6 +49,17 @@ export async function reset(
   return true
 }
 
+export function shouldResetPathsFromStdin(
+  repository: Repository,
+  mode: GitResetMode
+): boolean {
+  return (
+    __WIN32__ &&
+    mode === GitResetMode.Mixed &&
+    getRepositoryGitSource(repository.path).kind !== 'wsl'
+  )
+}
+
 /**
  * Updates the index with information from a particular tree for a given
  * set of paths.
@@ -75,7 +87,7 @@ export async function resetPaths(
 
   const baseArgs = resetModeToArgs(mode, ref)
 
-  if (__WIN32__ && mode === GitResetMode.Mixed) {
+  if (shouldResetPathsFromStdin(repository, mode)) {
     // Git for Windows has experimental support for reading paths to reset
     // from standard input. This is helpful in situations where your file
     // paths are greater than 32KB in length, because of shell limitations.

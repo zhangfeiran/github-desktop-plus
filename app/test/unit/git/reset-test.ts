@@ -3,7 +3,12 @@ import assert from 'node:assert'
 import * as path from 'path'
 
 import { Repository } from '../../../src/models/repository'
-import { reset, resetPaths, GitResetMode } from '../../../src/lib/git/reset'
+import {
+  GitResetMode,
+  reset,
+  resetPaths,
+  shouldResetPathsFromStdin,
+} from '../../../src/lib/git/reset'
 import { getStatusOrThrow } from '../../helpers/status'
 import { setupFixtureRepository } from '../../helpers/repositories'
 import { exec } from 'dugite'
@@ -11,6 +16,35 @@ import { exec } from 'dugite'
 import { unlink, writeFile } from 'fs/promises'
 
 describe('git/reset', () => {
+  describe('shouldResetPathsFromStdin', () => {
+    it('does not use Git for Windows reset stdin arguments with WSL Git', () => {
+      const repository = new Repository(
+        '\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo',
+        -1,
+        null,
+        false
+      )
+
+      assert.equal(
+        shouldResetPathsFromStdin(repository, GitResetMode.Mixed),
+        false
+      )
+    })
+
+    it('only uses reset stdin for mixed resets through Windows Git', () => {
+      const repository = new Repository('E:\\repo', -1, null, false)
+
+      assert.equal(
+        shouldResetPathsFromStdin(repository, GitResetMode.Mixed),
+        __WIN32__
+      )
+      assert.equal(
+        shouldResetPathsFromStdin(repository, GitResetMode.Hard),
+        false
+      )
+    })
+  })
+
   describe('reset', () => {
     it('can hard reset a repository', async t => {
       const testRepoPath = await setupFixtureRepository(t, 'test-repo')
