@@ -6,6 +6,7 @@ import {
   DropdownItemClassName,
   DropdownItemType,
   forcePushIcon,
+  resetAndPullIcon,
 } from './push-pull-button'
 
 interface IPushPullButtonDropDownProps {
@@ -18,6 +19,7 @@ interface IPushPullButtonDropDownProps {
 
   readonly fetch: () => void
   readonly forcePushWithLease: () => void
+  readonly resetAndPull: () => void
 }
 
 export class PushPullButtonDropDown extends React.Component<IPushPullButtonDropDownProps> {
@@ -98,6 +100,21 @@ export class PushPullButtonDropDown extends React.Component<IPushPullButtonDropD
           icon: forcePushIcon,
         }
       }
+      case DropdownItemType.ResetAndPull:
+        return {
+          title: 'Reset and pull',
+          description: (
+            <>
+              Discard your local commits and pull from {remoteName}
+              <div className="warning">
+                <span className="warning-title">Warning:</span> This will
+                permanently discard your local commits on this branch.
+              </div>
+            </>
+          ),
+          action: this.props.resetAndPull,
+          icon: resetAndPullIcon,
+        }
     }
   }
 

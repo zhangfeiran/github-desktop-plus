@@ -351,16 +351,20 @@ export class RepositoriesStore extends TypedBaseStore<
   }
 
   /**
-   * Update the group name for the specified repository.
+   * Update the group name for a list of repositories in a single transaction.
    *
-   * @param repository  The repository to update.
-   * @param groupName       The new group name to use.
+   * @param repositories  The repositories to update (typically a worktree family).
+   * @param groupName     The new group name to use.
    */
   public async updateRepositoryGroupName(
-    repository: Repository,
+    repositories: ReadonlyArray<Repository>,
     groupName: string | null
   ): Promise<void> {
-    await this.db.repositories.update(repository.id, { groupName })
+    await this.db.transaction('rw', this.db.repositories, () =>
+      Promise.all(
+        repositories.map(r => this.db.repositories.update(r.id, { groupName }))
+      )
+    )
 
     this.emitUpdatedRepositories()
   }
@@ -649,6 +653,43 @@ export class RepositoriesStore extends TypedBaseStore<
         const id = await this.db.gitHubRepositories.put(skeletonRepo)
         return this.toGitHubRepository({ ...skeletonRepo, id }, owner, null)
       }
+    )
+  }
+
+  /**
+   * Inherits the GitHub repository association, group name, default branch, workflow preferences, editor override, and login from the old repository
+   *
+   * @param newRepo The new repository to update with the old repository's configuration
+   * @param oldRepo The repository to copy the configuration from
+   * @returns
+   */
+  public async inheritConfiguration(
+    newRepo: Repository,
+    oldRepo: Repository
+  ): Promise<Repository> {
+    await this.db.transaction('rw', this.db.repositories, () =>
+      this.db.repositories.update(newRepo.id, {
+        gitHubRepositoryID: oldRepo.gitHubRepository?.dbID ?? null,
+        groupName: oldRepo.groupName,
+        defaultBranch: oldRepo.defaultBranch,
+        workflowPreferences: oldRepo.workflowPreferences,
+        customEditorOverride: oldRepo.customEditorOverride,
+      })
+    )
+    this.emitUpdatedRepositories()
+
+    return new Repository(
+      newRepo.path,
+      newRepo.id,
+      oldRepo.gitHubRepository,
+      newRepo.missing,
+      newRepo.alias,
+      oldRepo.groupName,
+      oldRepo.defaultBranch,
+      oldRepo.workflowPreferences,
+      oldRepo.customEditorOverride,
+      newRepo.isTutorialRepository,
+      oldRepo.overrideLogin
     )
   }
 

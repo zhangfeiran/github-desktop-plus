@@ -51,3 +51,17 @@ export async function timeout<T>(
     }
   })
 }
+
+export async function parallelWithConcurrencyLimit<T, V>(
+  items: ReadonlyArray<T>,
+  action: (item: T) => Promise<V>,
+  concurrencyLimit: number
+): Promise<V[]> {
+  const results: V[] = []
+  for (let i = 0; i < items.length; i += concurrencyLimit) {
+    const batch = items.slice(i, i + concurrencyLimit)
+    const batchResults = await Promise.all(batch.map(action))
+    results.push(...batchResults)
+  }
+  return results
+}

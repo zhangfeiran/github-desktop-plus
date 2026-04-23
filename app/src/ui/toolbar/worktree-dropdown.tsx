@@ -148,10 +148,14 @@ export class WorktreeDropdown extends React.Component<
       type: PopupType.DeleteWorktree,
       repository: this.props.repository,
       worktreePath: path,
+      storedRepositoryToRemove:
+        matchingRepo instanceof Repository ? matchingRepo : null,
+      isDeletingCurrentWorktree:
+        normalizePath(this.props.repository.path) === normalizedPath,
     })
   }
 
-  private onCreateNewWorktree = () => {
+  private onAddNewWorktree = () => {
     this.props.dispatcher.closeFoldout(FoldoutType.Worktree)
     this.props.dispatcher.showPopup({
       type: PopupType.AddWorktree,
@@ -177,7 +181,7 @@ export class WorktreeDropdown extends React.Component<
         filterText={this.state.filterText}
         onFilterTextChanged={this.onFilterTextChanged}
         canCreateNewWorktree={true}
-        onCreateNewWorktree={this.onCreateNewWorktree}
+        onAddNewWorktree={this.onAddNewWorktree}
         onWorktreeContextMenu={this.onWorktreeContextMenu}
       />
     )

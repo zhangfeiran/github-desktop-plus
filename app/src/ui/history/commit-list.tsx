@@ -200,11 +200,10 @@ interface ICommitListProps {
    */
   readonly dragSourceBranch?: Branch
 
+  readonly preferAbsoluteDates: boolean
+
   /** This will make the list semantics friendly to screen reader users in browse mode. */
   readonly isInformationalView?: boolean
-
-  /** Whether to display commit dates as absolute dates instead of relative times */
-  readonly showAbsoluteDates: boolean
 }
 
 interface ICommitListState {
@@ -332,7 +331,7 @@ export class CommitList extends React.Component<
         disableSquashing={this.props.disableSquashing}
         accounts={this.props.accounts}
         dragSourceBranch={this.props.dragSourceBranch}
-        showAbsoluteDates={this.props.showAbsoluteDates}
+        preferAbsoluteDates={this.props.preferAbsoluteDates}
       />
     )
   }
@@ -660,6 +659,7 @@ export class CommitList extends React.Component<
             commitLookupHash: this.commitsHash(this.getVisibleCommits()),
             tagsToPush: this.props.tagsToPush,
             shasToHighlight: this.props.shasToHighlight,
+            preferAbsoluteDates: this.props.preferAbsoluteDates,
           }}
           setScrollTop={this.props.compareListScrollTop}
           rowCustomClassNameMap={this.getRowCustomClassMap()}

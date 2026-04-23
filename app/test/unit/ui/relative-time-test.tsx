@@ -68,7 +68,7 @@ describe('RelativeTime', () => {
 
     render(<RelativeTime date={then} onlyRelative={false} tooltip={false} />)
 
-    const absoluteDate = formatDate(then, { dateStyle: 'medium' })
+    const absoluteDate = formatDate(then, { time: false, dateStyle: 'medium' })
 
     assert.equal(screen.getByText(absoluteDate).textContent, absoluteDate)
   })

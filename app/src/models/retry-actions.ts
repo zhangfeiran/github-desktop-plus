@@ -19,6 +19,7 @@ export enum RetryActionType {
   Reorder,
   DiscardChanges,
   StashChanges,
+  ResetAndPull,
 }
 
 /** The retriable actions and their associated data. */
@@ -92,3 +93,4 @@ export type RetryAction =
       repository: Repository
       files: ReadonlyArray<WorkingDirectoryFileChange>
     }
+  | { type: RetryActionType.ResetAndPull; repository: Repository }

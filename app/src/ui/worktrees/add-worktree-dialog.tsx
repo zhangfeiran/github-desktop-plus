@@ -11,6 +11,7 @@ import { Row } from '../lib/row'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 import { showOpenDialog } from '../main-process-proxy'
 import { addWorktreeForBranchName } from '../../lib/git/worktree'
+// import { addWorktreeWithIncludes } from '../../lib/git/worktree-include'
 
 interface IAddWorktreeDialogProps {
   readonly repository: Repository
@@ -77,6 +78,9 @@ export class AddWorktreeDialog extends React.Component<
         worktreePath,
         branchName
       )
+      // await addWorktreeWithIncludes(this.props.repository, worktreePath, {
+      //   createBranch: branchName.length > 0 ? branchName : undefined,
+      // })
     } catch (e) {
       dispatcher.postError(e)
       this.setState({ creating: false })

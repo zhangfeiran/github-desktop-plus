@@ -11,8 +11,8 @@
   height: 100%;
   color: var(--diff-text-color);
   background: var(--background-color);
-  font-size: var(--font-size-sm);
-  font-family: var(--font-family-monospace);
+  font-size: var(--diff-font-size, var(--font-size-sm));
+  font-family: var(--diff-font-family, var(--font-family-monospace));
 
   span {
     // Force word breaks. This only matters when soft wrapping is on.

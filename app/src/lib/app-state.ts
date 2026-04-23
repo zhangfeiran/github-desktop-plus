@@ -1,3 +1,5 @@
+import type { ModelInfo } from '@github/copilot-sdk'
+import type { CopilotModelSelections } from './stores/copilot-store'
 import { Account } from '../models/account'
 import { CommitIdentity } from '../models/commit-identity'
 import { IConfigValueOrigin } from './git/config'
@@ -44,7 +46,7 @@ import { UncommittedChangesStrategy } from '../models/uncommitted-changes-strate
 import { ShowBranchNameInRepoListSetting } from '../models/show-branch-name-in-repo-list'
 import { CopyPathNormalization } from '../models/copy-path-normalization'
 import { BranchSortOrder } from '../models/branch-sort-order'
-import { CommitDateDisplay } from '../models/commit-date-display'
+import { DiffFontFamily } from '../models/diff-font'
 import { DragElement } from '../models/drag-drop'
 import { ILastThankYou } from '../models/last-thank-you'
 import {
@@ -313,6 +315,12 @@ export interface IAppState {
   /** The selected tab size preference */
   readonly selectedTabSize: number
 
+  /** The selected font size preference for text diffs */
+  readonly selectedDiffFontSize: number
+
+  /** The selected font family preference for text diffs */
+  readonly selectedDiffFontFamily: DiffFontFamily
+
   /** The selected title bar style for the application */
   readonly titleBarStyle: TitleBarStyle
 
@@ -416,8 +424,8 @@ export interface IAppState {
   /** Controls the sort order for branch lists in branch-selection views */
   readonly branchSortOrder: BranchSortOrder
 
-  /** Controls whether commit dates in the history list are shown as relative or absolute */
-  readonly commitDateDisplay: CommitDateDisplay
+  /** Whether the user prefers absolute dates over relative time in lists */
+  readonly preferAbsoluteDates: boolean
 
   /**
    * Cached repo rulesets. Used to prevent repeatedly querying the same
@@ -435,6 +443,21 @@ export interface IAppState {
 
   /** Whether the changes filter is shown */
   readonly showChangesFilter: boolean
+
+  /**
+   * Per-feature Copilot model selections. An absent key means the default
+   * model will be used for that feature.
+   */
+  readonly selectedCopilotModels: CopilotModelSelections
+
+  /**
+   * The list of available Copilot models fetched from the SDK.
+   * Null when the list has not been fetched yet.
+   */
+  readonly copilotModels: ReadonlyArray<ModelInfo> | null
+
+  /** Whether Copilot is available (i.e. a GitHub.com account is signed in). */
+  readonly copilotAvailable: boolean
 }
 
 export enum FoldoutType {

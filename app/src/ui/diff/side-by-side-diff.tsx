@@ -234,8 +234,16 @@ export class SideBySideDiff extends React.Component<
   ISideBySideDiffProps,
   ISideBySideDiffState
 > {
+  private static getDiffStyleKey(root: HTMLElement): string {
+    const fontSize = root.style.getPropertyValue('--diff-font-size')
+    const fontFamily = root.style.getPropertyValue('--diff-font-family')
+    return `${fontSize}|${fontFamily}`
+  }
+
   private virtualListRef = React.createRef<List>()
   private diffContainer: HTMLDivElement | null = null
+  private styleObserver: MutationObserver | null = null
+  private lastDiffStyleKey = ''
 
   /** Diff to restore when "Collapse all expanded lines" option is used */
   private diffToRestore: ITextDiff | null = null
@@ -278,6 +286,7 @@ export class SideBySideDiff extends React.Component<
 
   public componentDidMount() {
     this.initDiffSyntaxMode()
+    this.setupStyleObserver()
 
     window.addEventListener('keydown', this.onWindowKeyDown)
 
@@ -416,6 +425,7 @@ export class SideBySideDiff extends React.Component<
   }
 
   public componentWillUnmount() {
+    this.teardownStyleObserver()
     window.removeEventListener('keydown', this.onWindowKeyDown)
     document.removeEventListener('mouseup', this.onEndSelection)
     document.removeEventListener('find-text', this.showSearch)
@@ -572,6 +582,42 @@ export class SideBySideDiff extends React.Component<
       ref.addEventListener('select-all', this.onSelectAll)
     }
     this.diffContainer = ref
+  }
+
+  private setupStyleObserver() {
+    const root = document.getElementById('desktop-app-chrome')
+    if (root === null) {
+      return
+    }
+
+    this.lastDiffStyleKey = SideBySideDiff.getDiffStyleKey(root)
+
+    this.styleObserver = new MutationObserver(mutations => {
+      const target = mutations[0]?.target as HTMLElement | undefined
+      if (target === undefined) {
+        return
+      }
+
+      const newKey = SideBySideDiff.getDiffStyleKey(target)
+      if (newKey === this.lastDiffStyleKey) {
+        return
+      }
+
+      this.lastDiffStyleKey = newKey
+      this.rowSelectableGroupStaticDataCache.clear()
+      this.clearListRowsHeightCache()
+      this.virtualListRef.current?.recomputeRowHeights()
+    })
+
+    this.styleObserver.observe(root, {
+      attributes: true,
+      attributeFilter: ['style'],
+    })
+  }
+
+  private teardownStyleObserver() {
+    this.styleObserver?.disconnect()
+    this.styleObserver = null
   }
 
   private getCurrentDiffRows() {

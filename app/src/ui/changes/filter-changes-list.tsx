@@ -74,6 +74,7 @@ import {
 import { ChangesListFilterOptions } from './changes-list-filter-options'
 import { generateStashListContextMenu } from '../stashing/stash-list-item-context-menu'
 import { HookProgress } from '../../lib/git'
+import { formatNumber } from '../../lib/format-number'
 
 export interface IChangesListItem extends IFilterListItem {
   readonly id: string
@@ -1402,9 +1403,9 @@ export class FilterChangesList extends React.Component<
       files.length === 0 || isCommitting || rebaseConflictState !== null
 
     const checkAllLabel = `${
-      visibleFiles !== files.length ? `${visibleFiles} of ` : ''
+      visibleFiles !== files.length ? `${formatNumber(visibleFiles)} of ` : ''
     }
-    ${files.length} changed file${plural(files.length)}`
+    ${formatNumber(files.length)} changed file${plural(files.length)}`
 
     return (
       <div className="checkbox-container">
@@ -1464,7 +1465,7 @@ export class FilterChangesList extends React.Component<
 
   private getListAriaLabel = () => {
     const { files } = this.props.workingDirectory
-    return `${files.length} changed file${plural(files.length)}`
+    return `${formatNumber(files.length)} changed file${plural(files.length)}`
   }
 
   public render() {
@@ -1555,7 +1556,8 @@ export class FilterChangesList extends React.Component<
         <span className="sr-only">Warning:</span>
         <span>Hidden changes will be committed. </span>
         <LinkButton onClick={this.showFilesToBeCommitted}>
-          Adjust the filters to see all {filesSelected.length} changes
+          Adjust the filters to see all {formatNumber(filesSelected.length)}{' '}
+          changes
         </LinkButton>
       </div>
     )

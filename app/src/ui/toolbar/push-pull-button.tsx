@@ -32,6 +32,7 @@ import { AriaLiveContainer } from '../accessibility/aria-live-container'
 import { enableResizingToolbarButtons } from '../../lib/feature-flag'
 import { assertNever } from '../../lib/fatal-error'
 import { RepoType } from '../../models/github-repository'
+import { formatCompactNumber } from '../../lib/format-number'
 
 export const DropdownItemClassName = 'push-pull-dropdown-item'
 
@@ -121,6 +122,7 @@ interface IPushPullButtonState {
 export enum DropdownItemType {
   Fetch = 'fetch',
   ForcePush = 'force-push',
+  ResetAndPull = 'reset-and-pull',
 }
 
 export type DropdownItem = {
@@ -140,7 +142,7 @@ function renderAheadBehind(aheadBehind: IAheadBehind, numTagsToPush: number) {
   if (ahead > 0 || numTagsToPush > 0) {
     content.push(
       <span key="ahead">
-        {ahead + numTagsToPush}
+        {formatCompactNumber(ahead + numTagsToPush)}
         <Octicon symbol={octicons.arrowUp} />
       </span>
     )
@@ -149,7 +151,7 @@ function renderAheadBehind(aheadBehind: IAheadBehind, numTagsToPush: number) {
   if (behind > 0) {
     content.push(
       <span key="behind">
-        {behind}
+        {formatCompactNumber(behind)}
         <Octicon symbol={octicons.arrowDown} />
       </span>
     )
@@ -182,6 +184,20 @@ export const forcePushIcon: OcticonSymbolVariant = {
       '0 0 0 .772-1.228L5.53 1.22a.75.75 0 0 0-1.06 0L.22 5.47A.75.75 0 0 0 0 6zm0 ' +
       '3a.75.75 0 0 0 1.28.53l2.97-2.97V14a.75.75 0 1 0 1.5 0V6.56l2.97 2.97a.75.75 ' +
       '0 0 0 1.06-1.06L5.53 4.22a.75.75 0 0 0-1.06 0L.22 8.47A.75.75 0 0 0 0 9z',
+  ],
+}
+
+/**
+ * A "double arrow" pointing down for force pull, which is not currently an Octicon in the `octicons` package.
+ */
+export const resetAndPullIcon: OcticonSymbolVariant = {
+  w: 10,
+  h: 16,
+  p: [
+    'M0 10a.75.75 0 0 1 .974-.714L4.469 12.78a.75.75 0 0 0 1.06 0l3.478-3.478a.75.75 ' +
+      '0 0 1 .772 1.228L5.53 14.78a.75.75 0 0 1-1.06 0L.22 10.53A.75.75 0 0 1 0 ' +
+      '10zm0-3a.75.75 0 0 1 1.28-.53l2.97 2.97V2a.75.75 0 1 1 1.5 0v7.44l2.97-2.97a.75.75 ' +
+      '0 0 1 1.06 1.06L5.53 11.78a.75.75 0 0 1-1.06 0L.22 7.53A.75.75 0 0 1 0 7z',
   ],
 }
 
@@ -352,6 +368,11 @@ export class PushPullButton extends React.Component<
     this.setState({ actionInProgress: 'force push' })
   }
 
+  private resetAndPull = () => {
+    this.closeDropdown()
+    this.props.dispatcher.resetAndPull(this.props.repository)
+  }
+
   private pull = () => {
     this.closeDropdown()
     this.props.dispatcher.pull(this.props.repository)
@@ -394,6 +415,7 @@ export class PushPullButton extends React.Component<
           remoteName={this.props.remoteName}
           fetch={this.fetch}
           forcePushWithLease={this.forcePushWithLease}
+          resetAndPull={this.resetAndPull}
           askForConfirmationOnForcePush={
             this.props.askForConfirmationOnForcePush
           }
@@ -635,6 +657,10 @@ export class PushPullButton extends React.Component<
       dropdownItemTypes.push(DropdownItemType.ForcePush)
     }
 
+    if (aheadBehind.ahead > 0) {
+      dropdownItemTypes.push(DropdownItemType.ResetAndPull)
+    }
+
     return (
       <ToolbarDropdown
         {...this.defaultDropdownProps()}
@@ -692,6 +718,7 @@ export class PushPullButton extends React.Component<
         onClick={onClick}
         dropdownContentRenderer={this.getDropdownContentRenderer([
           DropdownItemType.Fetch,
+          DropdownItemType.ResetAndPull,
         ])}
       >
         {renderAheadBehind(aheadBehind, numTagsToPush)}

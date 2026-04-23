@@ -9,20 +9,44 @@ import { Row } from '../lib/row'
 import { DialogContent } from '../dialog'
 import { RadioGroup } from '../lib/radio-group'
 import { Select } from '../lib/select'
+import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { encodePathAsUrl } from '../../lib/path'
 import { tabSizeDefault } from '../../lib/stores/app-store'
-import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { ShowBranchNameInRepoListSetting } from '../../models/show-branch-name-in-repo-list'
 import { parseEnumValue } from '../../lib/enum'
 import { assertNever } from '../../lib/fatal-error'
 import { BranchSortOrder } from '../../models/branch-sort-order'
-import { CommitDateDisplay } from '../../models/commit-date-display'
+import {
+  availableDiffFontSizes,
+  defaultDiffFontFamily,
+  defaultDiffFontSize,
+  DiffFontFamily,
+  getAvailableDiffFontFamilies,
+  getDiffFontFamilyLabel,
+} from '../../models/diff-font'
+import { enableFormattingPreferences } from '../../lib/feature-flag'
+import {
+  DateFormat,
+  TimeFormat,
+  INumberFormat,
+  dateFormats,
+  timeFormats,
+  numberFormats,
+  numberFormatToKey,
+} from '../../models/formatting-preferences'
+import { formatNumber } from '../../lib/format-number'
 
 interface IAppearanceProps {
   readonly selectedTheme: ApplicationTheme
   readonly onSelectedThemeChanged: (theme: ApplicationTheme) => void
   readonly selectedTabSize: number
   readonly onSelectedTabSizeChanged: (tabSize: number) => void
+  readonly selectedDiffFontSize: number
+  readonly onSelectedDiffFontSizeChanged: (diffFontSize: number) => void
+  readonly selectedDiffFontFamily: DiffFontFamily
+  readonly onSelectedDiffFontFamilyChanged: (
+    diffFontFamily: DiffFontFamily
+  ) => void
   readonly titleBarStyle: TitleBarStyle
   readonly onTitleBarStyleChanged: (titleBarStyle: TitleBarStyle) => void
   readonly showRecentRepositories: boolean
@@ -39,13 +63,22 @@ interface IAppearanceProps {
   ) => void
   readonly branchSortOrder: BranchSortOrder
   readonly onBranchSortOrderChanged: (sortOrder: BranchSortOrder) => void
-  readonly commitDateDisplay: CommitDateDisplay
-  readonly onCommitDateDisplayChanged: (value: CommitDateDisplay) => void
+  readonly selectedDateFormat: DateFormat
+  readonly onSelectedDateFormatChanged: (format: DateFormat) => void
+  readonly selectedTimeFormat: TimeFormat
+  readonly onSelectedTimeFormatChanged: (format: TimeFormat) => void
+  readonly selectedNumberFormat: INumberFormat
+  readonly onSelectedNumberFormatChanged: (format: INumberFormat) => void
+  readonly preferAbsoluteDates: boolean
+  readonly onPreferAbsoluteDatesChanged: (value: boolean) => void
 }
 
 interface IAppearanceState {
   readonly selectedTheme: ApplicationTheme | null
   readonly selectedTabSize: number
+  readonly selectedDiffFontSize: number
+  readonly selectedDiffFontFamily: DiffFontFamily
+  readonly availableDiffFontFamilies: ReadonlyArray<DiffFontFamily>
   readonly titleBarStyle: TitleBarStyle
   readonly showRecentRepositories: boolean
   readonly showWorktrees: boolean
@@ -76,6 +109,12 @@ export class Appearance extends React.Component<
     this.state = {
       selectedTheme: usePropTheme ? props.selectedTheme : null,
       selectedTabSize: props.selectedTabSize,
+      selectedDiffFontSize: props.selectedDiffFontSize,
+      selectedDiffFontFamily: props.selectedDiffFontFamily,
+      availableDiffFontFamilies:
+        props.selectedDiffFontFamily === defaultDiffFontFamily
+          ? [defaultDiffFontFamily]
+          : [props.selectedDiffFontFamily, defaultDiffFontFamily],
       titleBarStyle: props.titleBarStyle,
       showRecentRepositories: props.showRecentRepositories,
       showWorktrees: props.showWorktrees,
@@ -88,10 +127,16 @@ export class Appearance extends React.Component<
     }
   }
 
+  public componentDidMount() {
+    this.updateAvailableDiffFontFamilies()
+  }
+
   public async componentDidUpdate(prevProps: IAppearanceProps) {
     if (
       prevProps.selectedTheme === this.props.selectedTheme &&
       prevProps.selectedTabSize === this.props.selectedTabSize &&
+      prevProps.selectedDiffFontSize === this.props.selectedDiffFontSize &&
+      prevProps.selectedDiffFontFamily === this.props.selectedDiffFontFamily &&
       prevProps.showWorktrees === this.props.showWorktrees &&
       prevProps.showWorktreesInSidebar === this.props.showWorktreesInSidebar &&
       prevProps.showCompareTab === this.props.showCompareTab
@@ -108,20 +153,45 @@ export class Appearance extends React.Component<
       : await getCurrentlyAppliedTheme()
 
     const selectedTabSize = this.props.selectedTabSize
+    const selectedDiffFontSize = this.props.selectedDiffFontSize
+    const selectedDiffFontFamily = this.props.selectedDiffFontFamily
 
     this.setState({
       selectedTheme,
       selectedTabSize,
+      selectedDiffFontSize,
+      selectedDiffFontFamily,
       showWorktrees: this.props.showWorktrees,
       showWorktreesInSidebar: this.props.showWorktreesInSidebar,
       showCompareTab: this.props.showCompareTab,
     })
+
+    if (
+      prevProps.selectedDiffFontFamily !== this.props.selectedDiffFontFamily
+    ) {
+      this.updateAvailableDiffFontFamilies()
+    }
   }
 
   private initializeSelectedTheme = async () => {
     const selectedTheme = await getCurrentlyAppliedTheme()
     const selectedTabSize = this.props.selectedTabSize
-    this.setState({ selectedTheme, selectedTabSize })
+    this.setState({
+      selectedTheme,
+      selectedTabSize,
+      selectedDiffFontSize: this.props.selectedDiffFontSize,
+      selectedDiffFontFamily: this.props.selectedDiffFontFamily,
+    })
+  }
+
+  private updateAvailableDiffFontFamilies = async () => {
+    const families = await getAvailableDiffFontFamilies()
+    const selected = this.props.selectedDiffFontFamily
+    const available = families.includes(selected)
+      ? families
+      : [selected, ...families]
+
+    this.setState({ availableDiffFontFamilies: available })
   }
 
   private onSelectedThemeChanged = (theme: ApplicationTheme) => {
@@ -140,10 +210,7 @@ export class Appearance extends React.Component<
     event: React.FormEvent<HTMLInputElement>
   ) => {
     const show = event.currentTarget.checked
-    this.setState({
-      showWorktrees: show,
-      showWorktreesInSidebar: show ? this.state.showWorktreesInSidebar : false,
-    })
+    this.setState({ showWorktrees: show })
     this.props.onShowWorktreesChanged(show)
   }
 
@@ -169,10 +236,60 @@ export class Appearance extends React.Component<
     this.props.onSelectedTabSizeChanged(parseInt(event.currentTarget.value))
   }
 
+  private onSelectedDiffFontSizeChanged = (
+    event: React.FormEvent<HTMLSelectElement>
+  ) => {
+    this.props.onSelectedDiffFontSizeChanged(
+      parseInt(event.currentTarget.value)
+    )
+  }
+
+  private onSelectedDiffFontFamilyChanged = (
+    event: React.FormEvent<HTMLSelectElement>
+  ) => {
+    const value = event.currentTarget.value
+    if (value) {
+      this.props.onSelectedDiffFontFamilyChanged(value)
+    }
+  }
+
   private onSelectChanged = (event: React.FormEvent<HTMLSelectElement>) => {
     const titleBarStyle = event.currentTarget.value as TitleBarStyle
     this.setState({ titleBarStyle })
     this.props.onTitleBarStyleChanged(titleBarStyle)
+  }
+
+  private onDateFormatChanged = (event: React.FormEvent<HTMLSelectElement>) => {
+    const value = event.currentTarget.value
+    const match = dateFormats.find(f => f.pattern === value)
+    if (match !== undefined) {
+      this.props.onSelectedDateFormatChanged(match.pattern)
+    }
+  }
+
+  private onTimeFormatChanged = (event: React.FormEvent<HTMLSelectElement>) => {
+    const value = event.currentTarget.value
+    const match = timeFormats.find(f => f.pattern === value)
+    if (match !== undefined) {
+      this.props.onSelectedTimeFormatChanged(match.pattern)
+    }
+  }
+
+  private onNumberFormatChanged = (
+    event: React.FormEvent<HTMLSelectElement>
+  ) => {
+    const match = numberFormats.find(
+      n => numberFormatToKey(n) === event.currentTarget.value
+    )
+    if (match) {
+      this.props.onSelectedNumberFormatChanged(match)
+    }
+  }
+
+  private onPreferAbsoluteDatesChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    this.props.onPreferAbsoluteDatesChanged(event.currentTarget.checked)
   }
 
   public renderThemeSwatch = (theme: ApplicationTheme) => {
@@ -251,16 +368,15 @@ export class Appearance extends React.Component<
     return (
       <div className="advanced-section">
         <h2 id="theme-heading">Theme</h2>
-        <Row>
-          <RadioGroup<ApplicationTheme>
-            ariaLabelledBy="theme-heading"
-            className="theme-selector"
-            selectedKey={selectedTheme}
-            radioButtonKeys={themes}
-            onSelectionChanged={this.onSelectedThemeChanged}
-            renderRadioButtonLabelContents={this.renderThemeSwatch}
-          />
-        </Row>
+
+        <RadioGroup<ApplicationTheme>
+          ariaLabelledBy="theme-heading"
+          className="theme-selector"
+          selectedKey={selectedTheme}
+          radioButtonKeys={themes}
+          onSelectionChanged={this.onSelectedThemeChanged}
+          renderRadioButtonLabelContents={this.renderThemeSwatch}
+        />
       </div>
     )
   }
@@ -316,38 +432,6 @@ export class Appearance extends React.Component<
     }
   }
 
-  private renderCommitDateDisplay() {
-    const { commitDateDisplay } = this.props
-
-    return (
-      <div className="advanced-section">
-        <h2 id="commit-date-display-heading">Commit date display</h2>
-
-        <RadioGroup<CommitDateDisplay>
-          ariaLabelledBy="commit-date-display-heading"
-          selectedKey={commitDateDisplay}
-          radioButtonKeys={[
-            CommitDateDisplay.Relative,
-            CommitDateDisplay.Absolute,
-          ]}
-          onSelectionChanged={this.props.onCommitDateDisplayChanged}
-          renderRadioButtonLabelContents={this.renderCommitDateDisplayLabel}
-        />
-      </div>
-    )
-  }
-
-  private renderCommitDateDisplayLabel = (value: CommitDateDisplay) => {
-    switch (value) {
-      case CommitDateDisplay.Relative:
-        return 'Relative (e.g. "3 days ago")'
-      case CommitDateDisplay.Absolute:
-        return 'Absolute (e.g. "Mar 14, 2026, 2:34 PM")'
-      default:
-        return assertNever(value, `Unknown commit date display: ${value}`)
-    }
-  }
-
   private renderRepositoryList() {
     return (
       <div className="advanced-section">
@@ -390,17 +474,15 @@ export class Appearance extends React.Component<
             }
             onChange={this.onShowWorktreesChanged}
           />
-          {this.state.showWorktrees && (
-            <Checkbox
-              label="Show worktrees in repository sidebar"
-              value={
-                this.state.showWorktreesInSidebar
-                  ? CheckboxValue.On
-                  : CheckboxValue.Off
-              }
-              onChange={this.onShowWorktreesInSidebarChanged}
-            />
-          )}
+          <Checkbox
+            label="Show worktrees in repository sidebar"
+            value={
+              this.state.showWorktreesInSidebar
+                ? CheckboxValue.On
+                : CheckboxValue.Off
+            }
+            onChange={this.onShowWorktreesInSidebarChanged}
+          />
         </div>
         <div className="advanced-section">
           <h2>{'Commit list'}</h2>
@@ -417,12 +499,100 @@ export class Appearance extends React.Component<
     )
   }
 
-  private renderSelectedTabSize() {
+  private renderFormatting() {
+    if (!enableFormattingPreferences()) {
+      return null
+    }
+
+    return (
+      <div className="appearance-section formatting-section">
+        <h2 id="formatting-heading">Formatting</h2>
+
+        <Row>
+          <Select
+            label={__DARWIN__ ? 'Date Format' : 'Date format'}
+            value={this.props.selectedDateFormat}
+            onChange={this.onDateFormatChanged}
+          >
+            {dateFormats.map(({ pattern, example }) => (
+              <option key={pattern} value={pattern}>
+                {example} ({pattern})
+              </option>
+            ))}
+          </Select>
+
+          <Select
+            label={__DARWIN__ ? 'Time Format' : 'Time format'}
+            value={this.props.selectedTimeFormat}
+            onChange={this.onTimeFormatChanged}
+          >
+            {timeFormats.map(({ pattern, example }) => (
+              <option key={pattern} value={pattern}>
+                {example} ({pattern})
+              </option>
+            ))}
+          </Select>
+        </Row>
+
+        <Select
+          label={__DARWIN__ ? 'Number Format' : 'Number format'}
+          value={numberFormatToKey(this.props.selectedNumberFormat)}
+          onChange={this.onNumberFormatChanged}
+        >
+          {numberFormats.map(format => (
+            <option
+              key={numberFormatToKey(format)}
+              value={numberFormatToKey(format)}
+            >
+              {formatNumber(1234567.89, format)}
+            </option>
+          ))}
+        </Select>
+
+        <Checkbox
+          className="prefer-absolute-dates"
+          label="Prefer absolute dates over relative"
+          value={
+            this.props.preferAbsoluteDates
+              ? CheckboxValue.On
+              : CheckboxValue.Off
+          }
+          onChange={this.onPreferAbsoluteDatesChanged}
+        />
+      </div>
+    )
+  }
+
+  private renderDiffSettings() {
     const availableTabSizes: number[] = [1, 2, 3, 4, 5, 6, 8, 10, 12]
 
     return (
       <div className="advanced-section">
-        <h2 id="diff-heading">{'Diff'}</h2>
+        <h2 id="diff-heading">Diff</h2>
+
+        <Select
+          value={this.state.selectedDiffFontSize.toString()}
+          label={__DARWIN__ ? 'Font Size' : 'Font size'}
+          onChange={this.onSelectedDiffFontSizeChanged}
+        >
+          {availableDiffFontSizes.map(n => (
+            <option key={n} value={n}>
+              {n === defaultDiffFontSize ? `${n} (default)` : n}
+            </option>
+          ))}
+        </Select>
+
+        <Select
+          value={this.state.selectedDiffFontFamily}
+          label="Font"
+          onChange={this.onSelectedDiffFontFamilyChanged}
+        >
+          {this.state.availableDiffFontFamilies.map(fontFamily => (
+            <option key={fontFamily} value={fontFamily}>
+              {getDiffFontFamilyLabel(fontFamily)}
+            </option>
+          ))}
+        </Select>
 
         <Select
           value={this.state.selectedTabSize.toString()}
@@ -443,11 +613,11 @@ export class Appearance extends React.Component<
     return (
       <DialogContent className="appearance-tab">
         {this.renderSelectedTheme()}
+        {this.renderFormatting()}
         {this.renderRepositoryList()}
         {this.renderBranchSortOrder()}
-        {this.renderCommitDateDisplay()}
         {this.renderWorktreeVisibility()}
-        {this.renderSelectedTabSize()}
+        {this.renderDiffSettings()}
         {this.renderTitleBarStyleDropdown()}
       </DialogContent>
     )

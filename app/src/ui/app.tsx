@@ -30,6 +30,10 @@ import {
   isRepositoryWithGitHubRepository,
 } from '../models/repository'
 import { Branch } from '../models/branch'
+import {
+  getDiffFontFamilyCssValue,
+  getDiffLineHeight,
+} from '../models/diff-font'
 import { PreferencesTab } from '../models/preferences'
 import { findItemByAccessKey, itemIsSelectable } from '../models/app-menu'
 import { Account, isDotComAccount } from '../models/account'
@@ -214,6 +218,7 @@ import { RenameWorktreeDialog } from './worktrees/rename-worktree-dialog'
 import { DeleteWorktreeDialog } from './worktrees/delete-worktree-dialog'
 import { CantDeleteWorktreeUncommittedChanges } from './worktrees/cant-delete-worktree-uncommitted-changes-dialog'
 import { getEditorOverrideLabel } from '../models/editor-override'
+import { CantDeleteMainBranch } from './delete-branch/cant-delete-main-branch'
 
 const MinuteInMilliseconds = 1000 * 60
 const HourInMilliseconds = MinuteInMilliseconds * 60
@@ -1589,6 +1594,14 @@ export class App extends React.Component<IAppProps, IAppState> {
             onDismissed={onPopupDismissedFn}
           />
         )
+      case PopupType.CantDeleteMainBranch:
+        return (
+          <CantDeleteMainBranch
+            key="cant-delete-main-branch"
+            branchToDelete={popup.branchToDelete}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
       case PopupType.CantDeleteCurrentBranchUncommittedChanges:
         return (
           <CantDeleteCurrentBranchUncommittedChanges
@@ -1699,6 +1712,8 @@ export class App extends React.Component<IAppProps, IAppState> {
             selectedShell={this.state.selectedShell}
             selectedTheme={this.state.selectedTheme}
             selectedTabSize={this.state.selectedTabSize}
+            selectedDiffFontSize={this.state.selectedDiffFontSize}
+            selectedDiffFontFamily={this.state.selectedDiffFontFamily}
             useCustomEditor={this.state.useCustomEditor}
             customEditor={this.state.customEditor}
             useCustomShell={this.state.useCustomShell}
@@ -1716,8 +1731,10 @@ export class App extends React.Component<IAppProps, IAppState> {
             showDiffCheckMarks={this.state.showDiffCheckMarks}
             showBranchNameInRepoList={this.state.showBranchNameInRepoList}
             branchSortOrder={this.state.branchSortOrder}
-            commitDateDisplay={this.state.commitDateDisplay}
             copyPathNormalization={this.state.copyPathNormalization}
+            selectedCopilotModels={this.state.selectedCopilotModels}
+            copilotModels={this.state.copilotModels}
+            copilotAvailable={this.state.copilotAvailable}
           />
         )
       case PopupType.RepositorySettings: {
@@ -2530,6 +2547,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             emoji={emoji}
             onDismissed={onPopupDismissedFn}
             accounts={this.state.accounts}
+            preferAbsoluteDates={this.state.preferAbsoluteDates}
           />
         )
       }
@@ -3270,7 +3288,7 @@ export class App extends React.Component<IAppProps, IAppState> {
     if (repository) {
       const alias = repository instanceof Repository ? repository.alias : null
       icon = iconForRepository(repository)
-      title = alias ?? repository.name
+      title = (alias ?? repository.name) + this.getWorktreeSuffix(repository)
     } else if (this.state.repositories.length > 0) {
       icon = octicons.repo
       title = __DARWIN__ ? 'Select a Repository' : 'Select a repository'
@@ -3319,10 +3337,32 @@ export class App extends React.Component<IAppProps, IAppState> {
     )
   }
 
+  private getWorktreeSuffix(
+    repository: Repository | CloningRepository
+  ): string {
+    // If the worktrees dropdown is enabled, there is no need to add a suffix to the repository name
+    if (
+      this.state.showWorktrees ||
+      !(repository instanceof Repository) ||
+      !repository.isLinkedWorktree
+    ) {
+      return ''
+    }
+    const worktreeName = Path.basename(repository.path)
+    return ` (${worktreeName})`
+  }
+
   private onRepositoryToolbarButtonContextMenu = () => {
     const repository = this.state.selectedState?.repository
     if (repository === undefined) {
       return
+    }
+
+    const onAddNewWorktree = (repository: Repository) => {
+      this.props.dispatcher.showPopup({
+        type: PopupType.AddWorktree,
+        repository,
+      })
     }
 
     const onChangeRepositoryAlias = (repository: Repository) => {
@@ -3354,7 +3394,9 @@ export class App extends React.Component<IAppProps, IAppState> {
       onOpenInExternalEditor: this.openInExternalEditor,
       askForConfirmationOnRemoveRepository:
         this.state.askForConfirmationOnRepositoryRemoval,
+      showWorktreesInSidebar: this.state.showWorktreesInSidebar,
       externalEditorLabel: this.getExternalEditorLabel(repository),
+      onAddNewWorktree: onAddNewWorktree,
       onChangeRepositoryAlias: onChangeRepositoryAlias,
       onRemoveRepositoryAlias: onRemoveRepositoryAlias,
       onChangeRepositoryGroupName: onChangeRepositoryGroupName,
@@ -3737,12 +3779,12 @@ export class App extends React.Component<IAppProps, IAppState> {
           issuesStore={this.props.issuesStore}
           gitHubUserStore={this.props.gitHubUserStore}
           branchSortOrder={state.branchSortOrder}
-          commitDateDisplay={state.commitDateDisplay}
           onViewCommitOnGitHub={this.onViewCommitOnGitHub}
           imageDiffType={state.imageDiffType}
           hideWhitespaceInChangesDiff={state.hideWhitespaceInChangesDiff}
           hideWhitespaceInHistoryDiff={state.hideWhitespaceInHistoryDiff}
           showDiffCheckMarks={state.showDiffCheckMarks}
+          preferAbsoluteDates={state.preferAbsoluteDates}
           showSideBySideDiff={state.showSideBySideDiff}
           focusCommitMessage={state.focusCommitMessage}
           askForConfirmationOnDiscardChanges={
@@ -3835,13 +3877,19 @@ export class App extends React.Component<IAppProps, IAppState> {
       : this.state.currentTheme
 
     const currentTabSize = this.state.selectedTabSize
+    const appStyle = {
+      tabSize: currentTabSize,
+      '--diff-font-size': `${this.state.selectedDiffFontSize}px`,
+      '--diff-font-family': getDiffFontFamilyCssValue(
+        this.state.selectedDiffFontFamily
+      ),
+      '--diff-line-height': `${getDiffLineHeight(
+        this.state.selectedDiffFontSize
+      )}px`,
+    } as React.CSSProperties
 
     return (
-      <div
-        id="desktop-app-chrome"
-        className={className}
-        style={{ tabSize: currentTabSize }}
-      >
+      <div id="desktop-app-chrome" className={className} style={appStyle}>
         <AppTheme theme={currentTheme} />
         {this.renderTitlebar()}
         {this.state.showWelcomeFlow
@@ -3858,7 +3906,7 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private onSelectionChanged = (repository: Repository | CloningRepository) => {
-    this.props.dispatcher.selectRepository(repository, true, false)
+    this.props.dispatcher.selectRepository(repository, true)
     this.props.dispatcher.closeFoldout(FoldoutType.Repository)
   }
 

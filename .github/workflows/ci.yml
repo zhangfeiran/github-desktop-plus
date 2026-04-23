@@ -483,7 +483,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish AUR package github-desktop-plus-bin
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
         with:
           pkgname: github-desktop-plus-bin
           pkgbuild: ${{ env.PKGBUILD_BIN }}
@@ -499,7 +499,7 @@ jobs:
           ssh_keyscan_types: rsa,ecdsa,ed25519
 
       - name: Publish AUR package github-desktop-plus
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
         with:
           pkgname: github-desktop-plus
           pkgbuild: ${{ env.PKGBUILD }}
@@ -515,7 +515,7 @@ jobs:
           ssh_keyscan_types: rsa,ecdsa,ed25519
 
       - name: Publish AUR package github-desktop-plus-git
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
         with:
           pkgname: github-desktop-plus-git
           pkgbuild: ${{ env.PKGBUILD_GIT }}

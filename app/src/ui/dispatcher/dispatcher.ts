@@ -51,6 +51,10 @@ import {
 import { Shell } from '../../lib/shells'
 import { ILaunchStats, StatsStore } from '../../lib/stats'
 import { AppStore } from '../../lib/stores/app-store'
+import type {
+  CopilotFeature,
+  CopilotModelSelections,
+} from '../../lib/stores/copilot-store'
 import { RepositoryStateCache } from '../../lib/stores/repository-state-cache'
 import { getTipSha } from '../../lib/tip'
 
@@ -106,7 +110,7 @@ import { MergeTreeResult } from '../../models/merge'
 import { UncommittedChangesStrategy } from '../../models/uncommitted-changes-strategy'
 import { BranchSortOrder } from '../../models/branch-sort-order'
 import { ShowBranchNameInRepoListSetting } from '../../models/show-branch-name-in-repo-list'
-import { CommitDateDisplay } from '../../models/commit-date-display'
+import { DiffFontFamily } from '../../models/diff-font'
 import { CopyPathNormalization } from '../../models/copy-path-normalization'
 import { IStashEntry } from '../../models/stash-entry'
 import { WorkflowPreferences } from '../../models/workflow-preferences'
@@ -315,14 +319,9 @@ export class Dispatcher {
   /** Select the repository. */
   public selectRepository(
     repository: Repository | CloningRepository,
-    persistSelection: boolean = true,
-    followPreferredWorktree: boolean = true
+    persistSelection: boolean = true
   ): Promise<Repository | null> {
-    return this.appStore._selectRepository(
-      repository,
-      persistSelection,
-      followPreferredWorktree
-    )
+    return this.appStore._selectRepository(repository, persistSelection)
   }
 
   /** Change the selected section in the repository. */
@@ -1883,7 +1882,7 @@ export class Dispatcher {
   }
 
   /** Update the repository's path. */
-  private async updateRepositoryPath(
+  public async updateRepositoryPath(
     repository: Repository,
     path: string
   ): Promise<void> {
@@ -2387,6 +2386,8 @@ export class Dispatcher {
         )
       case RetryActionType.StashChanges:
         return this.stashChanges(retryAction.repository, retryAction.files)
+      case RetryActionType.ResetAndPull:
+        return this.resetAndPull(retryAction.repository)
       default:
         return assertNever(retryAction, `Unknown retry action: ${retryAction}`)
     }
@@ -2653,6 +2654,20 @@ export class Dispatcher {
     await this.appStore._loadStatus(repository)
   }
 
+  public async resetAndPull(repository: Repository): Promise<void> {
+    const retryAction: RetryAction = {
+      type: RetryActionType.ResetAndPull,
+      repository,
+    }
+
+    if (this.appStore._checkForUncommittedChanges(repository, retryAction)) {
+      return
+    }
+
+    await this.appStore._fetch(repository, FetchType.UserInitiatedTask)
+    await this.appStore._resetHardToUpstream(repository)
+  }
+
   public setConfirmDiscardStashSetting(value: boolean) {
     return this.appStore._setConfirmDiscardStashSetting(value)
   }
@@ -2707,6 +2722,20 @@ export class Dispatcher {
    */
   public setSelectedTabSize(tabSize: number) {
     return this.appStore._setSelectedTabSize(tabSize)
+  }
+
+  /**
+   * Set the application-wide diff font size
+   */
+  public setSelectedDiffFontSize(diffFontSize: number) {
+    return this.appStore._setSelectedDiffFontSize(diffFontSize)
+  }
+
+  /**
+   * Set the application-wide diff font family
+   */
+  public setSelectedDiffFontFamily(diffFontFamily: DiffFontFamily) {
+    return this.appStore._setSelectedDiffFontFamily(diffFontFamily)
   }
   /*
    * Set the title bar style for the application
@@ -4291,8 +4320,8 @@ export class Dispatcher {
     return this.appStore._updateBranchSortOrder(branchSortOrder)
   }
 
-  public setCommitDateDisplay(commitDateDisplay: CommitDateDisplay) {
-    return this.appStore._updateCommitDateDisplay(commitDateDisplay)
+  public setPreferAbsoluteDates(value: boolean) {
+    return this.appStore._setPreferAbsoluteDates(value)
   }
 
   public testPruneBranches() {
@@ -4355,5 +4384,23 @@ export class Dispatcher {
 
   public toggleChangesFilterVisibility() {
     this.appStore._toggleChangesFilterVisibility()
+  }
+
+  /** Set the selected Copilot model for a specific feature. */
+  public setSelectedCopilotModel(
+    feature: CopilotFeature,
+    model: string | null
+  ) {
+    return this.appStore._setSelectedCopilotModel(feature, model)
+  }
+
+  /** Replace all per-feature Copilot model selections at once. */
+  public setSelectedCopilotModels(models: CopilotModelSelections) {
+    return this.appStore._setSelectedCopilotModels(models)
+  }
+
+  /** Fetch the list of available Copilot models from the SDK. */
+  public fetchCopilotModels(): Promise<void> {
+    return this.appStore._fetchCopilotModels()
   }
 }

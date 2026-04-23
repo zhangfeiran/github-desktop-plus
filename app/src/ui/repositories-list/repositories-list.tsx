@@ -29,7 +29,6 @@ import { IAheadBehind } from '../../models/branch'
 import { ShowBranchNameInRepoListSetting } from '../../models/show-branch-name-in-repo-list'
 import { normalizePath } from '../../lib/helpers/path'
 import { ClickSource } from '../lib/list'
-import { getRepositoryType } from '../../lib/git/rev-parse'
 import { FoldoutType } from '../../lib/app-state'
 import { pruneWorktrees } from '../../lib/git/worktree'
 import { getEditorOverrideLabel } from '../../models/editor-override'
@@ -397,13 +396,14 @@ export class RepositoriesList extends React.Component<
       return
     }
 
-    const repositoryType = await getRepositoryType(worktreePath)
-    if (repositoryType.kind !== 'regular') {
-      throw new Error(`${worktreePath} isn't a Git repository.`)
+    const addedRepos = await this.props.dispatcher.addRepositories(
+      [worktreePath],
+      item.sourceRepository.login
+    )
+    if (addedRepos.length > 0) {
+      await this.props.dispatcher.selectRepository(addedRepos[0])
+      await this.props.dispatcher.closeFoldout(FoldoutType.Repository)
     }
-
-    await this.props.dispatcher.selectRepository(item.repository, false)
-    await this.props.dispatcher.closeFoldout(FoldoutType.Repository)
   }
 
   private onRemoveLinkedWorktree = (item: IRepositoryListItem) => {
@@ -423,7 +423,7 @@ export class RepositoriesList extends React.Component<
     const storedRepositoryToRemove =
       item.repository instanceof Repository && !item.isVirtualLinkedWorktree
         ? item.repository
-        : undefined
+        : null
 
     if (repository === null) {
       return
@@ -458,8 +458,12 @@ export class RepositoriesList extends React.Component<
       return
     }
 
-    await pruneWorktrees(repository)
-    await this.props.dispatcher.refreshRepository(repository)
+    try {
+      await pruneWorktrees(repository)
+      await this.props.dispatcher.refreshRepository(repository)
+    } catch (error) {
+      this.props.dispatcher.postError(error)
+    }
   }
 
   private onItemContextMenu = (
@@ -478,6 +482,7 @@ export class RepositoriesList extends React.Component<
       onOpenInExternalEditor: this.props.onOpenInExternalEditor,
       askForConfirmationOnRemoveRepository:
         this.props.askForConfirmationOnRemoveRepository,
+      showWorktreesInSidebar: this.props.showWorktreesInSidebar,
       isLinkedWorktreeRow:
         item.isVirtualLinkedWorktree ||
         (item.repository instanceof Repository &&
@@ -485,6 +490,8 @@ export class RepositoriesList extends React.Component<
       isVirtualLinkedWorktreeRow: item.isVirtualLinkedWorktree,
       isPrunableWorktreeRow: item.isPrunableWorktree,
       externalEditorLabel: this.getExternalEditorLabel(item.repository),
+      onAddNewWorktree: this.onAddNewWorktree,
+      onRenameWorktree: this.onRenameWorktree,
       onChangeRepositoryAlias: this.onChangeRepositoryAlias,
       onRemoveRepositoryAlias: this.onRemoveRepositoryAlias,
       onChangeRepositoryGroupName: this.onChangeRepositoryGroupName,
@@ -494,9 +501,7 @@ export class RepositoriesList extends React.Component<
       shellLabel: this.props.shellLabel,
       onCopyRepoPath: path => this.props.dispatcher.copyPathToClipboard(path),
       onPruneStaleWorktrees: () => {
-        void this.onPruneStaleWorktrees(item).catch(error =>
-          this.props.dispatcher.postError(error)
-        )
+        this.onPruneStaleWorktrees(item)
       },
     })
 
@@ -582,7 +587,7 @@ export class RepositoriesList extends React.Component<
     return (
       <>
         <Button
-          className="repo-list-button new-repository"
+          className="repo-list-button new-repository button-with-icon"
           onClick={this.onNewRepositoryButtonClick}
           ariaExpanded={this.state.newRepositoryMenuExpanded}
           onKeyDown={this.onNewRepositoryButtonKeyDown}
@@ -593,7 +598,7 @@ export class RepositoriesList extends React.Component<
 
         {this.state.pullingRepositories ? (
           <Button
-            className="repo-list-button pull-repositories-spin"
+            className="repo-list-button pull-repositories-spin button-with-icon"
             disabled={true}
           >
             <Octicon symbol={syncClockwise} className="spin" />
@@ -601,7 +606,7 @@ export class RepositoriesList extends React.Component<
           </Button>
         ) : (
           <Button
-            className="repo-list-button pull-repositories"
+            className="repo-list-button pull-repositories button-with-icon"
             onClick={this.onPullRepositoriesButtonClick}
           >
             <Octicon symbol={octicons.arrowDown} />
@@ -687,6 +692,21 @@ export class RepositoriesList extends React.Component<
 
   private onCreateNewRepository = () => {
     this.props.dispatcher.showPopup({ type: PopupType.CreateRepository })
+  }
+
+  private onAddNewWorktree = (repository: Repository) => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.AddWorktree,
+      repository,
+    })
+  }
+
+  private onRenameWorktree = (repository: Repository) => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.RenameWorktree,
+      repository,
+      worktreePath: repository.path,
+    })
   }
 
   private onChangeRepositoryAlias = (repository: Repository) => {

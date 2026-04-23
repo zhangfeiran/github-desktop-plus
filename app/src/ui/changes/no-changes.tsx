@@ -40,6 +40,7 @@ import * as octicons from '../octicons/octicons.generated'
 import { OcticonSymbol } from '../octicons/octicons.generated'
 import { stash } from '../octicons'
 import { assertNever } from '../../lib/fatal-error'
+import { formatNumber } from '../../lib/format-number'
 
 function formatMenuItemLabel(text: string) {
   if (__WIN32__ || __LINUX__) {
@@ -571,6 +572,7 @@ export class NoChanges extends React.Component<
         discoverabilityContent={discoverabilityContent}
         buttonText="Publish branch"
         icon={octicons.gitBranch}
+        extraIconClasses="mt"
         type="primary"
         disabled={!menuItem.enabled}
         onClick={this.onPublishBranchClicked}
@@ -611,7 +613,7 @@ export class NoChanges extends React.Component<
       </>
     )
 
-    const title = `Pull ${aheadBehind.behind} ${
+    const title = `Pull ${formatNumber(aheadBehind.behind)} ${
       aheadBehind.behind === 1 ? 'commit' : 'commits'
     } from the ${remote.name} remote`
 
@@ -669,14 +671,16 @@ export class NoChanges extends React.Component<
       itemsToPushDescriptions.push(
         aheadBehind.ahead === 1
           ? '1 local commit'
-          : `${aheadBehind.ahead} local commits`
+          : `${formatNumber(aheadBehind.ahead)} local commits`
       )
     }
 
     if (tagsToPush !== null && tagsToPush.length > 0) {
       itemsToPushTypes.push('tags')
       itemsToPushDescriptions.push(
-        tagsToPush.length === 1 ? '1 tag' : `${tagsToPush.length} tags`
+        tagsToPush.length === 1
+          ? '1 tag'
+          : `${formatNumber(tagsToPush.length)} tags`
       )
     }
 

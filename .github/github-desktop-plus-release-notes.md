@@ -1,107 +1,29 @@
-GitHub Desktop Plus v3.5.7
+GitHub Desktop Plus v3.5.8
 
-Upstream: [GitHub Desktop 3.5.7 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.7)
-
----
-
-### Changes with respect to v3.5.7-beta3:
-
-## **Changes and improvements:**
-
-- "Update from main" (Ctrl+Shift+U / Cmd+Shift+U) now pulls before merging, to ensure you have the latest changes instead of merging a stale main branch. Thank you @guplem!
-
-- Added the option to display the resolved commit author more prominently in the new commit box. To enable this, go to **File > Options > Git > Author**. Thank you @voiduin!
-
-- "Repository settings" > "Git config" now displays the resolved effective identity (author) for this repository. Thank you @voiduin!
-
-- When using Git Worktrees, the worktree dropdown selector will now remember the last selected worktree for each repository, instead of always defaulting to the main worktree when switching between repositories. Thank you @coocoo1112!
-
-- **Linux:** Added *keywords* to the .desktop file to improve discoverability in application launchers. Thank you @whodgson!
-
-- Improved keyboard navigation in the "Changes" tab by automatically focusing the first file in the list when switching to the tab.
-
-- Added the option to normalize the file separators when copying file paths from the context menu. To enable this, go to **File > Options > Integrations**.
-
-- The sorting of repository groups is now case-insensitive. This was done to prevent repo groups from jumping positions when the owner name starts with an uppercase letter but the slug is lowercase.
-
-- When adding a custom external editor for a repository, the arguments field is now pre-populated with "%TARGET_PATH%", which is required for the editor to work correctly.
-
-
-## **Fixes:**
-
-- **Linux:** Fixed *"fail to read /dev/stdin"* error when using *push hooks* with the new Git hook integration in GitHub Desktop. Thank you @ignatremizov!
-
-- **macOS:** Fixed an error when manually installing the CLI (`github-desktop-plus-cli`) due to an outdated path. Thank you @gingerbeardman!
-
-- **Windows:** Fixed a visual bug where the "fetching" spinner would remain indefinitely when clicking away from the app while it was fetching. Thank you @Jacko1394!
-
-
-#### We had a ton of new PR contributors in this release, thank you all for your help! ❤️
-
+Upstream: [GitHub Desktop 3.5.8 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.8)
 
 ---
 
-### Changes with respect to v3.5.6:
-
 ## **Changes and improvements:**
 
-- We now support **multiple app windows**! To use them, either select **File > Open new window**, use the keyboard shortcut `Ctrl+Alt+N` (`Cmd+Option+N` on macOS), or right-click on a repository in the repo list and select **Open repository in new window**. Thank you @hewigovens!
+- [#105] We now support displaying **worktrees in the repository sidebar** list. Thank you @ignatremizov!  
+  To enable it, go to `File` > `Options` > `Appearance` and check the box for "Show worktrees in repository sidebar".
 
-- **macOS**: We now support Homebrew as the recommended method for installing GitHub Desktop Plus on macOS.
-  To install, simply run `brew install pol-rivero/tap/github-desktop-plus`.
+- [#129] When the current local branch is ahead and behind the remote branch, added a new **Reset and pull** option to the pull dropdown. This will discard your local commits and pull the latest changes from the remote branch (similar to the existing "Force push" option but the other way around).
 
-- "Update from main" (Ctrl+Shift+U / Cmd+Shift+U) now pulls before merging, to ensure you have the latest changes instead of merging a stale main branch. Thank you @guplem!
+- [#131] You can now change the font family and size that will be used in the diff view. Thank you @kingdo10!  
+  To change the font settings, go to `File` > `Options` > `Appearance`.
 
-- Branch lists are now sorted by *"Last modified"* by default. You can return to an alphabetical sort order by changing the "Sort branches" setting in the Appearance settings. Thanks @kurtextrem!
+- [#126] When creating a new worktree, [.worktreeinclude](https://code.claude.com/docs/en/common-workflows#copy-gitignored-files-to-worktrees) files are now respected, and the files specified in them will be copied to the new worktree.  
 
-- Added the option to display the resolved commit author more prominently in the new commit box. To enable this, go to **File > Options > Git > Author**. Thank you @voiduin!
-
-- "Repository settings" > "Git config" now displays the resolved effective identity (author) for this repository. Thank you @voiduin!
-
-- When using Git Worktrees, the worktree dropdown selector will now remember the last selected worktree for each repository, instead of always defaulting to the main worktree when switching between repositories. Thank you @coocoo1112!
-
-- Solved merge conflicts are now automatically staged when switching branches. This avoids the error message "you need to resolve your current index first" when trying to switch branches after solving merge conflicts.
-
-- **Linux:** Added *keywords* to the .desktop file to improve discoverability in application launchers. Thank you @whodgson!
-
-- **Debian / Ubuntu / Linux Mint / Pop!_OS / Zorin OS**: The `sources.list` file now specifies the supported architectures, which should prevent warnings when running `apt`. Thanks @arfshl!
-
-- Improved keyboard navigation in the "Changes" tab by automatically focusing the first file in the list when switching to the tab.
-
-- The changes list in a commit now supports *multi-select* (`Ctrl+Click`, `Shift+Click`) to allow copying several file paths at once.
-
-- Added the option to see *absolute dates* in the commit history. You can enable this in the Appearance settings.
-
-- Added the option to normalize the file separators when copying file paths from the context menu. To enable this, go to **File > Options > Integrations**.
-
-- The sorting of repository groups is now case-insensitive. This was done to prevent repo groups from jumping positions when the owner name starts with an uppercase letter but the slug is lowercase.
-
-- When adding a custom external editor for a repository, the arguments field is now pre-populated with "%TARGET_PATH%", which is required for the editor to work correctly.
-
-- Improved the error message when trying to remove the currently checked out branch but the main branch is in use by another worktree.
-
-- Allow users to hide the "Compare" tab in the commit list.  
-  While I wouldn't recommend hiding it, if all your repositories have a single branch or you just never use this feature, you can now remove it in **File > Options > Appearance**.
-
+- Show a frendlier error message when trying to delete a worktree or branch with uncommitted changes.
 
 ## **Fixes:**
 
-- **macOS**: The x86 (Intel) build of the app should now launch correctly.
+- Worktrees that contain submodules can now be deleted without errors.
 
-- The Winget package now uses the correct Windows app version. This should fix the issue where Winget is constantly trying to update GitHub Desktop Plus to the same version.
+- The "Pull all" button now correctly pulls changes in linked worktrees as well.
 
-- Fixed a crash when attempting to add a repository with an SSH remote URL that doesn't start with `git@`. Thank you @coocoo1112!
+- [#130] Fixed a visual bug where the hovered commit was not highlighted when using drag and drop to squash commits.
 
-- **Linux:** Fixed *"fail to read /dev/stdin"* error when using *push hooks* with the new Git hook integration in GitHub Desktop. Thank you @ignatremizov!
-
-- **macOS:** Fixed an error when manually installing the CLI (`github-desktop-plus-cli`) due to an outdated path. Thank you @gingerbeardman!
-
-- **Windows:** Fixed a visual bug where the "fetching" spinner would remain indefinitely when clicking away from the app while it was fetching. Thank you @Jacko1394!
-
-- Fixed a problem in the welcome flow where the text in the Enterprise URL textbox appeared reversed. Thank you @coocoo1112!
-
-- Fixed the infamous *"cannot read property 'path' of undefined"* error when launching the terminal (Ctrl+`) without configuring a terminal first.
-
-- Updated to a newer Electron version, which fixes some rendering issues related to screen brightness.
-
-- **Windows / macOS**: Removed an incorrect update error message in the "About" dialog.
+- Fixed a problem where some context menus (*"Open with ..."*) displayed the globally configured external editor name instead of the repository-specific one.

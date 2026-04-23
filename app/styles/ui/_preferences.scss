@@ -55,6 +55,15 @@
     }
   }
 
+  .formatting-section {
+    margin-top: var(--spacing);
+
+    .prefer-absolute-dates {
+      margin-top: var(--spacing);
+      margin-bottom: var(--spacing);
+    }
+  }
+
   .accounts-tab {
     h2:not(:first-child) {
       margin-top: var(--spacing-double);
@@ -141,15 +150,12 @@
 
   .theme-selector {
     display: flex;
-    flex-wrap: wrap;
     margin: 0 calc(var(--spacing-half) * -1);
 
     .radio-button-component {
       display: block;
-      flex-shrink: 0;
       padding: var(--spacing-half);
       position: relative;
-      width: 33%;
       margin: 0;
 
       label {
@@ -204,6 +210,9 @@
         }
       }
     }
+  }
+  select {
+    margin-bottom: var(--spacing-half);
   }
 }
 

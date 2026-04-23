@@ -31,7 +31,7 @@ interface IWorktreeListProps {
   readonly onFilterTextChanged: (text: string) => void
   readonly filterText: string
   readonly canCreateNewWorktree: boolean
-  readonly onCreateNewWorktree?: () => void
+  readonly onAddNewWorktree: () => void
   readonly onWorktreeContextMenu?: (
     worktree: WorktreeEntry,
     event: React.MouseEvent<HTMLDivElement>
@@ -95,13 +95,13 @@ export class WorktreeList extends React.Component<IWorktreeListProps> {
   }
 
   private onRenderNewButton = () => {
-    if (!this.props.canCreateNewWorktree || !this.props.onCreateNewWorktree) {
+    if (!this.props.canCreateNewWorktree || !this.props.onAddNewWorktree) {
       return null
     }
     return (
       <Button
-        className="new-worktree-button"
-        onClick={this.props.onCreateNewWorktree}
+        className="new-worktree-button button-with-icon"
+        onClick={this.props.onAddNewWorktree}
       >
         <Octicon symbol={octicons.plus} className="mr" />
         {__DARWIN__ ? 'New Worktree' : 'New worktree'}

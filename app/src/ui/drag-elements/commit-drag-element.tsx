@@ -191,7 +191,7 @@ export class CommitDragElement extends React.Component<
             emoji={emoji}
             showUnpushedIndicator={false}
             accounts={this.props.accounts}
-            showAbsoluteDates={false}
+            preferAbsoluteDates={false}
           />
         </div>
         {this.renderDragToolTip()}

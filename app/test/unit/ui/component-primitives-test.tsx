@@ -68,7 +68,8 @@ describe('component primitives', () => {
 
     assert.deepEqual(
       badges.map(badge => badge.textContent),
-      ['12', '300+']
+      // If enableFormattingPreferences() is true, the count is not currently capped at 300
+      ['12', '301']
     )
   })
 })
