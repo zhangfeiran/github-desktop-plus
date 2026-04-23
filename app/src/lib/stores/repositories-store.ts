@@ -688,6 +688,7 @@ export class RepositoriesStore extends TypedBaseStore<
       oldRepo.defaultBranch,
       oldRepo.workflowPreferences,
       oldRepo.customEditorOverride,
+      newRepo.gitSourceOverride,
       newRepo.isTutorialRepository,
       oldRepo.overrideLogin
     )

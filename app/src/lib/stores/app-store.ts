@@ -8753,8 +8753,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     const selectedRepository =
-      (await this._selectRepository(targetRepository, true, false)) ??
-      targetRepository
+      (await this._selectRepository(targetRepository, true)) ?? targetRepository
     await this._refreshRepository(selectedRepository)
 
     return selectedRepository
