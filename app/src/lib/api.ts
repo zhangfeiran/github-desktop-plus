@@ -28,7 +28,7 @@ import {
   suppressCertificateErrorFor,
 } from './suppress-certificate-error'
 import { HttpStatusCode } from './http-status-code'
-import { CopilotError } from './copilot-error'
+import { CopilotError, parseCopilotPaymentRequiredError } from './copilot-error'
 import { BypassReasonType } from '../ui/secret-scanning/bypass-push-protection-dialog'
 import { assertNever } from './fatal-error'
 
@@ -76,14 +76,6 @@ type CopilotChatCompletionResponse = {
       readonly content: string
     }
   }>
-}
-
-type IBitbucketAPIPage<T> = {
-  readonly page: number
-  readonly pagelen: number
-  readonly size: number
-  readonly next?: string
-  readonly values: ReadonlyArray<T>
 }
 
 /**
@@ -532,31 +524,6 @@ export interface IAPIIssue {
   readonly title: string
   readonly state: 'open' | 'closed'
   readonly updated_at: string
-}
-export interface IBitbucketAPIIssue {
-  readonly id: number
-  readonly title: string
-  readonly state:
-    | 'submitted'
-    | 'new'
-    | 'open'
-    | 'resolved'
-    | 'on hold'
-    | 'invalid'
-    | 'duplicate'
-    | 'wontfix'
-    | 'closed'
-  readonly updated_on: string
-}
-function toIAPIIssue(issue: IBitbucketAPIIssue): IAPIIssue {
-  return {
-    number: issue.id,
-    title: issue.title,
-    state: ['submitted', 'new', 'open'].includes(issue.state)
-      ? 'open'
-      : 'closed',
-    updated_at: issue.updated_on,
-  }
 }
 
 /** The combined state of a ref. */
@@ -1333,7 +1300,12 @@ function getNextPagePathFromLink(response: Response): string | null {
  * that obviously took 32 requests. With this new regime it
  * would take 7.
  */
-export function getNextPagePathWithIncreasingPageSize(response: Response) {
+export function getNextPagePathWithIncreasingPageSize(
+  response: Response,
+  perPageParamName: string,
+  pageParamName: string,
+  maxResults: number
+) {
   const nextPath = getNextPagePathFromLink(response)
 
   if (!nextPath) {
@@ -1341,9 +1313,9 @@ export function getNextPagePathWithIncreasingPageSize(response: Response) {
   }
 
   const { pathname, query } = URL.parse(nextPath, true)
-  const { per_page, page } = query
+  const { [perPageParamName]: perPage, [pageParamName]: page } = query
 
-  const pageSize = typeof per_page === 'string' ? parseInt(per_page, 10) : NaN
+  const pageSize = typeof perPage === 'string' ? parseInt(perPage, 10) : NaN
   const pageNumber = typeof page === 'string' ? parseInt(page, 10) : NaN
 
   if (!pageSize || !pageNumber) {
@@ -1357,16 +1329,16 @@ export function getNextPagePathWithIncreasingPageSize(response: Response) {
   // Number of received items thus far
   const received = currentPage * pageSize
 
-  // Can't go above 100, that's the max the API will allow.
-  const nextPageSize = Math.min(100, pageSize * 2)
+  // Can't go above maxResults, that's the max the API will allow.
+  const nextPageSize = Math.min(maxResults, pageSize * 2)
 
   // Have we received exactly the amount of items
   // such that doubling the page size and loading the
   // second page would seamlessly fit? No sense going
   // above 100 since that's the max the API supports
   if (pageSize !== nextPageSize && received % nextPageSize === 0) {
-    query.per_page = `${nextPageSize}`
-    query.page = `${received / nextPageSize + 1}`
+    query[perPageParamName] = `${nextPageSize}`
+    query[pageParamName] = `${received / nextPageSize + 1}`
     return URL.format({ pathname, query })
   }
 
@@ -1411,6 +1383,10 @@ export interface IAPICreatePushProtectionBypassResponse {
   token_type: string
 }
 
+interface IBitbucketAPIWorkspaceAccess {
+  administrator: boolean
+  workspace: IBitbucketAPIWorkspace
+}
 interface IBitbucketAPIWorkspace {
   uuid: string
   name: string
@@ -1514,6 +1490,22 @@ export class API {
   }
   public getExpiresAt() {
     return 0
+  }
+
+  protected get maxPerPage() {
+    return 100
+  }
+  protected get perPageParamName() {
+    return 'per_page'
+  }
+  protected get pageParamName() {
+    return 'page'
+  }
+  protected get paginatorNextPage() {
+    return ''
+  }
+  protected get paginatorValues() {
+    return ''
   }
 
   /**
@@ -1916,7 +1908,13 @@ export class API {
         // ramp up the page size (see getNextPagePathWithIncreasingPageSize)
         // if it turns out there's a lot of updated PRs.
         perPage: 10,
-        getNextPagePath: getNextPagePathWithIncreasingPageSize,
+        getNextPagePath: response =>
+          getNextPagePathWithIncreasingPageSize(
+            response,
+            this.perPageParamName,
+            this.pageParamName,
+            this.maxPerPage
+          ),
         continue(results) {
           if (results.length >= maxResults) {
             throw new MaxResultsError('got max pull requests, aborting')
@@ -2065,7 +2063,7 @@ export class API {
     reloadCache: boolean = false
   ): Promise<IAPIRefStatus | null> {
     const safeRef = encodeURIComponent(ref)
-    const path = `repos/${owner}/${name}/commits/${safeRef}/status?per_page=100`
+    const path = `repos/${owner}/${name}/commits/${safeRef}/status?${this.perPageParamName}=${this.maxPerPage}`
     const response = await this.ghRequest('GET', path, {
       reloadCache,
     })
@@ -2091,7 +2089,7 @@ export class API {
     reloadCache: boolean = false
   ): Promise<IAPIRefCheckRuns | null> {
     const safeRef = encodeURIComponent(ref)
-    const path = `repos/${owner}/${name}/commits/${safeRef}/check-runs?per_page=100`
+    const path = `repos/${owner}/${name}/commits/${safeRef}/check-runs?${this.perPageParamName}=${this.maxPerPage}`
     const headers = {
       Accept: 'application/vnd.github.antiope-preview+json',
     }
@@ -2449,8 +2447,8 @@ export class API {
    */
   protected async fetchAll<T>(path: string, options?: IFetchAllOptions<T>) {
     const buf = new Array<T>()
-    const opts: IFetchAllOptions<T> = { perPage: 100, ...options }
-    const params = { per_page: `${opts.perPage}` }
+    const opts: IFetchAllOptions<T> = { perPage: this.maxPerPage, ...options }
+    const params = { [this.perPageParamName]: `${opts.perPage}` }
 
     let nextPath: string | null = urlWithQueryString(path, params)
     do {
@@ -2460,14 +2458,8 @@ export class API {
         return buf
       }
 
-      let page = await parsedResponse<ReadonlyArray<T> | IBitbucketAPIPage<T>>(
-        response
-      )
-      let paginatorNext: string | null | false = false
-      if ('page' in page) {
-        paginatorNext = page.next ?? null
-        page = page.values
-      }
+      const responseObject = await parsedResponse(response)
+      const { paginatorNext, page } = this.parsePaginator<T>(responseObject)
       if (page) {
         buf.push(...page)
         opts.onPage?.(page)
@@ -2483,6 +2475,44 @@ export class API {
     } while (nextPath && (!opts.continue || (await opts.continue(buf))))
 
     return buf
+  }
+
+  protected parsePaginator<T>(responseObject: unknown): {
+    paginatorNext: string | null | false
+    page: ReadonlyArray<T>
+  } {
+    if (Array.isArray(responseObject)) {
+      return {
+        paginatorNext: false,
+        page: responseObject,
+      }
+    }
+    if (this.isPaginatorResponse(responseObject)) {
+      return {
+        paginatorNext:
+          (responseObject[this.paginatorNextPage] as string | undefined) ||
+          null,
+        page: (responseObject[this.paginatorValues] as ReadonlyArray<T>) || [],
+      }
+    }
+    console.warn(
+      "Response object doesn't match expected paginator format, falling back to Link header parsing.",
+      responseObject
+    )
+    return {
+      paginatorNext: false,
+      page: [],
+    }
+  }
+
+  private isPaginatorResponse(responseObject: unknown): responseObject is {
+    [key: string]: unknown
+  } {
+    return (
+      responseObject !== null &&
+      typeof responseObject === 'object' &&
+      this.paginatorValues in responseObject
+    )
   }
 
   /** Make an authenticated request to the client's endpoint with its token. */
@@ -2604,10 +2634,10 @@ export class API {
         )
       }
     } else if (response.status === HttpStatusCode.PaymentRequired) {
-      const errorMsg =
-        (await response.text()) || 'You have reached your quota limit.'
-
-      throw new CopilotError(errorMsg, response.status)
+      throw parseCopilotPaymentRequiredError(
+        await response.text(),
+        response.headers.get('Retry-After')
+      )
     } else if (response.status === HttpStatusCode.Unauthorized) {
       throw new CopilotError(
         'Unauthorized: error with authentication.',
@@ -2928,6 +2958,23 @@ export class BitbucketAPI extends API {
     return this.expiresAt?.getTime() ?? 0
   }
 
+  // https://developer.atlassian.com/cloud/bitbucket/rest/intro/#pagination
+  protected override get maxPerPage() {
+    return 100
+  }
+  protected override get perPageParamName() {
+    return 'pagelen'
+  }
+  protected override get pageParamName() {
+    return 'page'
+  }
+  protected override get paginatorNextPage() {
+    return 'next'
+  }
+  protected override get paginatorValues() {
+    return 'values'
+  }
+
   protected override async refreshToken() {
     try {
       const response = await fetch(
@@ -2985,7 +3032,9 @@ export class BitbucketAPI extends API {
       }
     )
     try {
-      const prs = await this.fetchAll<IBitbucketAPIPullRequest>(url)
+      const prs = await this.fetchAll<IBitbucketAPIPullRequest>(url, {
+        perPage: 50,
+      })
       return prs.map(toIAPIPullRequest)
     } catch (e) {
       log.warn(`failed fetching open PRs for repository ${owner}/${name}`, e)
@@ -3010,17 +3059,16 @@ export class BitbucketAPI extends API {
 
     try {
       const prs = await this.fetchAll<IBitbucketAPIPullRequest>(url, {
-        // We use a page size smaller than our default 100 here because we
-        // expect that the majority use case will return much less than
-        // 100 results. Given that as long as _any_ PR has changed we'll
-        // get the full list back (PRs doesn't support ?since=) we want
-        // to keep this number fairly conservative in order to not use
-        // up bandwidth needlessly while balancing it such that we don't
-        // have to use a lot of requests to update our database. We then
-        // ramp up the page size (see getNextPagePathWithIncreasingPageSize)
-        // if it turns out there's a lot of updated PRs.
+        // See explaination for perPage=10 in API.fetchUpdatedPullRequests
+        // Max page in Bitbucket API for PRs is 50: https://jira.atlassian.com/browse/BCLOUD-9659
         perPage: 10,
-        getNextPagePath: getNextPagePathWithIncreasingPageSize,
+        getNextPagePath: response =>
+          getNextPagePathWithIncreasingPageSize(
+            response,
+            this.perPageParamName,
+            this.pageParamName,
+            50
+          ),
         continue(results) {
           if (results.length >= maxResults) {
             throw new MaxResultsError('got max pull requests, aborting')
@@ -3124,35 +3172,10 @@ export class BitbucketAPI extends API {
     return null
   }
 
-  public override async fetchIssues(
-    owner: string,
-    name: string,
-    state: 'open' | 'closed' | 'all',
-    _since: Date | null
-  ): Promise<ReadonlyArray<IAPIIssue>> {
-    // TODO: I don't have any way to test this since we don't use Bitbucket's built in issue tracker. Feel free to implement date filtering (since) if you need it.
-    const QUERY_ALL = ''
-    const QUERY_OPEN = 'state="new" OR state="open" OR state="submitted"'
-    const QUERY_CLOSED =
-      'state="resolved" OR state="invalid" OR state="on hold" OR state="duplicate" OR state="wontfix" OR state="closed"'
-    const query =
-      state === 'all' ? QUERY_ALL : state === 'open' ? QUERY_OPEN : QUERY_CLOSED
-
-    const params: { [key: string]: string } = {
-      q: query,
-    }
-
-    const url = urlWithQueryString(
-      `repositories/${owner}/${name}/issues`,
-      params
-    )
-    try {
-      const issues = await this.fetchAll<IBitbucketAPIIssue>(url)
-      return issues.map(toIAPIIssue)
-    } catch (e) {
-      log.warn(`fetchIssues: failed for repository ${owner}/${name}`, e)
-      throw e
-    }
+  public override async fetchIssues(): Promise<ReadonlyArray<IAPIIssue>> {
+    // The Bitbucket issue tracker has been deprecated and the API doesn't seem to support fetching Jira issues.
+    // https://community.atlassian.com/forums/Bitbucket-articles/Announcing-sunset-of-Bitbucket-Issues-and-Wikis/ba-p/3193882
+    return []
   }
 
   public override async fetchCombinedRefStatus(
@@ -3215,9 +3238,9 @@ export class BitbucketAPI extends API {
     callback: (repos: ReadonlyArray<IAPIRepository>) => void
   ) {
     try {
-      const workspaces = await this.getAllWorkspaces()
-      for (const workspace of workspaces) {
-        const path = `repositories/${workspace.uuid}`
+      const workspaceAccessList = await this.getAllWorkspaces()
+      for (const workspaceAccess of workspaceAccessList) {
+        const path = `repositories/${workspaceAccess.workspace.uuid}`
         const repos = await this.fetchAll<IBitbucketAPIRepository>(path)
         callback(repos.map(toIAPIRepository))
       }
@@ -3241,10 +3264,10 @@ export class BitbucketAPI extends API {
     return undefined
   }
 
-  private async getAllWorkspaces(): Promise<IBitbucketAPIWorkspace[]> {
+  private async getAllWorkspaces(): Promise<IBitbucketAPIWorkspaceAccess[]> {
     try {
-      const path = 'workspaces'
-      return await this.fetchAll<IBitbucketAPIWorkspace>(path)
+      const path = 'user/workspaces'
+      return await this.fetchAll<IBitbucketAPIWorkspaceAccess>(path)
     } catch (err) {
       log.debug(`Failed fetching workspaces`, err)
       return []
@@ -3294,6 +3317,23 @@ export class GitLabAPI extends API {
   }
   public override getExpiresAt() {
     return this.expiresAt?.getTime() ?? 0
+  }
+
+  // https://docs.gitlab.com/api/rest/#offset-based-pagination
+  protected override get maxPerPage() {
+    return 100
+  }
+  protected override get perPageParamName() {
+    return 'per_page'
+  }
+  protected override get pageParamName() {
+    return 'page'
+  }
+  protected override get paginatorNextPage() {
+    return ''
+  }
+  protected override get paginatorValues() {
+    return ''
   }
 
   protected override async refreshToken() {
@@ -3390,7 +3430,13 @@ export class GitLabAPI extends API {
     try {
       const mrs = await this.fetchAll<IGitLabAPIMergeRequest>(url, {
         perPage: 10,
-        getNextPagePath: getNextPagePathWithIncreasingPageSize,
+        getNextPagePath: response =>
+          getNextPagePathWithIncreasingPageSize(
+            response,
+            this.perPageParamName,
+            this.pageParamName,
+            this.maxPerPage
+          ),
         continue(results) {
           if (results.length >= maxResults) {
             throw new MaxResultsError('got max merge requests, aborting')

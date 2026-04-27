@@ -357,14 +357,12 @@ export function reportUncaughtException(error: Error) {
   _reportUncaughtException(getIpcFriendlyError(error))
 }
 
-const _sendErrorReport = sendProxy('send-error-report', 3)
-
 export function sendErrorReport(
   error: Error,
   extra: Record<string, string>,
   nonFatal: boolean
 ) {
-  _sendErrorReport(getIpcFriendlyError(error), extra, nonFatal)
+  console.error('ERROR', error, extra, nonFatal)
 }
 
 export const updateAccounts = sendProxy('update-accounts', 1)

@@ -18,6 +18,7 @@ export enum BannerType {
   ConflictsFound = 'ConflictsFound',
   OSVersionNoLongerSupported = 'OSVersionNoLongerSupported',
   WorktreesEnabled = 'WorktreesEnabled',
+  NameChangeSuggestion = 'NameChangeSuggestion',
 }
 
 export type Banner =
@@ -124,3 +125,4 @@ export type Banner =
     }
   | { readonly type: BannerType.OSVersionNoLongerSupported }
   | { readonly type: BannerType.WorktreesEnabled }
+  | { readonly type: BannerType.NameChangeSuggestion }

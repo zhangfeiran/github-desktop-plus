@@ -72,8 +72,15 @@ import { findDOMNode } from 'react-dom'
 import escapeRegExp from 'lodash/escapeRegExp'
 import ReactDOM from 'react-dom'
 import { AriaLiveContainer } from '../accessibility/aria-live-container'
+import { DiffMinimap } from './diff-minimap'
+import { getNumber, setNumber } from '../../lib/local-storage'
 
 const DefaultRowHeight = 20
+
+const minimapWidthKey = 'diff-minimap-width'
+const DefaultMinimapWidth = 88
+const MinMinimapWidth = 40
+const MaxMinimapWidth = 200
 
 let oldWidth = 0
 let oldHeight = 0
@@ -147,6 +154,15 @@ interface ISideBySideDiffProps {
    * Whether we'll show the diff in a side-by-side layout.
    */
   readonly showSideBySideDiff: boolean
+
+  /** Whether we'll show the diff minimap. */
+  readonly showDiffMinimap: boolean
+
+  /** Whether contextual gaps should be expanded to show the whole file. */
+  readonly showWholeFile?: boolean
+
+  /** Called when the whole-file diff mode changes. */
+  readonly onShowWholeFileChanged?: (showWholeFile: boolean) => void
 
   /** Whether or not to show the diff check marks indicating inclusion in a commit */
   readonly showDiffCheckMarks: boolean
@@ -242,6 +258,9 @@ export class SideBySideDiff extends React.Component<
 
   private virtualListRef = React.createRef<List>()
   private diffContainer: HTMLDivElement | null = null
+  private containerRef = React.createRef<HTMLDivElement>()
+  private minimapResizeStartX = 0
+  private minimapResizeStartWidth = 0
   private styleObserver: MutationObserver | null = null
   private lastDiffStyleKey = ''
 
@@ -287,6 +306,7 @@ export class SideBySideDiff extends React.Component<
   public componentDidMount() {
     this.initDiffSyntaxMode()
     this.setupStyleObserver()
+    this.applyMinimapWidth(getNumber(minimapWidthKey, DefaultMinimapWidth))
 
     window.addEventListener('keydown', this.onWindowKeyDown)
 
@@ -300,6 +320,10 @@ export class SideBySideDiff extends React.Component<
     document.addEventListener('selectionchange', this.onDocumentSelectionChange)
 
     this.addContextMenuListenerToDiff()
+
+    if (this.isWholeFileModeControlled()) {
+      this.syncWholeFileMode()
+    }
   }
 
   private addContextMenuListenerToDiff = () => {
@@ -427,6 +451,8 @@ export class SideBySideDiff extends React.Component<
   public componentWillUnmount() {
     this.teardownStyleObserver()
     window.removeEventListener('keydown', this.onWindowKeyDown)
+    window.removeEventListener('mousemove', this.onMinimapResizeMove)
+    window.removeEventListener('mouseup', this.onMinimapResizeEnd)
     document.removeEventListener('mouseup', this.onEndSelection)
     document.removeEventListener('find-text', this.showSearch)
     document.removeEventListener(
@@ -441,6 +467,8 @@ export class SideBySideDiff extends React.Component<
     prevProps: ISideBySideDiffProps,
     prevState: ISideBySideDiffState
   ) {
+    let resetDiff = false
+
     if (
       !highlightParametersEqual(this.props, prevProps, this.state, prevState)
     ) {
@@ -452,6 +480,7 @@ export class SideBySideDiff extends React.Component<
       this.diffToRestore = null
       this.setState({ diff: this.props.diff, lastExpandedHunk: null })
       this.rowSelectableGroupStaticDataCache.clear()
+      resetDiff = true
     }
 
     // Scroll to top if we switched to a new file
@@ -473,6 +502,12 @@ export class SideBySideDiff extends React.Component<
       }
 
       this.rowSelectableGroupStaticDataCache.clear()
+      this.diffToRestore = null
+
+      if (!resetDiff) {
+        this.setState({ diff: this.props.diff, lastExpandedHunk: null })
+        resetDiff = true
+      }
     }
 
     if (prevProps.showSideBySideDiff !== this.props.showSideBySideDiff) {
@@ -481,6 +516,14 @@ export class SideBySideDiff extends React.Component<
 
     if (this.state.lastExpandedHunk !== prevState.lastExpandedHunk) {
       this.focusAfterLastExpandedHunkChange()
+    }
+
+    if (resetDiff) {
+      return
+    }
+
+    if (this.isWholeFileModeControlled()) {
+      this.syncWholeFileMode(prevProps)
     }
   }
 
@@ -575,6 +618,57 @@ export class SideBySideDiff extends React.Component<
     )
   }
 
+  private isWholeFileModeControlled() {
+    return this.props.showWholeFile !== undefined
+  }
+
+  private syncWholeFileMode(prevProps?: ISideBySideDiffProps) {
+    if (!this.isWholeFileModeControlled()) {
+      return
+    }
+
+    if (this.props.showWholeFile) {
+      const contents = this.props.fileContents
+      // Controlled mode mirrors the persisted preference from the parent, but
+      // the expansion only becomes real once this diff has enough information
+      // to build the whole-file view.
+      if (contents === null || !this.canExpandDiff() || this.diffToRestore) {
+        return
+      }
+
+      const updatedDiff = expandWholeTextDiff(
+        this.state.diff,
+        contents.newContents
+      )
+
+      if (updatedDiff === undefined) {
+        return
+      }
+
+      // Keep the compact diff so "collapse" can restore the original hunked
+      // presentation without recomputing from props.
+      this.diffToRestore = this.state.diff
+      this.ariaLiveChangeSignal = !this.ariaLiveChangeSignal
+      this.setState({
+        diff: updatedDiff,
+        ariaLiveMessage: prevProps === undefined ? '' : 'Expanded',
+      })
+      return
+    }
+
+    if (this.diffToRestore === null) {
+      return
+    }
+
+    const diffToRestore = this.diffToRestore
+    this.diffToRestore = null
+    this.ariaLiveChangeSignal = !this.ariaLiveChangeSignal
+    this.setState({
+      diff: diffToRestore,
+      ariaLiveMessage: prevProps === undefined ? '' : 'Collapsed',
+    })
+  }
+
   private onDiffContainerRef = (ref: HTMLDivElement | null) => {
     if (ref === null) {
       this.diffContainer?.removeEventListener('select-all', this.onSelectAll)
@@ -582,6 +676,12 @@ export class SideBySideDiff extends React.Component<
       ref.addEventListener('select-all', this.onSelectAll)
     }
     this.diffContainer = ref
+  }
+
+  private invalidateMeasurements() {
+    this.rowSelectableGroupStaticDataCache.clear()
+    this.clearListRowsHeightCache()
+    this.virtualListRef.current?.recomputeRowHeights()
   }
 
   private setupStyleObserver() {
@@ -604,9 +704,7 @@ export class SideBySideDiff extends React.Component<
       }
 
       this.lastDiffStyleKey = newKey
-      this.rowSelectableGroupStaticDataCache.clear()
-      this.clearListRowsHeightCache()
-      this.virtualListRef.current?.recomputeRowHeights()
+      this.invalidateMeasurements()
     })
 
     this.styleObserver.observe(root, {
@@ -643,6 +741,7 @@ export class SideBySideDiff extends React.Component<
 
     const rows = this.getCurrentDiffRows()
     const containerClassName = classNames('side-by-side-diff-container', {
+      'with-minimap': this.props.showDiffMinimap,
       'unified-diff': !this.props.showSideBySideDiff,
       [`selecting-${this.state.selectingTextInRow}`]:
         this.props.showSideBySideDiff &&
@@ -658,6 +757,7 @@ export class SideBySideDiff extends React.Component<
        */
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
+        ref={this.containerRef}
         className={containerClassName}
         onMouseDown={this.onMouseDown}
         onKeyDown={this.onKeyDown}
@@ -677,40 +777,66 @@ export class SideBySideDiff extends React.Component<
             message={ariaLiveMessage}
             trackedUserInput={this.ariaLiveChangeSignal}
           />
-          <AutoSizer>
-            {({ height, width }) =>
-              this.checkOnResize(height, width) && (
-                <List
-                  deferredMeasurementCache={listRowsHeightCache}
-                  width={width}
-                  height={height}
-                  rowCount={rows.length}
-                  rowHeight={this.getRowHeight}
-                  rowRenderer={this.renderRow}
-                  onRowsRendered={this.onRowsRendered}
-                  ref={this.virtualListRef}
-                  overscanIndicesGetter={this.overscanIndicesGetter}
-                  // The following properties are passed to the list
-                  // to make sure that it gets re-rendered when any of
-                  // them change.
-                  isSearching={isSearching}
-                  selectedSearchResult={this.state.selectedSearchResult}
-                  searchQuery={this.state.searchQuery}
-                  showSideBySideDiff={this.props.showSideBySideDiff}
-                  beforeTokens={this.state.beforeTokens}
-                  afterTokens={this.state.afterTokens}
-                  temporarySelection={this.state.temporarySelection}
-                  hoveredHunk={this.state.hoveredHunk}
-                  showDiffCheckMarks={this.props.showDiffCheckMarks}
-                  isSelectable={canSelect(this.props.file)}
-                  fileSelection={this.getSelection()}
-                  // rows are memoized and include things like the
-                  // noNewlineIndicator
-                  rows={rows}
+          <div className="side-by-side-diff-body">
+            <div className="side-by-side-diff-list">
+              <AutoSizer>
+                {({ height, width }) =>
+                  this.checkOnResize(height, width) && (
+                    <List
+                      deferredMeasurementCache={listRowsHeightCache}
+                      width={width}
+                      height={height}
+                      rowCount={rows.length}
+                      rowHeight={this.getRowHeight}
+                      rowRenderer={this.renderRow}
+                      onRowsRendered={this.onRowsRendered}
+                      ref={this.virtualListRef}
+                      overscanIndicesGetter={this.overscanIndicesGetter}
+                      // The following properties are passed to the list
+                      // to make sure that it gets re-rendered when any of
+                      // them change.
+                      isSearching={isSearching}
+                      selectedSearchResult={this.state.selectedSearchResult}
+                      searchQuery={this.state.searchQuery}
+                      showSideBySideDiff={this.props.showSideBySideDiff}
+                      beforeTokens={this.state.beforeTokens}
+                      afterTokens={this.state.afterTokens}
+                      temporarySelection={this.state.temporarySelection}
+                      hoveredHunk={this.state.hoveredHunk}
+                      showDiffCheckMarks={this.props.showDiffCheckMarks}
+                      isSelectable={canSelect(this.props.file)}
+                      fileSelection={this.getSelection()}
+                      // rows are memoized and include things like the
+                      // noNewlineIndicator
+                      rows={rows}
+                    />
+                  )
+                }
+              </AutoSizer>
+            </div>
+            {this.props.showDiffMinimap && (
+              <>
+                {/* The separator role with onMouseDown is the standard
+                 * pattern for a resizable boundary; the linter doesn't
+                 * recognize separator as interactive. */}
+                {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+                <div
+                  className="diff-minimap-resize-handle"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize minimap"
+                  onMouseDown={this.onMinimapResizeStart}
                 />
-              )
-            }
-          </AutoSizer>
+                <DiffMinimap
+                  rows={rows}
+                  showSideBySideDiff={this.props.showSideBySideDiff}
+                  getScrollableNode={this.getScrollContainerNode}
+                  onScrollToPosition={this.onMinimapScrollToPosition}
+                  getRowHeight={this.getMinimapRowHeight}
+                />
+              </>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -723,6 +849,15 @@ export class SideBySideDiff extends React.Component<
       this.clearListRowsHeightCache()
     }
     return true
+  }
+
+  private getScrollContainerNode = () => {
+    const diffNode = findDOMNode(this.virtualListRef.current)
+    return diffNode instanceof HTMLElement ? diffNode : null
+  }
+
+  private onMinimapScrollToPosition = (scrollTop: number) => {
+    this.virtualListRef.current?.scrollToPosition(scrollTop)
   }
 
   private overscanIndicesGetter = (params: OverscanIndicesGetterParams) => {
@@ -1035,6 +1170,57 @@ export class SideBySideDiff extends React.Component<
 
   private getRowHeight = (row: { index: number }) => {
     return listRowsHeightCache.rowHeight(row) ?? DefaultRowHeight
+  }
+
+  private getMinimapRowHeight = (index: number): number => {
+    return listRowsHeightCache.getHeight(index, 0) ?? DefaultRowHeight
+  }
+
+  // Drives the minimap-width drag without React state so the diff list
+  // doesn't re-render on every mousemove. The minimap reads its own
+  // clientWidth, so a CSS-var update is enough — the ResizeObserver in
+  // DiffMinimap picks up the change and reschedules a redraw.
+  private applyMinimapWidth(width: number) {
+    const clamped = Math.min(MaxMinimapWidth, Math.max(MinMinimapWidth, width))
+    this.containerRef.current?.style.setProperty(
+      '--diff-minimap-width',
+      `${clamped}px`
+    )
+  }
+
+  private getCurrentMinimapWidth(): number {
+    const container = this.containerRef.current
+    if (container === null) {
+      return DefaultMinimapWidth
+    }
+    const cssValue = window
+      .getComputedStyle(container)
+      .getPropertyValue('--diff-minimap-width')
+    const parsed = parseFloat(cssValue)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : DefaultMinimapWidth
+  }
+
+  private onMinimapResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return
+    }
+    event.preventDefault()
+    this.minimapResizeStartX = event.clientX
+    this.minimapResizeStartWidth = this.getCurrentMinimapWidth()
+    window.addEventListener('mousemove', this.onMinimapResizeMove)
+    window.addEventListener('mouseup', this.onMinimapResizeEnd)
+  }
+
+  private onMinimapResizeMove = (event: MouseEvent) => {
+    // Handle is at the minimap's left edge: dragging left widens.
+    const dx = this.minimapResizeStartX - event.clientX
+    this.applyMinimapWidth(this.minimapResizeStartWidth + dx)
+  }
+
+  private onMinimapResizeEnd = () => {
+    window.removeEventListener('mousemove', this.onMinimapResizeMove)
+    window.removeEventListener('mouseup', this.onMinimapResizeEnd)
+    setNumber(minimapWidthKey, this.getCurrentMinimapWidth())
   }
 
   private clearListRowsHeightCache = () => {
@@ -1541,7 +1727,7 @@ export class SideBySideDiff extends React.Component<
     return this.diffToRestore === null
       ? {
           label: __DARWIN__ ? 'Expand Whole File' : 'Expand whole file',
-          action: this.onExpandWholeFile,
+          action: () => this.onWholeFileModeChanged(true),
           // If there is only one hunk that can't be expanded, disable this item
           enabled:
             diff.hunks.length !== 1 ||
@@ -1551,8 +1737,23 @@ export class SideBySideDiff extends React.Component<
           label: __DARWIN__
             ? 'Collapse Expanded Lines'
             : 'Collapse expanded lines',
-          action: this.onCollapseExpandedLines,
+          action: () => this.onWholeFileModeChanged(false),
         }
+  }
+
+  private onWholeFileModeChanged(showWholeFile: boolean) {
+    if (this.isWholeFileModeControlled()) {
+      // When controlled, the parent owns the preference and will feed the next
+      // applied state back through syncWholeFileMode.
+      this.props.onShowWholeFileChanged?.(showWholeFile)
+      return
+    }
+
+    if (showWholeFile) {
+      this.onExpandWholeFile()
+    } else {
+      this.onCollapseExpandedLines()
+    }
   }
 
   private onExpandWholeFile = () => {

@@ -20,6 +20,7 @@ import { SuccessBanner } from './success-banner'
 import { ConflictsFoundBanner } from './conflicts-found-banner'
 import { OSVersionNoLongerSupportedBanner } from './os-version-no-longer-supported-banner'
 import { WorktreesEnabledBanner } from './worktrees-enabled-banner'
+import { NameChangeSuggestionBanner } from './name-change-suggestion-banner'
 
 export function renderBanner(
   banner: Banner,
@@ -178,6 +179,13 @@ export function renderBanner(
           dispatcher={dispatcher}
           onDismissed={onDismissed}
           key={'worktrees-enabled'}
+        />
+      )
+    case BannerType.NameChangeSuggestion:
+      return (
+        <NameChangeSuggestionBanner
+          onDismissed={onDismissed}
+          key={'name-change-suggestion'}
         />
       )
     default:

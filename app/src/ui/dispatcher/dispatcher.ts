@@ -1,4 +1,4 @@
-import { Disposable, DisposableLike } from 'event-kit'
+import { Disposable } from 'event-kit'
 import { clipboard } from 'electron'
 
 import {
@@ -413,6 +413,10 @@ export class Dispatcher {
    */
   public refreshRepository(repository: Repository): Promise<void> {
     return this.appStore._refreshOrRecoverRepository(repository)
+  }
+
+  public async loadStatusLight(repository: Repository): Promise<void> {
+    await this.appStore._loadStatusLight(repository)
   }
 
   /**
@@ -2440,6 +2444,11 @@ export class Dispatcher {
     return this.appStore._setShowSideBySideDiff(showSideBySideDiff)
   }
 
+  /** Change the diff minimap setting */
+  public onShowDiffMinimapChanged(showDiffMinimap: boolean) {
+    return this.appStore._setShowDiffMinimap(showDiffMinimap)
+  }
+
   /** Install the global Git LFS filters. */
   public installGlobalLFSFilters(force: boolean): Promise<void> {
     return this.appStore._installGlobalLFSFilters(force)
@@ -2811,7 +2820,7 @@ export class Dispatcher {
     ref: string,
     callback: StatusCallBack,
     branchName?: string
-  ): DisposableLike {
+  ): Disposable {
     return this.commitStatusStore.subscribe(
       repository,
       ref,

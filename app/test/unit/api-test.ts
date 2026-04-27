@@ -1,9 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import {
-  getNextPagePathWithIncreasingPageSize,
-  isTrustedRemoteHost,
-} from '../../src/lib/api'
+import { getNextPagePathWithIncreasingPageSize } from '../../src/lib/api'
 import * as URL from 'url'
 
 interface IPageInfo {
@@ -23,7 +20,10 @@ function assertNext(current: IPageInfo, expected: IPageInfo) {
   )
 
   const nextPath = getNextPagePathWithIncreasingPageSize(
-    new Response(null, { headers })
+    new Response(null, { headers }),
+    'per_page',
+    'page',
+    100
   )
 
   assert(nextPath !== null)
@@ -54,14 +54,24 @@ function assertNext(current: IPageInfo, expected: IPageInfo) {
 describe('API', () => {
   describe('getNextPagePathWithIncreasingPageSize', () => {
     it("returns null when there's no link header", () => {
-      assert(getNextPagePathWithIncreasingPageSize(new Response()) === null)
+      assert(
+        getNextPagePathWithIncreasingPageSize(
+          new Response(),
+          'per_page',
+          'page',
+          100
+        ) === null
+      )
     })
 
     it('returns raw link when missing page size', () => {
       const nextPath = getNextPagePathWithIncreasingPageSize(
         new Response(null, {
           headers: createHeadersWithNextLink('/items?page=2'),
-        })
+        }),
+        'per_page',
+        'page',
+        100
       )
 
       assert.equal(nextPath, '/items?page=2')
@@ -71,7 +81,10 @@ describe('API', () => {
       const nextPath = getNextPagePathWithIncreasingPageSize(
         new Response(null, {
           headers: createHeadersWithNextLink('/items?per_page=10'),
-        })
+        }),
+        'per_page',
+        'page',
+        100
       )
 
       assert.equal(nextPath, '/items?per_page=10')
@@ -81,7 +94,10 @@ describe('API', () => {
       const nextPath = getNextPagePathWithIncreasingPageSize(
         new Response(null, {
           headers: createHeadersWithNextLink('/items?per_page=10&page=2'),
-        })
+        }),
+        'per_page',
+        'page',
+        100
       )
 
       assert.equal(nextPath, '/items?per_page=10&page=2')
@@ -129,27 +145,6 @@ describe('API', () => {
       assertNext({ per_page: 100, page: 8 }, { per_page: 100, page: 8 })
       assertNext({ per_page: 100, page: 9 }, { per_page: 100, page: 9 })
       assertNext({ per_page: 100, page: 10 }, { per_page: 100, page: 10 })
-    })
-  })
-
-  describe('isTrustedRemoteHost', () => {
-    it('does not throw on invalid URLs', () => {
-      assert.equal(
-        isTrustedRemoteHost('org-123@github.example.com:someorg/somerepo.git'),
-        false
-      )
-    })
-
-    it('does not throw on empty string', () => {
-      assert.equal(isTrustedRemoteHost(''), false)
-    })
-
-    it('returns false for non-https protocols', () => {
-      assert.equal(isTrustedRemoteHost('http://github.com/foo/bar'), false)
-    })
-
-    it('returns true for github.com', () => {
-      assert.equal(isTrustedRemoteHost('https://github.com/foo/bar'), true)
     })
   })
 })

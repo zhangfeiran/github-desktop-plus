@@ -294,6 +294,9 @@ export interface IAppState {
   /** Whether we should show side by side diffs */
   readonly showSideBySideDiff: boolean
 
+  /** Whether we should show the diff minimap */
+  readonly showDiffMinimap: boolean
+
   /** The user's preferred shell. */
   readonly selectedShell: Shell
 

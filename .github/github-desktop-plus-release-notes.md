@@ -1,29 +1,20 @@
-GitHub Desktop Plus v3.5.8
+GitHub Desktop Plus v3.5.9-beta2
 
-Upstream: [GitHub Desktop 3.5.8 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.8)
+Upstream: [GitHub Desktop 3.5.9-beta2 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.9-beta2)
 
 ---
 
 ## **Changes and improvements:**
 
-- [#105] We now support displaying **worktrees in the repository sidebar** list. Thank you @ignatremizov!  
-  To enable it, go to `File` > `Options` > `Appearance` and check the box for "Show worktrees in repository sidebar".
+- Added a one-time temporary banner to promote [this discussion](https://github.com/pol-rivero/github-desktop-plus/discussions/140) about a future change to our name and logo.
 
-- [#129] When the current local branch is ahead and behind the remote branch, added a new **Reset and pull** option to the pull dropdown. This will discard your local commits and pull the latest changes from the remote branch (similar to the existing "Force push" option but the other way around).
+- [#134] Allow showing a minimap at the right side of the diff view. It shows a small overview of the entire file, which helps to quickly navigate to a specific part of the file. Thank you @kingdo10!  
+  To enable it, click the "Diff options" menu (gear icon at the top right of the diff view) and select "Show minimap".
 
-- [#131] You can now change the font family and size that will be used in the diff view. Thank you @kingdo10!  
-  To change the font settings, go to `File` > `Options` > `Appearance`.
+- [#134] Allow expanding the entire file (not only the changed lines) in the diff view by clicking the "Show whole file" button at the top right of the diff view. This is especially useful when the minimap is enabled. Thank you @kingdo10!
 
-- [#126] When creating a new worktree, [.worktreeinclude](https://code.claude.com/docs/en/common-workflows#copy-gitignored-files-to-worktrees) files are now respected, and the files specified in them will be copied to the new worktree.  
-
-- Show a frendlier error message when trying to delete a worktree or branch with uncommitted changes.
+- Improved the speed of some Bitbucket API calls by using the correct page size. This should speed up listing repositories and pull requests when the list is long.
 
 ## **Fixes:**
 
-- Worktrees that contain submodules can now be deleted without errors.
-
-- The "Pull all" button now correctly pulls changes in linked worktrees as well.
-
-- [#130] Fixed a visual bug where the hovered commit was not highlighted when using drag and drop to squash commits.
-
-- Fixed a problem where some context menus (*"Open with ..."*) displayed the globally configured external editor name instead of the repository-specific one.
+- Fixed loading of Bitbucket repositories (File > Clone repository > Bitbucket tab) by replacing a deprecated (removed) Bitbucket API endpoint.

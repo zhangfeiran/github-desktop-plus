@@ -190,8 +190,9 @@ import { NotificationsDebugStore } from '../lib/stores/notifications-debug-store
 import { PullRequestComment } from './notifications/pull-request-comment'
 import { UnknownAuthors } from './unknown-authors/unknown-authors-dialog'
 import { UnsupportedOSBannerDismissedAtKey } from './banners/os-version-no-longer-supported-banner'
+import { NameChangeSuggestionBannerShownKey } from './banners/name-change-suggestion-banner'
 import { offsetFromNow } from '../lib/offset-from'
-import { getNumber } from '../lib/local-storage'
+import { getBoolean, getNumber, setBoolean } from '../lib/local-storage'
 import { IconPreviewDialog } from './octicons/icon-preview-dialog'
 import { isCertificateErrorSuppressedFor } from '../lib/suppress-certificate-error'
 import { webUtils } from 'electron'
@@ -437,6 +438,20 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
 
     this.checkIfThankYouIsInOrder()
+    this.checkIfNameChangeSuggestionIsInOrder()
+  }
+
+  private checkIfNameChangeSuggestionIsInOrder() {
+    const HasLaunchedBeforeKey = 'has-launched-before'
+    const hasLaunchedBefore = getBoolean(HasLaunchedBeforeKey, false)
+    if (!hasLaunchedBefore) {
+      setBoolean(HasLaunchedBeforeKey, true)
+      return
+    }
+    if (!getBoolean(NameChangeSuggestionBannerShownKey, false)) {
+      setBoolean(NameChangeSuggestionBannerShownKey, true)
+      this.setBanner({ type: BannerType.NameChangeSuggestion })
+    }
   }
 
   private onMenuEvent(name: MenuEvent): any {
@@ -2598,6 +2613,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             prRecentBaseBranches={prRecentBaseBranches}
             repository={repository}
             externalEditorLabel={externalEditorLabel}
+            showDiffMinimap={this.state.showDiffMinimap}
             showSideBySideDiff={showSideBySideDiff}
             currentBranchHasPullRequest={currentBranchHasPullRequest}
             branchSortOrder={this.state.branchSortOrder}
@@ -3786,6 +3802,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           showDiffCheckMarks={state.showDiffCheckMarks}
           preferAbsoluteDates={state.preferAbsoluteDates}
           showSideBySideDiff={state.showSideBySideDiff}
+          showDiffMinimap={state.showDiffMinimap}
           focusCommitMessage={state.focusCommitMessage}
           askForConfirmationOnDiscardChanges={
             state.askForConfirmationOnDiscardChanges
