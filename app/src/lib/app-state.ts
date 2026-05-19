@@ -1,5 +1,10 @@
 import type { ModelInfo } from '@github/copilot-sdk'
 import type { CopilotModelSelections } from './stores/copilot-store'
+import type { IBYOKProvider } from './copilot/byok'
+import type {
+  IFileResolution,
+  IConflictResolutionProgress,
+} from './copilot-conflict-resolution'
 import { Account } from '../models/account'
 import { CommitIdentity } from '../models/commit-identity'
 import { IConfigValueOrigin } from './git/config'
@@ -194,6 +199,9 @@ export interface IAppState {
 
   /** The width of the commit summary column in the history view */
   readonly commitSummaryWidth: IConstrainedValue
+
+  /** The width of the branch list column in the commit graph view */
+  readonly commitGraphBranchListWidth: IConstrainedValue
 
   /** The width of the files list in the stash view */
   readonly stashedFilesWidth: IConstrainedValue
@@ -461,6 +469,12 @@ export interface IAppState {
 
   /** Whether Copilot is available (i.e. a GitHub.com account is signed in). */
   readonly copilotAvailable: boolean
+
+  /**
+   * The list of user-configured Copilot model providers (BYOK). Empty when
+   * the user has not configured any custom providers.
+   */
+  readonly byokProviders: ReadonlyArray<IBYOKProvider>
 }
 
 export enum FoldoutType {
@@ -1003,6 +1017,21 @@ export interface ICompareState {
 
   readonly allHistoryCommitSHAs: ReadonlyArray<string>
 
+  /** The branch refs used to build the current commit graph. */
+  readonly commitGraphRefs: ReadonlyArray<string>
+
+  /**
+   * The branch refs hidden from the commit graph for this repository, or null
+   * before they load.
+   */
+  readonly commitGraphHiddenBranchRefs: ReadonlyArray<string> | null
+
+  /** The branch groups collapsed in the commit graph branch list. */
+  readonly commitGraphCollapsedBranchGroups: ReadonlyArray<string>
+
+  /** The SHAs of commits to render in the commit graph. */
+  readonly commitGraphCommitSHAs: ReadonlyArray<string>
+
   readonly compareCommitSHAs: ReadonlyArray<string>
 
   /** The SHAs of commits to highlight in the compare list */
@@ -1127,6 +1156,26 @@ export interface IMultiCommitOperationState {
    * operation, and therefore, should be warned on aborting the operation.
    */
   readonly userHasResolvedConflicts: boolean
+
+  /**
+   * Whether the user has opted into Copilot-powered conflict resolution for
+   * this operation. When true, subsequent conflict rounds will automatically
+   * route through ShowCopilotConflictsLoading instead of ShowConflicts.
+   */
+  readonly useCopilotConflictResolution: boolean
+
+  /**
+   * Resolutions returned by Copilot for the current conflict round. Null when
+   * Copilot hasn't been invoked or has not yet completed. Set after a
+   * successful resolution so the result dialog can display per-file reasoning.
+   */
+  readonly copilotResolutions: ReadonlyArray<IFileResolution> | null
+
+  /**
+   * Progress of the in-flight Copilot conflict resolution request. Null when
+   * no resolution is in progress.
+   */
+  readonly copilotResolutionProgress: IConflictResolutionProgress | null
 
   /**
    * The commit id of the tip of the branch user is modifying in the operation.

@@ -32,7 +32,8 @@ export function readMainProcessConfig(): MainProcessConfig {
 
     if (
       storedMainProcessConfig.titleBarStyle === 'native' ||
-      storedMainProcessConfig.titleBarStyle === 'custom'
+      storedMainProcessConfig.titleBarStyle === 'custom' ||
+      storedMainProcessConfig.titleBarStyle === 'native-without-menu-bar'
     ) {
       cachedMainProcessConfig = storedMainProcessConfig
     }

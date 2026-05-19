@@ -11,6 +11,9 @@ import { mkdir } from 'fs/promises'
 import { buildTestMenu } from './build-test-menu'
 import { assertNever } from '../../lib/fatal-error'
 
+const createPullRequestLabel = __DARWIN__
+  ? 'Create Pull Request'
+  : 'Create &pull request'
 const defaultBranchNameValue = __DARWIN__ ? 'Default Branch' : 'default branch'
 const confirmRepositoryRemovalLabel = __DARWIN__ ? 'Remove…' : '&Remove…'
 const repositoryRemovalLabel = __DARWIN__ ? 'Remove' : '&Remove'
@@ -53,9 +56,6 @@ export function buildDefaultMenu({
     ? confirmRepositoryRemovalLabel
     : repositoryRemovalLabel
 
-  const createPullRequestLabel = __DARWIN__
-    ? 'Create Pull Request'
-    : 'Create &pull request'
   const showPullRequestLabel =
     (__DARWIN__ ? 'View Pull Request ' : 'View &pull request ') +
     onGithubLabel(gitHubRepositoryType)
@@ -363,12 +363,12 @@ export function buildDefaultMenu({
       },
       separator,
       {
-        id: 'view-repository-in-browser',
+        id: 'view-repository-on-github',
         label:
           (__DARWIN__ ? 'View ' : '&View ') +
           onGithubLabel(gitHubRepositoryType),
         accelerator: 'CmdOrCtrl+Shift+G',
-        click: emit('view-repository-in-browser'),
+        click: emit('view-repository-on-github'),
       },
       {
         label: __DARWIN__

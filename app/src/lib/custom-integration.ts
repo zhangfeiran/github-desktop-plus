@@ -1,10 +1,11 @@
+import { parseCommandLineArgv } from 'windows-argv-parser'
 import stringArgv from 'string-argv'
 import { promisify } from 'util'
-import { exec, spawn, SpawnOptions } from 'child_process'
+import { execFile, spawn, SpawnOptions } from 'child_process'
 import { access, lstat } from 'fs/promises'
 import * as fs from 'fs'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 /** The string that will be replaced by the target path in the custom integration arguments */
 export const TargetPathArgument = '%TARGET_PATH%'
@@ -27,7 +28,7 @@ export interface ICustomIntegration {
 export function parseCustomIntegrationArguments(
   args: string
 ): ReadonlyArray<string> {
-  return stringArgv(args)
+  return __WIN32__ ? parseCommandLineArgv(args) : stringArgv(args)
 }
 
 // Function to retrieve, on macOS, the bundleId of an app given its path
@@ -41,9 +42,12 @@ async function getAppBundleID(path: string) {
     }
 
     // Use mdls to query the kMDItemCFBundleIdentifier attribute
-    const { stdout } = await execAsync(
-      `mdls -name kMDItemCFBundleIdentifier -raw "${path}"`
-    )
+    const { stdout } = await execFileAsync('mdls', [
+      '-name',
+      'kMDItemCFBundleIdentifier',
+      '-raw',
+      path,
+    ])
     const bundleId = stdout.trim()
 
     // Check for valid output
@@ -67,8 +71,12 @@ async function getAppBundleID(path: string) {
  */
 export function expandTargetPathArgument(
   args: ReadonlyArray<string>,
-  repoPath: string
+  repoPath: string,
+  spawnedFromShell = false
 ): ReadonlyArray<string> {
+  if (!spawnedFromShell) {
+    return args.map(arg => arg.replaceAll(TargetPathArgument, repoPath))
+  }
   return args.map(arg =>
     arg
       // If the placeholder is already quoted (e.g. "%TARGET_PATH%"), replace

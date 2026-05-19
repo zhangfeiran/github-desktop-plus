@@ -22,7 +22,7 @@ interface IRepositoryListItemContextMenuConfig {
   readonly isLinkedWorktreeRow?: boolean
   readonly isVirtualLinkedWorktreeRow?: boolean
   readonly isPrunableWorktreeRow?: boolean
-  onViewInBrowser: (repository: Repositoryish) => void
+  onViewOnGitHub: (repository: Repositoryish) => void
   onOpenInNewWindow?: (repository: Repositoryish) => void
   onOpenInShell: (repository: Repositoryish) => void
   onShowRepository: (repository: Repositoryish) => void
@@ -37,6 +37,9 @@ interface IRepositoryListItemContextMenuConfig {
   onChangeRepositoryGroupName: (repository: Repository) => void
   onRemoveRepositoryGroupName: (repository: Repository) => void
   onCopyRepoPath: (path: string) => void
+  isPinned?: boolean
+  onPinRepository?: (repository: Repository) => void
+  onUnpinRepository?: (repository: Repository) => void
 }
 
 export const generateRepositoryListContextMenu = (
@@ -49,6 +52,7 @@ export const generateRepositoryListContextMenu = (
     ...buildNewWorkreeMenuItems(config),
     ...buildAliasMenuItems(config),
     ...buildGroupNameMenuItems(config),
+    ...buildPinMenuItems(config),
   ]
   const missing = repository instanceof Repository && repository.missing
   const isGitHub =
@@ -81,7 +85,7 @@ export const generateRepositoryListContextMenu = (
       label: getViewOnBrowserLabel(
         isGitHub ? repository.gitHubRepository.type : null
       ),
-      action: () => config.onViewInBrowser(repository),
+      action: () => config.onViewOnGitHub(repository),
       enabled: isGitHub || hasOriginUrl,
     },
     ...(config.onOpenInNewWindow && canOpenInNewWindow
@@ -241,4 +245,38 @@ const buildGroupNameMenuItems = (
   }
 
   return items
+}
+
+const buildPinMenuItems = (
+  config: IRepositoryListItemContextMenuConfig
+): ReadonlyArray<IMenuItem> => {
+  const { repository } = config
+
+  if (
+    !(repository instanceof Repository) ||
+    config.isLinkedWorktreeRow ||
+    config.isVirtualLinkedWorktreeRow
+  ) {
+    return []
+  }
+
+  if (config.isPinned && config.onUnpinRepository) {
+    return [
+      {
+        label: __DARWIN__ ? 'Unpin Repository' : 'Unpin repository',
+        action: () => config.onUnpinRepository!(repository),
+      },
+    ]
+  }
+
+  if (!config.isPinned && config.onPinRepository) {
+    return [
+      {
+        label: __DARWIN__ ? 'Pin Repository' : 'Pin repository',
+        action: () => config.onPinRepository!(repository),
+      },
+    ]
+  }
+
+  return []
 }

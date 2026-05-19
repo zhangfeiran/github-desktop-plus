@@ -92,6 +92,8 @@ function getTitleBarStyleDescription(titleBarStyle: TitleBarStyle): string {
       return 'Uses the menu system provided by GitHub Desktop, hiding the default chrome provided by your window manager.'
     case 'native':
       return 'Uses the menu system and chrome provided by your window manager.'
+    case 'native-without-menu-bar':
+      return 'Uses the native window chrome, but hides the menu bar. Press Alt to show it temporarily. Takes effect after restarting the app.'
   }
 }
 
@@ -330,6 +332,9 @@ export class Appearance extends React.Component<
   }
 
   private renderTitleBarStyleDropdown() {
+    if (!__LINUX__) {
+      return null
+    }
     const { titleBarStyle } = this.state
     const titleBarStyleDescription = getTitleBarStyleDescription(titleBarStyle)
 
@@ -343,6 +348,9 @@ export class Appearance extends React.Component<
         >
           <option value="native">Native</option>
           <option value="custom">Custom</option>
+          <option value="native-without-menu-bar">
+            Native without menu bar
+          </option>
         </Select>
 
         <div className="git-settings-description">

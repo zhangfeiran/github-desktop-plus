@@ -38,7 +38,7 @@ import {
 import { KeyboardShortcut } from '../keyboard-shortcut/keyboard-shortcut'
 import * as octicons from '../octicons/octicons.generated'
 import { OcticonSymbol } from '../octicons/octicons.generated'
-import { stash } from '../octicons'
+import { stash, bitbucket, gitlab } from '../octicons'
 import { assertNever } from '../../lib/fatal-error'
 import { formatNumber } from '../../lib/format-number'
 
@@ -289,37 +289,35 @@ export class NoChanges extends React.Component<
   private onShowInFileManagerClicked = () =>
     this.props.dispatcher.incrementMetric('suggestedStepOpenWorkingDirectory')
 
-  private renderViewInBrowser() {
-    const isGitHubOrBitbucket = isRepositoryWithGitHubRepository(
-      this.props.repository
-    )
+  private renderViewOnGitHub() {
+    const isGitHub = isRepositoryWithGitHubRepository(this.props.repository)
     const hasOriginUrl = hasDefaultRemoteUrl(this.props.repository)
 
     // early exit if not a GitHub repository and no default remote URL set
-    if (!isGitHubOrBitbucket && !hasOriginUrl) {
+    if (!isGitHub && !hasOriginUrl) {
       return null
     }
 
     const BROWSER_TARGETS: Record<RepoType | '_', [string, OcticonSymbol]> = {
       github: ['on Github', octicons.markGithub],
-      bitbucket: ['on Bitbucket', octicons.repo],
-      gitlab: ['on GitLab', octicons.repo],
+      bitbucket: ['on Bitbucket', bitbucket],
+      gitlab: ['on GitLab', gitlab],
       _: ['in your browser', octicons.globe],
     }
     const repoType = this.props.repository.gitHubRepository?.type ?? '_'
     const [browserTarget, icon] = BROWSER_TARGETS[repoType]
 
     return this.renderMenuBackedAction(
-      'view-repository-in-browser',
+      'view-repository-on-github',
       'Open the repository page ' + browserTarget,
       icon,
       undefined,
-      this.onViewInBrowserClicked
+      this.onViewOnGitHubClicked
     )
   }
 
-  private onViewInBrowserClicked = () =>
-    this.props.dispatcher.incrementMetric('suggestedStepViewInBrowser')
+  private onViewOnGitHubClicked = () =>
+    this.props.dispatcher.incrementMetric('suggestedStepViewOnGitHub')
 
   private openIntegrationPreferences = () => {
     this.props.dispatcher.showPopup({
@@ -806,7 +804,7 @@ export class NoChanges extends React.Component<
         <SuggestedActionGroup>
           {this.renderOpenInExternalEditor()}
           {this.renderShowInFileManager()}
-          {this.renderViewInBrowser()}
+          {this.renderViewOnGitHub()}
         </SuggestedActionGroup>
       </>
     )

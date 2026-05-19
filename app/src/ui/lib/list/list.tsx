@@ -1757,4 +1757,8 @@ export class List extends React.Component<IListProps, IListState> {
       }
     }
   }
+
+  public scrollToRow(row: number): void {
+    this.grid?.scrollToCell({ rowIndex: row, columnIndex: 0 })
+  }
 }

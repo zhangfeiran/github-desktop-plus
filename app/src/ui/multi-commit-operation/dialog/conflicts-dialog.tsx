@@ -21,6 +21,10 @@ import {
 import { ManualConflictResolution } from '../../../models/manual-conflict-resolution'
 import { OkCancelButtonGroup } from '../../dialog/ok-cancel-button-group'
 import { DialogSuccess } from '../../dialog/success'
+import { enableCopilotConflictResolution } from '../../../lib/feature-flag'
+import { Octicon } from '../../octicons'
+import * as octicons from '../../octicons/octicons.generated'
+import { Button } from '../../lib/button'
 
 interface IConflictsDialogProps {
   readonly dispatcher: Dispatcher
@@ -41,6 +45,12 @@ interface IConflictsDialogProps {
   readonly openFileInExternalEditor: (path: string) => void
   readonly openRepositoryInShell: (repository: Repository) => void
   readonly someConflictsHaveBeenResolved?: () => void
+  /**
+   * Optional callback to initiate Copilot-powered conflict resolution.
+   * When provided and the feature flag is enabled, a "Resolve with Copilot"
+   * button is shown in the dialog footer.
+   */
+  readonly onResolveWithCopilot?: () => void
 }
 
 interface IConflictsDialogState {
@@ -135,6 +145,7 @@ export class ConflictsDialog extends React.Component<
     files: ReadonlyArray<WorkingDirectoryFileChange>
   ) {
     let isFirstUnmergedFile = true
+    const externalEditorName = this.getExternalEditorName()
     return (
       <ul className="unmerged-file-statuses">
         {files.map(f => {
@@ -144,7 +155,7 @@ export class ConflictsDialog extends React.Component<
             return renderUnmergedFile({
               path: f.path,
               status: f.status,
-              resolvedExternalEditor: this.props.resolvedExternalEditor,
+              resolvedExternalEditor: externalEditorName,
               openFileInExternalEditor: this.props.openFileInExternalEditor,
               repository: this.props.repository,
               dispatcher: this.props.dispatcher,
@@ -162,6 +173,17 @@ export class ConflictsDialog extends React.Component<
         })}
       </ul>
     )
+  }
+
+  private getExternalEditorName() {
+    const { repository, resolvedExternalEditor } = this.props
+    const repoEditor = repository.customEditorOverride
+    if (!repoEditor) {
+      return resolvedExternalEditor
+    }
+    return repoEditor.useCustomEditor
+      ? 'External Editor'
+      : repoEditor.selectedExternalEditor
   }
 
   private renderContent(
@@ -220,6 +242,73 @@ export class ConflictsDialog extends React.Component<
     )
   }
 
+  /**
+   * Renders the "Resolve with Copilot" button when the feature is available.
+   * Only shown when:
+   * - The onResolveWithCopilot callback is provided (operation supports it)
+   * - The feature flag is enabled
+   * - There are still conflicted files to resolve
+   */
+  private renderCopilotButton(
+    conflictedFilesCount: number
+  ): JSX.Element | null {
+    const { onResolveWithCopilot } = this.props
+
+    if (
+      onResolveWithCopilot === undefined ||
+      !enableCopilotConflictResolution() ||
+      conflictedFilesCount === 0
+    ) {
+      return null
+    }
+
+    return (
+      <Button
+        className="copilot-resolve-button"
+        onClick={onResolveWithCopilot}
+        disabled={this.state.isAborting}
+        tooltip={
+          this.state.isAborting
+            ? 'Cannot resolve while operation is being aborted'
+            : 'Use Copilot to suggest resolutions for conflicted files'
+        }
+      >
+        <Octicon symbol={octicons.copilot} />
+        {' Resolve with Copilot'}
+      </Button>
+    )
+  }
+
+  private renderFooter(
+    conflictedFilesCount: number,
+    submitButton: string,
+    tooltipString: string | undefined,
+    abortButton: string
+  ): JSX.Element {
+    const copilotButton = this.renderCopilotButton(conflictedFilesCount)
+    const buttonGroup = (
+      <OkCancelButtonGroup
+        okButtonText={submitButton}
+        okButtonDisabled={conflictedFilesCount > 0}
+        okButtonTitle={tooltipString}
+        cancelButtonText={abortButton}
+        onCancelButtonClick={this.onAbort}
+        cancelButtonDisabled={this.state.isAborting}
+      />
+    )
+
+    if (copilotButton === null) {
+      return buttonGroup
+    }
+
+    return (
+      <div className="conflicts-footer-with-copilot">
+        {copilotButton}
+        {buttonGroup}
+      </div>
+    )
+  }
+
   public render() {
     const {
       workingDirectory,
@@ -255,14 +344,12 @@ export class ConflictsDialog extends React.Component<
           {this.renderContent(unmergedFiles, conflictedFiles.length)}
         </DialogContent>
         <DialogFooter>
-          <OkCancelButtonGroup
-            okButtonText={submitButton}
-            okButtonDisabled={conflictedFiles.length > 0}
-            okButtonTitle={tooltipString}
-            cancelButtonText={abortButton}
-            onCancelButtonClick={this.onAbort}
-            cancelButtonDisabled={this.state.isAborting}
-          />
+          {this.renderFooter(
+            conflictedFiles.length,
+            submitButton,
+            tooltipString,
+            abortButton
+          )}
         </DialogFooter>
       </Dialog>
     )

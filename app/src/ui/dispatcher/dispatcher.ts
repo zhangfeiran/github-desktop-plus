@@ -55,6 +55,7 @@ import type {
   CopilotFeature,
   CopilotModelSelections,
 } from '../../lib/stores/copilot-store'
+import type { IBYOKProvider } from '../../lib/copilot/byok'
 import { RepositoryStateCache } from '../../lib/stores/repository-state-cache'
 import { getTipSha } from '../../lib/tip'
 
@@ -142,6 +143,10 @@ import { EditorOverride } from '../../models/editor-override'
 import { RepositoryGitSource } from '../../models/repository-git-source'
 import { convertToCopyPath, normalizePath } from '../../lib/helpers/path'
 import { EOL } from 'os'
+import {
+  ICopilotConflictResolutionResponse,
+  IConflictResolutionProgress,
+} from '../../lib/copilot-conflict-resolution'
 
 /**
  * An error handler function.
@@ -254,6 +259,39 @@ export class Dispatcher {
   /** Load the next batch of history for the repository. */
   public loadNextCommitBatch(repository: Repository): Promise<void> {
     return this.appStore._loadNextCommitBatch(repository, 0)
+  }
+
+  public commitGraph_load(
+    repository: Repository,
+    refs: ReadonlyArray<string>
+  ): Promise<void> {
+    return this.appStore._commitGraph_load(repository, refs)
+  }
+
+  public commitGraph_setHiddenBranchRefs(
+    repository: Repository,
+    hiddenBranchRefs: ReadonlyArray<string>
+  ) {
+    return this.appStore._commitGraph_setHiddenBranchRefs(
+      repository,
+      hiddenBranchRefs
+    )
+  }
+
+  public commitGraph_setCollapsedBranchGroups(
+    repository: Repository,
+    collapsedBranchGroups: ReadonlyArray<string>
+  ) {
+    return this.appStore._commitGraph_setCollapsedBranchGroups(
+      repository,
+      collapsedBranchGroups
+    )
+  }
+
+  public commitGraph_loadNextCommitBatch(
+    repository: Repository
+  ): Promise<void> {
+    return this.appStore._commitGraph_loadNextCommitBatch(repository)
   }
 
   /** Update the commit search filter text. */
@@ -1194,6 +1232,14 @@ export class Dispatcher {
     return this.appStore._resetCommitSummaryWidth()
   }
 
+  public commitGraph_setBranchListWidth(width: number): Promise<void> {
+    return this.appStore._commitGraph_setBranchListWidth(width)
+  }
+
+  public commitGraph_resetBranchListWidth(): Promise<void> {
+    return this.appStore._commitGraph_resetBranchListWidth()
+  }
+
   /** Update the repository's issues from GitHub. */
   public refreshIssues(repository: GitHubRepository): Promise<void> {
     return this.appStore._refreshIssues(repository)
@@ -1239,6 +1285,35 @@ export class Dispatcher {
     filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
   ) {
     return this.appStore._generateCommitMessage(repository, filesSelected)
+  }
+
+  /**
+   * Use Copilot to analyze and suggest resolutions for conflicts
+   * from merge, rebase, or cherry-pick operations.
+   */
+  public resolveConflictsWithCopilot(
+    repository: Repository,
+    onProgress?: (progress: IConflictResolutionProgress) => void
+  ): Promise<ICopilotConflictResolutionResponse | null> {
+    return this.appStore._resolveConflictsWithCopilot(repository, onProgress)
+  }
+
+  /**
+   * Start the full Copilot conflict resolution flow: call the API and
+   * transition to the result dialog.
+   */
+  public startCopilotConflictResolution(repository: Repository): Promise<void> {
+    return this.appStore._startCopilotConflictResolution(repository)
+  }
+
+  /**
+   * Write Copilot-resolved file contents to disk and stage them.
+   * Called when the user confirms the resolutions from the result dialog.
+   */
+  public applyCopilotConflictResolutions(
+    repository: Repository
+  ): Promise<void> {
+    return this.appStore._applyCopilotConflictResolutions(repository)
   }
 
   /** Remove the given account from the app. */
@@ -4055,6 +4130,22 @@ export class Dispatcher {
     return this.appStore._setMultiCommitOperationStep(repository, step)
   }
 
+  /**
+   * Atomically transition the multi commit operation step and set the
+   * useCopilotConflictResolution flag in a single store update.
+   */
+  public setMultiCommitOperationStepWithCopilotResolution(
+    repository: Repository,
+    step: MultiCommitOperationStep,
+    useCopilotConflictResolution: boolean
+  ): void {
+    this.appStore._setMultiCommitOperationStepWithCopilotResolution(
+      repository,
+      step,
+      useCopilotConflictResolution
+    )
+  }
+
   /** Method to clear multi commit operation state. */
   public endMultiCommitOperation(repository: Repository) {
     this.appStore._endMultiCommitOperation(repository)
@@ -4411,5 +4502,47 @@ export class Dispatcher {
   /** Fetch the list of available Copilot models from the SDK. */
   public fetchCopilotModels(): Promise<void> {
     return this.appStore._fetchCopilotModels()
+  }
+
+  /**
+   * Add a new BYOK Copilot provider. The secret (API key / bearer token)
+   * is stored separately in the OS keychain.
+   */
+  public async addCopilotBYOKProvider(
+    provider: IBYOKProvider,
+    secret: string | null
+  ): Promise<void> {
+    try {
+      await this.appStore._addCopilotBYOKProvider(provider, secret)
+    } catch (e) {
+      log.error(`Error adding BYOK Copilot provider '${provider.name}'`, e)
+      this.postError(e)
+    }
+  }
+
+  /**
+   * Update a BYOK Copilot provider. Pass `secret = undefined` to leave the
+   * stored secret untouched, `null` to clear it, or a string to overwrite it.
+   */
+  public async updateCopilotBYOKProvider(
+    provider: IBYOKProvider,
+    secret: string | null | undefined
+  ): Promise<void> {
+    try {
+      await this.appStore._updateCopilotBYOKProvider(provider, secret)
+    } catch (e) {
+      log.error(`Error updating BYOK Copilot provider '${provider.name}'`, e)
+      this.postError(e)
+    }
+  }
+
+  /** Remove a BYOK Copilot provider and its stored secret. */
+  public async deleteCopilotBYOKProvider(id: string): Promise<void> {
+    try {
+      await this.appStore._deleteCopilotBYOKProvider(id)
+    } catch (e) {
+      log.error(`Error deleting BYOK Copilot provider '${id}'`, e)
+      this.postError(e)
+    }
   }
 }

@@ -1,20 +1,23 @@
-GitHub Desktop Plus v3.5.9-beta2
+GitHub Desktop Plus v3.5.9-beta3
 
-Upstream: [GitHub Desktop 3.5.9-beta2 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.9-beta2)
+Upstream: [GitHub Desktop 3.5.9-beta3 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.9-beta3)
 
 ---
 
 ## **Changes and improvements:**
 
-- Added a one-time temporary banner to promote [this discussion](https://github.com/pol-rivero/github-desktop-plus/discussions/140) about a future change to our name and logo.
+- [#151] **Linux:** Added the option to auto-hide the menu bar.  
+  Go to `File` > `Options` > `Appearance` > `Title bar style` and select "Native without menu bar".
 
-- [#134] Allow showing a minimap at the right side of the diff view. It shows a small overview of the entire file, which helps to quickly navigate to a specific part of the file. Thank you @kingdo10!  
-  To enable it, click the "Diff options" menu (gear icon at the top right of the diff view) and select "Show minimap".
+- [#149] Allow pinning repositories to the top of the repo list.  
+  To pin a repository, right-click on it in the list and select "Pin to top".
 
-- [#134] Allow expanding the entire file (not only the changed lines) in the diff view by clicking the "Show whole file" button at the top right of the diff view. This is especially useful when the minimap is enabled. Thank you @kingdo10!
-
-- Improved the speed of some Bitbucket API calls by using the correct page size. This should speed up listing repositories and pull requests when the list is long.
+- The selected commit in the history view now remains visible after clearing the search query.
 
 ## **Fixes:**
 
-- Fixed loading of Bitbucket repositories (File > Clone repository > Bitbucket tab) by replacing a deprecated (removed) Bitbucket API endpoint.
+- Fixed an issue where the "Pull all" button in the repository list would ignore some repositories.
+
+- [#154] Opening files in Cursor (text editor) should now work correctly.
+
+- [#157] **macOS:** The app now uses the correct bundle identifier, instead of duplicating the one from GitHub Desktop.

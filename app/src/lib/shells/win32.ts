@@ -550,7 +550,7 @@ export function launchCustomShell(
 ): ChildProcess {
   log.info(`launching custom shell at path: ${customShell.path}`)
   const argv = parseCustomIntegrationArguments(customShell.arguments)
-  const args = expandTargetPathArgument(argv, path)
+  const args = expandTargetPathArgument(argv, path, true)
   return spawnCustomIntegration(`"${customShell.path}"`, args, {
     shell: true,
     cwd: path,

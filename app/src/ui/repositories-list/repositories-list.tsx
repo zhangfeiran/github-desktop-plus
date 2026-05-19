@@ -3,11 +3,18 @@ import * as React from 'react'
 import { commitGrammar, RepositoryListItem } from './repository-list-item'
 import {
   groupRepositories,
+  buildPinnedGroup,
+  filterPinnedFromGroups,
   IRepositoryListItem,
   Repositoryish,
   RepositoryListGroup,
   getGroupKey,
 } from './group-repositories'
+import {
+  getPinnedRepositories,
+  addPinnedRepository,
+  removePinnedRepository,
+} from '../../lib/stores/repository-pinning'
 import { IFilterListGroup } from '../lib/filter-list'
 import { IMatches } from '../../lib/fuzzy-find'
 import { ILocalRepositoryState, Repository } from '../../models/repository'
@@ -60,7 +67,7 @@ interface IRepositoriesListProps {
   readonly onShowRepository: (repository: Repositoryish) => void
 
   /** Called when the repository should be opened in the default web browser. */
-  readonly onViewInBrowser: (repository: Repositoryish) => void
+  readonly onViewOnGitHub: (repository: Repositoryish) => void
 
   /** Called when the repository should be shown in the shell. */
   readonly onOpenInShell: (repository: Repositoryish) => void
@@ -94,6 +101,7 @@ interface IRepositoriesListState {
   readonly newRepositoryMenuExpanded: boolean
   readonly pullingRepositories: boolean
   readonly selectedItem: IRepositoryListItem | null
+  readonly pinnedRepositoriesIds: ReadonlyArray<number>
 }
 
 const RowHeight = 29
@@ -172,6 +180,7 @@ export class RepositoriesList extends React.Component<
       newRepositoryMenuExpanded: false,
       pullingRepositories: false,
       selectedItem: null,
+      pinnedRepositoriesIds: getPinnedRepositories(),
     }
   }
 
@@ -306,7 +315,9 @@ export class RepositoriesList extends React.Component<
 
   private getGroupLabel(group: RepositoryListGroup) {
     const { kind, displayName } = group
-    if (kind === 'enterprise') {
+    if (kind === 'pins') {
+      return 'Pinned'
+    } else if (kind === 'enterprise') {
       return displayName ?? group.host
     } else if (kind === 'other') {
       return displayName ?? 'Other'
@@ -473,6 +484,11 @@ export class RepositoriesList extends React.Component<
     event.preventDefault()
     event.stopPropagation()
 
+    const isPinned =
+      item.repository instanceof Repository &&
+      !item.isVirtualLinkedWorktree &&
+      this.state.pinnedRepositoriesIds.includes(item.repository.id)
+
     const items = generateRepositoryListContextMenu({
       onRemoveRepository: this.props.onRemoveRepository,
       onRemoveLinkedWorktree: () => this.onRemoveLinkedWorktree(item),
@@ -496,13 +512,22 @@ export class RepositoriesList extends React.Component<
       onRemoveRepositoryAlias: this.onRemoveRepositoryAlias,
       onChangeRepositoryGroupName: this.onChangeRepositoryGroupName,
       onRemoveRepositoryGroupName: this.onRemoveRepositoryGroupName,
-      onViewInBrowser: this.props.onViewInBrowser,
+      onViewOnGitHub: this.props.onViewOnGitHub,
       repository: item.repository,
       shellLabel: this.props.shellLabel,
       onCopyRepoPath: path => this.props.dispatcher.copyPathToClipboard(path),
       onPruneStaleWorktrees: () => {
         this.onPruneStaleWorktrees(item)
       },
+      isPinned,
+      onPinRepository:
+        item.repository instanceof Repository && !item.isVirtualLinkedWorktree
+          ? this.onPinRepository
+          : undefined,
+      onUnpinRepository:
+        item.repository instanceof Repository && !item.isVirtualLinkedWorktree
+          ? this.onUnpinRepository
+          : undefined,
     })
 
     showContextualMenu(items)
@@ -530,8 +555,15 @@ export class RepositoriesList extends React.Component<
       groups = groups.filter(group => group.identifier.kind !== 'recent')
     }
 
-    if (!this.props.showRecentRepositories) {
-      groups = groups.filter(group => group.identifier.kind !== 'recent')
+    const { pinnedRepositoriesIds } = this.state
+    if (pinnedRepositoriesIds.length > 0) {
+      const pinsGroup = buildPinnedGroup(pinnedRepositoriesIds, groups)
+      if (pinsGroup !== null) {
+        groups = [
+          pinsGroup,
+          ...filterPinnedFromGroups(pinnedRepositoriesIds, groups),
+        ]
+      }
     }
 
     // So there's two types of selection at play here. There's the repository
@@ -729,5 +761,34 @@ export class RepositoriesList extends React.Component<
 
   private onRemoveRepositoryGroupName = (repository: Repository) => {
     this.props.dispatcher.changeRepositoryGroupName(repository, null)
+  }
+
+  private getWorktreeFamily(repository: Repository): ReadonlyArray<Repository> {
+    const mainPath = normalizePath(
+      repository.isLinkedWorktree
+        ? repository.mainWorktreePath
+        : repository.path
+    )
+    return this.props.repositories.filter(
+      (r): r is Repository =>
+        r instanceof Repository &&
+        (normalizePath(r.path) === mainPath ||
+          (r.isLinkedWorktree &&
+            normalizePath(r.mainWorktreePath) === mainPath))
+    )
+  }
+
+  private onPinRepository = (repository: Repository) => {
+    for (const r of this.getWorktreeFamily(repository)) {
+      addPinnedRepository(r)
+    }
+    this.setState({ pinnedRepositoriesIds: getPinnedRepositories() })
+  }
+
+  private onUnpinRepository = (repository: Repository) => {
+    for (const r of this.getWorktreeFamily(repository)) {
+      removePinnedRepository(r)
+    }
+    this.setState({ pinnedRepositoriesIds: getPinnedRepositories() })
   }
 }
