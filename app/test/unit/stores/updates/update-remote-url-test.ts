@@ -1,5 +1,6 @@
 import { describe, it, TestContext } from 'node:test'
 import assert from 'node:assert'
+import { join } from 'path'
 import { GitStore, RepositoriesStore } from '../../../../src/lib/stores'
 import { TestRepositoriesDatabase } from '../../../helpers/databases'
 import {
@@ -48,7 +49,11 @@ describe('Update remote url', () => {
 
     const repoPath = await setupFixtureRepository(t, 'test-repo')
     const repository = await repositoriesStore.setGitHubRepository(
-      await repositoriesStore.addRepository(repoPath, null),
+      await repositoriesStore.addRepository(
+        repoPath,
+        join(repoPath, '.git'),
+        null
+      ),
       await repositoriesStore.upsertGitHubRepository(endpoint, apiRepo, null)
     )
     await addRemote(repository, 'origin', remoteUrl || apiRepo.clone_url)

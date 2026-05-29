@@ -58,6 +58,9 @@ export interface IDatabaseRepository {
   readonly defaultBranch: string | null
   readonly missing: boolean
 
+  /** The path to the .git directory for this repository */
+  readonly gitDir?: string
+
   /** The last time the stash entries were checked for the repository */
   readonly lastStashCheckDate?: number | null
 

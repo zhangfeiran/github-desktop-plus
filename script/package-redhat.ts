@@ -4,7 +4,7 @@ import { join } from 'path'
 import glob = require('glob')
 const globPromise = promisify(glob)
 
-import { rename } from 'fs-extra'
+import { readFile, writeFile, rename } from 'fs-extra'
 
 import { getVersion } from '../app/package-info'
 import {
@@ -93,7 +93,28 @@ export async function packageRedhat(): Promise<string> {
 
   const installer = require('electron-installer-redhat')
 
-  await installer(options)
+  // The Copilot extension bundles pre-built binaries for multiple CPU
+  // architectures (arm64, armhf, loong64, riscv64d, …) as plain resources.
+  // When rpmbuild runs brp-strip on an x86_64 host it calls /usr/bin/strip on
+  // every ELF file it finds, which exits with code 1 for non-x86_64 binaries
+  // and aborts the build. The upstream spec template already guards against
+  // this for genuine cross-compilation (%if _host_cpu != _target_cpu), but
+  // here both are x86_64 so that condition is always false. Patching the
+  // generated spec to set %global __strip /bin/true unconditionally disables
+  // stripping entirely, which is fine for an Electron app.
+  const { Installer } = installer
+  const originalCreateSpec = Installer.prototype.createSpec
+  Installer.prototype.createSpec = async function (this: any) {
+    await originalCreateSpec.call(this)
+    const specContent: string = await readFile(this.specPath, 'utf8')
+    await writeFile(this.specPath, '%global __strip /bin/true\n' + specContent)
+  }
+
+  try {
+    await installer(options)
+  } finally {
+    Installer.prototype.createSpec = originalCreateSpec
+  }
   const installersPath = `${distRoot}/github-desktop-plus*.rpm`
 
   const files = await globPromise(installersPath)

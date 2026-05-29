@@ -1,8 +1,8 @@
+import { join } from 'path'
 import { git, HookCallbackOptions } from './core'
 import { GitError } from 'dugite'
 import { Repository } from '../../models/repository'
-import { pathExists } from '../../ui/lib/path-exists'
-import { dotGitPath } from '../helpers/git-dir'
+import { pathExists } from '../path-exists'
 import { createMultiOperationTerminalOutputCallback } from './multi-operation-terminal-output'
 
 export enum MergeResult {
@@ -136,7 +136,7 @@ export async function abortMerge(repository: Repository): Promise<void> {
  * that it is in a conflicted state.
  */
 export async function isMergeHeadSet(repository: Repository): Promise<boolean> {
-  const path = dotGitPath(repository, 'MERGE_HEAD')
+  const path = join(repository.resolvedGitDir, 'MERGE_HEAD')
   return await pathExists(path)
 }
 
@@ -149,6 +149,6 @@ export async function isMergeHeadSet(repository: Repository): Promise<boolean> {
  * could lead to this being erroneously available in a non merge --squashing scenario.
  */
 export async function isSquashMsgSet(repository: Repository): Promise<boolean> {
-  const path = dotGitPath(repository, 'SQUASH_MSG')
+  const path = join(repository.resolvedGitDir, 'SQUASH_MSG')
   return await pathExists(path)
 }

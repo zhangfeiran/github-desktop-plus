@@ -87,7 +87,13 @@ export class Repository {
      * which introduces new users to some core concepts of Git and GitHub.
      */
     public readonly isTutorialRepository: boolean = false,
-    public readonly overrideLogin: string | LoginSpecialValue | null = null
+    public readonly overrideLogin: string | LoginSpecialValue | null = null,
+    /**
+     * The path to the .git directory for this repository, or undefined if it
+     * hasn't been resolved yet (e.g. for repositories added before this
+     * property was introduced).
+     */
+    public readonly gitDir: string | undefined = undefined
   ) {
     this.gitSourceOverride = normalizeRepositoryGitSource(
       path,
@@ -129,6 +135,16 @@ export class Repository {
     // minimize merge conflicts when pulling changes from the official repo (desktop/desktop).
     // If isLinkedWorktree = true, this is actually the path to the linked worktree
     return this.mainWorkTree.path
+  }
+
+  /**
+   * The resolved path to the .git directory for this repository.
+   *
+   * Uses the stored gitDir if available, otherwise falls back to
+   * joining the repository path with '.git'.
+   */
+  public get resolvedGitDir(): string {
+    return this.gitDir ?? Path.join(this.path, '.git')
   }
 
   public get isLinkedWorktree(): boolean {

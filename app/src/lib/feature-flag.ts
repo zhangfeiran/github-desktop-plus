@@ -128,4 +128,4 @@ export const enableHooksEnvironment = () => true
 
 export const enableHooksByDefault = enableBetaFeatures
 
-export const enableFormattingPreferences = enableBetaFeatures
+export const enableFormattingPreferences = () => true

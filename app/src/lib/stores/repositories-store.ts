@@ -173,7 +173,8 @@ export class RepositoriesStore extends TypedBaseStore<
       repo.customEditorOverride,
       repo.gitSourceOverride,
       repo.isTutorialRepository,
-      repo.login
+      repo.login,
+      repo.gitDir
     )
   }
 
@@ -221,7 +222,8 @@ export class RepositoriesStore extends TypedBaseStore<
     path: string,
     endpoint: string,
     login: string,
-    apiRepo: IAPIFullRepository
+    apiRepo: IAPIFullRepository,
+    gitDir?: string
   ) {
     await this.db.transaction(
       'rw',
@@ -249,6 +251,7 @@ export class RepositoriesStore extends TypedBaseStore<
             existingRepo?.gitSourceOverride ?? getRepositoryGitSource(path),
           isTutorialRepository: true,
           login,
+          gitDir,
         })
       }
     )
@@ -264,6 +267,7 @@ export class RepositoriesStore extends TypedBaseStore<
    */
   public async addRepository(
     path: string,
+    gitDir: string | undefined,
     login: string | null,
     opts?: AddRepositoryOptions
   ): Promise<Repository> {
@@ -289,6 +293,7 @@ export class RepositoriesStore extends TypedBaseStore<
           defaultBranch: null,
           gitSourceOverride: getRepositoryGitSource(path),
           login,
+          gitDir,
         }
         const id = await this.db.repositories.add(dbRepo)
         return this.toRepository({ id, ...dbRepo })
@@ -331,7 +336,33 @@ export class RepositoriesStore extends TypedBaseStore<
       repository.customEditorOverride,
       repository.gitSourceOverride,
       repository.isTutorialRepository,
-      repository.overrideLogin
+      repository.overrideLogin,
+      repository.gitDir
+    )
+  }
+
+  /** Update the repository's `gitDir` path. */
+  public async updateRepositoryGitDir(
+    repository: Repository,
+    gitDir: string
+  ): Promise<Repository> {
+    await this.db.repositories.update(repository.id, { gitDir })
+
+    this.emitUpdatedRepositories()
+
+    return new Repository(
+      repository.path,
+      repository.id,
+      repository.gitHubRepository,
+      repository.missing,
+      repository.alias,
+      repository.groupName,
+      repository.defaultBranch,
+      repository.workflowPreferences,
+      repository.customEditorOverride,
+      repository.isTutorialRepository,
+      repository.overrideLogin,
+      gitDir
     )
   }
 
@@ -480,7 +511,9 @@ export class RepositoriesStore extends TypedBaseStore<
   /** Update the repository's path. */
   public async updateRepositoryPath(
     repository: Repository,
-    path: string
+    path: string,
+    gitDir: string | undefined,
+    missing: boolean = false
   ): Promise<Repository> {
     const gitSourceOverride = normalizeRepositoryGitSource(
       path,
@@ -501,7 +534,7 @@ export class RepositoriesStore extends TypedBaseStore<
       path,
       repository.id,
       repository.gitHubRepository,
-      false,
+      missing,
       repository.alias,
       repository.groupName,
       repository.defaultBranch,
@@ -509,7 +542,8 @@ export class RepositoriesStore extends TypedBaseStore<
       repository.customEditorOverride,
       gitSourceOverride,
       repository.isTutorialRepository,
-      repository.overrideLogin
+      repository.overrideLogin,
+      gitDir
     )
   }
 
@@ -721,7 +755,8 @@ export class RepositoriesStore extends TypedBaseStore<
       repo.customEditorOverride,
       repo.gitSourceOverride,
       repo.isTutorialRepository,
-      repo.overrideLogin
+      repo.overrideLogin,
+      repo.gitDir
     )
 
     assertIsRepositoryWithGitHubRepository(updatedRepo)

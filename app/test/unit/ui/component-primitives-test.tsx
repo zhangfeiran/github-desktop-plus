@@ -61,6 +61,7 @@ describe('component primitives', () => {
       <>
         <FilesChangedBadge filesChangedCount={12} />
         <FilesChangedBadge filesChangedCount={301} />
+        <FilesChangedBadge filesChangedCount={3000} />
       </>
     )
 
@@ -68,8 +69,7 @@ describe('component primitives', () => {
 
     assert.deepEqual(
       badges.map(badge => badge.textContent),
-      // If enableFormattingPreferences() is true, the count is not currently capped at 300
-      ['12', '301']
+      ['12', '301', '3k']
     )
   })
 })
