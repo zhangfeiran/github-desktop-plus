@@ -31,7 +31,6 @@ import { Branch } from '../../models/branch'
 import { join } from 'path'
 import { readFile } from 'fs/promises'
 import { pathExists } from '../path-exists'
-import { dotGitPath } from '../helpers/git-dir'
 import { coerceToString } from './coerce-to-string'
 
 /** The app-specific results from attempting to rebase a repository */

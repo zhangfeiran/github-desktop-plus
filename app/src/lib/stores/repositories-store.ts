@@ -360,6 +360,7 @@ export class RepositoriesStore extends TypedBaseStore<
       repository.defaultBranch,
       repository.workflowPreferences,
       repository.customEditorOverride,
+      repository.gitSourceOverride,
       repository.isTutorialRepository,
       repository.overrideLogin,
       gitDir
