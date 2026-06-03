@@ -28,6 +28,7 @@ export type MenuIDs =
   | 'show-branches-list'
   | 'open-working-directory'
   | 'show-repository-settings'
+  | 'manage-remotes'
   | 'open-external-editor'
   | 'open-with-external-editor'
   | 'remove-repository'

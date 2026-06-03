@@ -121,6 +121,8 @@ export enum PopupType {
   EditCopilotBYOKProvider = 'EditCopilotBYOKProvider',
   EditCopilotBYOKModel = 'EditCopilotBYOKModel',
   ConfirmDeleteCopilotBYOKProvider = 'ConfirmDeleteCopilotBYOKProvider',
+  ManageRemotes = 'ManageRemotes',
+  AddRemote = 'AddRemote',
 }
 
 interface IBasePopup {
@@ -550,5 +552,14 @@ export type PopupDetail =
   | {
       type: PopupType.CantDeleteWorktreeUncommittedChanges
       worktreePath: string
+    }
+  | {
+      type: PopupType.ManageRemotes
+      repository: Repository
+    }
+  | {
+      type: PopupType.AddRemote
+      repository: Repository
+      existingRemoteNames: ReadonlyArray<string>
     }
 export type Popup = IBasePopup & PopupDetail

@@ -338,7 +338,20 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
       onDeleteBranch: this.onDeleteBranch,
     })
 
+    items.push({ type: 'separator' })
+    items.push({
+      label: __DARWIN__ ? 'Manage Remotes…' : 'Manage remotes…',
+      action: this.onManageRemotes,
+    })
+
     showContextualMenu(items)
+  }
+
+  private onManageRemotes = () => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.ManageRemotes,
+      repository: this.props.repository,
+    })
   }
 
   private getBranchWithName(branchName: string): Branch | undefined {

@@ -99,8 +99,16 @@ export class LocalChangesOverwrittenDialog extends React.Component<
     )
   }
 
+  private get canStashChanges() {
+    return (
+      !this.props.hasExistingStash &&
+      !this.state.stashing &&
+      this.props.retryAction.type !== RetryActionType.PopStash
+    )
+  }
+
   private renderStashText() {
-    if (this.props.hasExistingStash && !this.state.stashing) {
+    if (!this.canStashChanges) {
       return null
     }
 
@@ -108,7 +116,7 @@ export class LocalChangesOverwrittenDialog extends React.Component<
   }
 
   private renderFooter() {
-    if (this.props.hasExistingStash && !this.state.stashing) {
+    if (!this.canStashChanges) {
       return <DefaultDialogFooter />
     }
 
@@ -128,9 +136,9 @@ export class LocalChangesOverwrittenDialog extends React.Component<
   }
 
   private onSubmit = async () => {
-    const { hasExistingStash, repository, dispatcher, retryAction } = this.props
+    const { repository, dispatcher, retryAction } = this.props
 
-    if (hasExistingStash) {
+    if (!this.canStashChanges) {
       // When there's an existing stash we don't let the user stash the changes
       // and we only show a "Close" button on the modal. In that case, the
       // "Close" button submits the dialog and should only dismiss it.
@@ -186,6 +194,8 @@ export class LocalChangesOverwrittenDialog extends React.Component<
         return 'stash changes'
       case RetryActionType.ResetAndPull:
         return 'reset and pull'
+      case RetryActionType.PopStash:
+        return 'restore stashed changes'
       default:
         assertNever(
           this.props.retryAction,

@@ -417,6 +417,11 @@ export function buildDefaultMenu({
         id: 'show-repository-settings',
         click: emit('show-repository-settings'),
       },
+      {
+        id: 'manage-remotes',
+        label: __DARWIN__ ? 'Manage Remotes…' : 'Manage remotes…',
+        click: emit('manage-remotes'),
+      },
     ],
   })
 

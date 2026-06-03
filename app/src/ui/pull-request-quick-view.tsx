@@ -176,7 +176,7 @@ export class PullRequestQuickView extends React.Component<
           {this.getViewOnGitHubLabel(
             this.props.pullRequest.base.gitHubRepository.type
           )}
-          <Octicon symbol={octicons.linkExternal} />
+          <Octicon symbol={octicons.linkExternal} className="ml" />
         </Button>
       </header>
     )

@@ -1,18 +1,18 @@
-GitHub Desktop Plus v3.5.9
+GitHub Desktop Plus v3.5.12
 
-Upstream: [GitHub Desktop 3.5.9 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.9)
+Upstream:
+- [GitHub Desktop 3.5.12-beta1 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.12-beta1)
+- [GitHub Desktop 3.5.12-beta2 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.12-beta2)
+- [GitHub Desktop 3.5.12 release notes](https://github.com/desktop/desktop/releases/tag/release-3.5.12)
 
 ---
 
 ## **Changes and improvements:**
 
-- [#152] Added a new **commit graph** view mode to the history tab. This allows you to visualize the commit history as a graph, showing branches and merges more clearly. Thank you @kingdo10!  
-  You can switch between the list view and graph view using the toggle button next to the search bar in the history tab.
+- [#167] Implemented a new feature to allow managing a repository's remotes from the app.  
+  Select "Repository" > "Manage Remotes..." from the app's menu to view and manage the configured remotes.
 
-- [#162] SVG file diffs now have the option to be rendered as images instead of code.
-
-- [#166] Added OpenSUSE install guide to the README. Thank you @arfshl!
 
 ## **Fixes:**
 
-- Fixed an issue where Bitbucket PRs would not be refreshed correctly in some cases.
+- Fixed multiaccount support when publishing a newly created repository to GitHub.

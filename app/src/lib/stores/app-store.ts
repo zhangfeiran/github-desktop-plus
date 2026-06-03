@@ -5755,7 +5755,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   public async _updateRepositoryAccount(
     repository: Repository,
     account: Account | null
-  ): Promise<void> {
+  ): Promise<Repository> {
     if (repository.gitHubRepository && account === null) {
       await this.repositoriesStore.clearGitHubRepositoryLogin(
         repository.gitHubRepository
@@ -5769,6 +5769,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       repo
     )
     await this._refreshRepository(refreshedRepo)
+    return refreshedRepo
   }
 
   public async _updateRepositoryEditorOverride(
@@ -6317,7 +6318,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   /** This shouldn't be called directly. See `Dispatcher`. */
   public async _publishRepository(
-    repository: Repository,
+    oldRepo: Repository,
     name: string,
     description: string,
     private_: boolean,
@@ -6332,11 +6333,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
       private_
     )
 
-    const gitStore = this.gitStoreCache.get(repository)
-    await gitStore.performFailableOperation(() =>
-      addRemote(repository, 'origin', apiRepository.clone_url)
-    )
-    await gitStore.loadRemotes()
+    const gitStore = this.gitStoreCache.get(oldRepo)
+    await gitStore.addRemote('origin', apiRepository.clone_url)
+    await gitStore.refreshDefaultBranch()
+
+    const repository = await this._updateRepositoryAccount(oldRepo, account)
 
     // skip pushing if the current branch is a detached HEAD or the repository
     // is unborn
@@ -6353,9 +6354,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       await this.performPush(repository)
     }
 
-    await gitStore.refreshDefaultBranch()
-
-    return this.repositoryWithRefreshedGitHubRepository(repository)
+    return repository
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
@@ -7581,6 +7580,39 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<void> {
     const gitStore = this.gitStoreCache.get(repository)
     await gitStore.setRemoteURL(name, url)
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public _getRemotes(repository: Repository): Promise<ReadonlyArray<IRemote>> {
+    return getRemotes(repository)
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _addRemote(
+    repository: Repository,
+    name: string,
+    url: string
+  ): Promise<void> {
+    const gitStore = this.gitStoreCache.get(repository)
+    await gitStore.addRemote(name, url)
+
+    // Fetch the newly added remote so that its branches show up in the branches list
+    const remote = gitStore.remotes.find(r => r.name === name)
+    if (remote !== undefined) {
+      await this._fetchRemote(repository, remote, FetchType.UserInitiatedTask)
+    }
+
+    await this._refreshRepository(repository)
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _removeRemote(
+    repository: Repository,
+    name: string
+  ): Promise<void> {
+    const gitStore = this.gitStoreCache.get(repository)
+    await gitStore.removeRemote(name)
+    await this._refreshRepository(repository)
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
