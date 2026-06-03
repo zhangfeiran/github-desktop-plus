@@ -54,7 +54,7 @@ async function setupRepositoryWithSubmodule(
 
 describe('git/pull', () => {
   describe('with submodules', () => {
-    it('updates submodule references after pulling changes', async t => {
+    it('does not update submodule references after pulling changes', async t => {
       // Setup: Create parent with submodule, clone it
       const { parent, submodule } = await setupRepositoryWithSubmodule(t)
 
@@ -92,17 +92,15 @@ describe('git/pull', () => {
         url: parent.path,
       }
 
-      // Pull the changes
       await pull(cloned, remote, undefined)
 
-      // Verify submodule was updated to the new reference
       const finalLog = await exec(['log', '--oneline'], submodulePath)
       const finalCommitCount = finalLog.stdout.trim().split('\n').length
 
       assert.equal(
         finalCommitCount,
-        3,
-        'Submodule should now have 3 commits after update'
+        initialCommitCount,
+        'Submodule should remain checked out at its previous commit'
       )
     })
 

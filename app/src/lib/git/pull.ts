@@ -97,7 +97,7 @@ export async function pull(
     ...gitRebaseArguments(),
     'pull',
     ...(await getDefaultPullDivergentBranchArguments(repository)),
-    '--recurse-submodules',
+    '--no-recurse-submodules',
     ...(options?.progressCallback ? ['--progress'] : []),
     ...(options?.noVerify ? ['--no-verify'] : []),
     remote.name,

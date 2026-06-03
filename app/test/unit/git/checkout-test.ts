@@ -13,7 +13,6 @@ import { checkoutBranch, getBranches, createBranch } from '../../../src/lib/git'
 import { TipState, IValidBranch } from '../../../src/models/tip'
 import { GitStore } from '../../../src/lib/stores'
 import { Branch, BranchType } from '../../../src/models/branch'
-import { getStatusOrThrow } from '../../helpers/status'
 import { exec } from 'dugite'
 import { TestStatsStore } from '../../helpers/test-stats-store'
 import { pathExists } from '../../../src/lib/path-exists'
@@ -128,7 +127,7 @@ describe('git/checkout', () => {
   })
 
   describe('with submodules', () => {
-    it('updates a changed submodule reference', async t => {
+    it('does not update a changed submodule reference', async t => {
       const path = await setupFixtureRepository(t, 'test-submodule-checkouts')
       const repository = new Repository(path, -1, null, false)
 
@@ -144,11 +143,14 @@ describe('git/checkout', () => {
 
       await checkoutBranch(repository, devBranch, null)
 
-      const status = await getStatusOrThrow(repository)
-      assert.equal(status.workingDirectory.files.length, 0)
+      const submoduleStatus = await exec(['submodule', 'status'], path)
+      assert.ok(
+        submoduleStatus.stdout.trim().startsWith('+'),
+        'Submodule should remain checked out at its previous commit'
+      )
     })
 
-    it('initializes an uninitialized submodule when checking out a branch', async t => {
+    it('does not initialize an uninitialized submodule when checking out a branch', async t => {
       const repository = await setupRepositoryWithUninitializedSubmodule(t)
 
       const branches = await getBranches(repository)
@@ -158,13 +160,7 @@ describe('git/checkout', () => {
         throw new Error(`Could not find branch other than 'master'`)
       }
 
-      await checkoutBranch(
-        repository,
-        branchWithSubmodule,
-        null,
-        undefined,
-        true
-      )
+      await checkoutBranch(repository, branchWithSubmodule, null)
 
       // Verify we're on the correct branch
       const statusOutput = await exec(['status'], repository.path)
@@ -172,21 +168,15 @@ describe('git/checkout', () => {
         statusOutput.stdout.includes(`On branch ${branchWithSubmodule.name}`)
       )
 
-      // Verify the submodule is initialized and has the correct commits
       const submodulePath = Path.join(repository.path, 'test-submodule')
       const submoduleGitPath = Path.join(submodulePath, '.git')
 
-      // Check that submodule .git exists (either as file or directory)
       const submoduleGitExists = await pathExists(submoduleGitPath)
       assert.equal(
         submoduleGitExists,
-        true,
-        'Submodule .git should exist after checkout'
+        false,
+        'Submodule .git should not exist after checkout'
       )
-
-      // Verify submodule has two commits
-      const submoduleLog = await exec(['log', '--oneline'], submodulePath)
-      assert.equal(submoduleLog.stdout.trim().split('\n').length, 2)
     })
   })
 })

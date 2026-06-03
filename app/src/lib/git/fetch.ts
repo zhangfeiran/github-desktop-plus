@@ -14,7 +14,7 @@ async function getFetchArgs(
     'fetch',
     ...(progressCallback ? ['--progress'] : []),
     '--prune',
-    '--recurse-submodules=on-demand',
+    '--no-recurse-submodules',
     remote,
   ]
 }
