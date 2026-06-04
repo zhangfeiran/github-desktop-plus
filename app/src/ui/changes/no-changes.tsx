@@ -302,6 +302,8 @@ export class NoChanges extends React.Component<
       github: ['on Github', octicons.markGithub],
       bitbucket: ['on Bitbucket', bitbucket],
       gitlab: ['on GitLab', gitlab],
+      gitee: ['on Gitee', octicons.globe],
+      gitcode: ['on GitCode', octicons.globe],
       _: ['in your browser', octicons.globe],
     }
     const repoType = this.props.repository.gitHubRepository?.type ?? '_'
@@ -640,6 +642,10 @@ export class NoChanges extends React.Component<
         return 'Bitbucket'
       case 'gitlab':
         return 'GitLab'
+      case 'gitee':
+        return 'Gitee'
+      case 'gitcode':
+        return 'GitCode'
       case undefined:
         return 'the remote'
       default:

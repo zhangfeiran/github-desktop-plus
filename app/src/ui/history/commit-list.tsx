@@ -993,6 +993,10 @@ export class CommitList extends React.Component<
         return 'View on Bitbucket'
       case 'gitlab':
         return 'View on GitLab'
+      case 'gitee':
+        return 'View on Gitee'
+      case 'gitcode':
+        return 'View on GitCode'
       default:
         assertNever(
           gitHubRepository.type,

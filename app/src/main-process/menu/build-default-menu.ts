@@ -708,6 +708,10 @@ function onGithubLabel(gitHubRepositoryType: RepoType | null) {
       return 'on Bitbucket'
     case 'gitlab':
       return 'on GitLab'
+    case 'gitee':
+      return 'on Gitee'
+    case 'gitcode':
+      return 'on GitCode'
     case null:
       return 'in your browser'
     default:

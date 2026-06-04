@@ -2,6 +2,8 @@ import * as semver from 'semver'
 import {
   getBitbucketAPIEndpoint,
   getDotComAPIEndpoint,
+  getGiteeAPIEndpoint,
+  getGitCodeAPIEndpoint,
   getGitLabAPIEndpoint,
 } from './api'
 import { assertNonNullable } from './fatal-error'
@@ -70,6 +72,14 @@ export const isGitLab = (ep: string) => {
   return ep === getGitLabAPIEndpoint()
 }
 
+export const isGitee = (ep: string) => {
+  return ep === getGiteeAPIEndpoint()
+}
+
+export const isGitCode = (ep: string) => {
+  return ep === getGitCodeAPIEndpoint()
+}
+
 /** Whether or not the given endpoint URI is under the ghe.com domain */
 export const isGHE = (ep: string) => new URL(ep).hostname.endsWith('.ghe.com')
 
@@ -78,7 +88,12 @@ export const isGHE = (ep: string) => new URL(ep).hostname.endsWith('.ghe.com')
  * Server instance
  */
 export const isGHES = (ep: string) =>
-  !isDotCom(ep) && !isGHE(ep) && !isBitbucket(ep) && !isGitLab(ep)
+  !isDotCom(ep) &&
+  !isGHE(ep) &&
+  !isBitbucket(ep) &&
+  !isGitLab(ep) &&
+  !isGitee(ep) &&
+  !isGitCode(ep)
 
 export function getEndpointVersion(endpoint: string) {
   const key = endpointVersionKey(endpoint)

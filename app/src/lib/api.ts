@@ -18,8 +18,10 @@ import {
   getEndpointVersion,
   isBitbucket,
   isDotCom,
+  isGitee,
   isGHE,
   isGHES,
+  isGitCode,
   isGitLab,
   updateEndpointVersion,
 } from './endpoint-capabilities'
@@ -3025,6 +3027,10 @@ export function getEndpointForRepository(url: string): string | null {
     return getBitbucketAPIEndpoint()
   } else if (parsed.hostname === 'gitlab.com') {
     return getGitLabAPIEndpoint()
+  } else if (parsed.hostname === 'gitee.com') {
+    return getGiteeAPIEndpoint()
+  } else if (parsed.hostname === 'gitcode.com') {
+    return getGitCodeAPIEndpoint()
   } else {
     return `${parsed.protocol}//${parsed.hostname}/api`
   }
@@ -3055,6 +3061,10 @@ export function getHTMLURL(endpoint: string): string {
     return 'https://bitbucket.org'
   } else if (endpoint === getGitLabAPIEndpoint()) {
     return 'https://gitlab.com'
+  } else if (endpoint === getGiteeAPIEndpoint()) {
+    return 'https://gitee.com'
+  } else if (endpoint === getGitCodeAPIEndpoint()) {
+    return 'https://gitcode.com'
   } else {
     if (isGHE(endpoint)) {
       const url = new window.URL(endpoint)
@@ -3094,6 +3104,12 @@ export const getAPIEndpoint = (endpoint: string) => {
   if (isGitLab(endpoint)) {
     return getGitLabAPIEndpoint()
   }
+  if (isGitee(endpoint)) {
+    return getGiteeAPIEndpoint()
+  }
+  if (isGitCode(endpoint)) {
+    return getGitCodeAPIEndpoint()
+  }
   return getEnterpriseAPIURL(endpoint)
 }
 
@@ -3117,6 +3133,14 @@ export function getBitbucketAPIEndpoint(): string {
 
 export function getGitLabAPIEndpoint(): string {
   return 'https://gitlab.com/api/v4'
+}
+
+export function getGiteeAPIEndpoint(): string {
+  return 'https://gitee.com/api/v5'
+}
+
+export function getGitCodeAPIEndpoint(): string {
+  return 'https://api.gitcode.com/api/v5'
 }
 
 /** Get the account for the endpoint. */
@@ -3270,6 +3294,8 @@ const knownThirdPartyHosts = new Set([
   'dev.azure.com',
   'gitlab.com',
   'bitbucket.org',
+  'gitee.com',
+  'gitcode.com',
   'amazonaws.com',
   'visualstudio.com',
 ])
@@ -3340,7 +3366,7 @@ export async function isGitHubHost(url: string) {
   }
 
   // bitbucket.example.com, etc
-  if (/(^|\.)(bitbucket|gitlab)\./.test(hostname)) {
+  if (/(^|\.)(bitbucket|gitlab|gitee|gitcode)\./.test(hostname)) {
     return false
   }
 

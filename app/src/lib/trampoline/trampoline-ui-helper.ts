@@ -103,6 +103,11 @@ class TrampolineUIHelper {
         case 'gitlab':
           this.dispatcher.beginGitLabSignIn(cb)
           break
+        case 'gitee':
+        case 'gitcode':
+          log.warn(`Unexpected sign-in prompt for ${repositoryType}`)
+          resolve(undefined)
+          return
         default:
           assertNever(repositoryType, `Unexpected repo type: ${repositoryType}`)
       }

@@ -159,6 +159,10 @@ function getViewOnBrowserLabel(repoType: RepoType | null) {
       return 'View on Bitbucket'
     case 'gitlab':
       return 'View on GitLab'
+    case 'gitee':
+      return 'View on Gitee'
+    case 'gitcode':
+      return 'View on GitCode'
     default:
       return 'View in your browser'
   }

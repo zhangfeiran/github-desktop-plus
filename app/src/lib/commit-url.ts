@@ -22,6 +22,9 @@ export function createCommitURL(
         return `${baseURL}/commits/${SHA}`
       case 'gitlab':
         return `${baseURL}/-/commit/${SHA}`
+      case 'gitee':
+      case 'gitcode':
+        return `${baseURL}/commit/${SHA}`
       default:
         assertNever(
           gitHubRepository.type,
@@ -38,6 +41,9 @@ export function createCommitURL(
       return `${baseURL}/commits/${SHA}#chg-${filePath}`
     case 'gitlab':
       return `${baseURL}/-/commit/${SHA}#diff-${fileHash}`
+    case 'gitee':
+    case 'gitcode':
+      return `${baseURL}/commit/${SHA}#diff-${fileHash}`
     default:
       assertNever(
         gitHubRepository.type,

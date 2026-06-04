@@ -31,6 +31,10 @@ function getViewPullRequestLabel(repoType: RepoType): string {
       return 'View Pull Request on Bitbucket'
     case 'gitlab':
       return 'View Merge Request on GitLab'
+    case 'gitee':
+      return 'View Pull Request on Gitee'
+    case 'gitcode':
+      return 'View Pull Request on GitCode'
     default:
       assertNever(repoType, `Unknown repo type: ${repoType}`)
   }

@@ -393,6 +393,8 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
       github: `${gitHubRepository.htmlURL}/tree/${encodedBranchName}`,
       bitbucket: `${gitHubRepository.htmlURL}/src/${encodedBranchName}`,
       gitlab: `${gitHubRepository.htmlURL}/-/tree/${encodedBranchName}`,
+      gitee: `${gitHubRepository.htmlURL}/tree/${encodedBranchName}`,
+      gitcode: `${gitHubRepository.htmlURL}/tree/${encodedBranchName}`,
     }
     this.props.dispatcher.openInBrowser(VIEW_BRANCH_URL[gitHubRepository.type])
   }

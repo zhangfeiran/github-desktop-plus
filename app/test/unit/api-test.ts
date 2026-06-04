@@ -1,6 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import { getNextPagePathWithIncreasingPageSize } from '../../src/lib/api'
+import {
+  getEndpointForRepository,
+  getGiteeAPIEndpoint,
+  getGitCodeAPIEndpoint,
+  getHTMLURL,
+  getNextPagePathWithIncreasingPageSize,
+  isGitHubHost,
+  isTrustedRemoteHost,
+} from '../../src/lib/api'
 import * as URL from 'url'
 
 interface IPageInfo {
@@ -52,6 +60,40 @@ function assertNext(current: IPageInfo, expected: IPageInfo) {
 }
 
 describe('API', () => {
+  describe('repository host support', () => {
+    it('maps Gitee repositories to the Gitee API endpoint', () => {
+      assert.equal(
+        getEndpointForRepository('https://gitee.com/owner/repo.git'),
+        getGiteeAPIEndpoint()
+      )
+      assert.equal(getHTMLURL(getGiteeAPIEndpoint()), 'https://gitee.com')
+    })
+
+    it('maps GitCode repositories to the GitCode API endpoint', () => {
+      assert.equal(
+        getEndpointForRepository('https://gitcode.com/owner/repo.git'),
+        getGitCodeAPIEndpoint()
+      )
+      assert.equal(getHTMLURL(getGitCodeAPIEndpoint()), 'https://gitcode.com')
+    })
+
+    it('trusts Gitee and GitCode HTTPS remotes for browser links', () => {
+      assert(isTrustedRemoteHost('https://gitee.com/owner/repo.git'))
+      assert(isTrustedRemoteHost('https://gitcode.com/owner/repo.git'))
+    })
+
+    it('does not probe Gitee and GitCode as GitHub hosts', async () => {
+      assert.equal(
+        await isGitHubHost('https://gitee.com/owner/repo.git'),
+        false
+      )
+      assert.equal(
+        await isGitHubHost('https://gitcode.com/owner/repo.git'),
+        false
+      )
+    })
+  })
+
   describe('getNextPagePathWithIncreasingPageSize', () => {
     it("returns null when there's no link header", () => {
       assert(

@@ -154,7 +154,7 @@ interface IAuthenticationEvent {
   readonly account: Account
 }
 
-type OAuthProvider = RepoType
+type OAuthProvider = Extract<RepoType, 'github' | 'bitbucket' | 'gitlab'>
 
 export type SignInResult =
   | { kind: 'success'; account: Account }

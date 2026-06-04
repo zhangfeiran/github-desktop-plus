@@ -8650,6 +8650,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
       github: `${baseRepoUrl}/pull/${pr.pullRequestNumber}`,
       bitbucket: `${baseRepoUrl}/pull-requests/${pr.pullRequestNumber}`,
       gitlab: `${baseRepoUrl}/merge_requests/${pr.pullRequestNumber}`,
+      gitee: `${baseRepoUrl}/pulls/${pr.pullRequestNumber}`,
+      gitcode: `${baseRepoUrl}/pulls/${pr.pullRequestNumber}`,
     }
 
     const type = pr.base.gitHubRepository.type
@@ -8762,6 +8764,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
         `${htmlURL}/pull/new/${encodedBaseBranch ? encodedBaseBranch + '...' : ''}${encodedCompareBranch}`,
       gitlab:
         `${htmlURL}/merge_requests/new?${param('merge_request[source_branch]', encodedCompareBranch)}&${param('merge_request[target_branch]', encodedBaseBranch)}`,
+      gitee:
+        `${htmlURL}/compare/${encodedBaseBranch}...${encodedCompareBranch}`,
+      gitcode:
+        `${htmlURL}/compare/${encodedBaseBranch}...${encodedCompareBranch}`,
     }
     await this._openInBrowser(PR_URLS[type])
   }

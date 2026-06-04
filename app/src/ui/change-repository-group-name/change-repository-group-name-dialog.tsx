@@ -91,6 +91,10 @@ export class ChangeRepositoryGroupName extends React.Component<
         return ' on Bitbucket'
       case 'gitlab':
         return ' on GitLab'
+      case 'gitee':
+        return ' on Gitee'
+      case 'gitcode':
+        return ' on GitCode'
       default:
         assertNever(type, `Unknown repository type: ${type}`)
     }
