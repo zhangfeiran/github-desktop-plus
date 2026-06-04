@@ -5,8 +5,10 @@ import {
   type ChildProcessWithoutNullStreams,
 } from 'child_process'
 import {
+  exec as dugiteExec,
   ExecError,
   ignoreClosedInputStream,
+  spawn as dugiteSpawn,
   type IGitExecutionOptions as DugiteExecutionOptions,
   type IGitResult,
   type IGitStringExecutionOptions,
@@ -14,7 +16,6 @@ import {
   type IGitBufferExecutionOptions,
   type IGitBufferResult,
   type IGitSpawnOptions,
-  setupEnvironment,
 } from 'dugite'
 import type { RepositoryGitSource } from '../../models/repository-git-source'
 import { getRepositoryGitSource, toWslPath } from './source'
@@ -25,7 +26,7 @@ type GitCommand = {
   readonly args: ReadonlyArray<string>
   readonly cwd: string
   readonly env: Record<string, string | undefined>
-  readonly source: RepositoryGitSource
+  readonly source: Exclude<RepositoryGitSource, { kind: 'bundled' }>
   readonly wsl?: {
     readonly args: ReadonlyArray<string>
     readonly cwd: string
@@ -192,21 +193,10 @@ const resolveGitCommand = (
   args: ReadonlyArray<string>,
   path: string,
   env: Record<string, string | undefined> = {}
-): GitCommand => {
+): GitCommand | null => {
   const source = getRepositoryGitSource(path)
 
   switch (source.kind) {
-    case 'bundled': {
-      const { env: resolvedEnv, gitLocation } = setupEnvironment(env)
-      return {
-        command: gitLocation,
-        args: [...args],
-        cwd: path,
-        env: resolvedEnv,
-        source,
-      }
-    }
-
     case 'external':
       return {
         command: source.path,
@@ -241,6 +231,9 @@ const resolveGitCommand = (
         },
       }
     }
+
+    case 'bundled':
+      return null
   }
 }
 
@@ -265,6 +258,10 @@ export async function execGitProcess(
   options?: DugiteExecutionOptions
 ): Promise<IGitResult> {
   const command = resolveGitCommand(args, path, options?.env)
+
+  if (command === null) {
+    return dugiteExec(args, path, options)
+  }
 
   const execOptions = {
     cwd: command.cwd,
@@ -326,12 +323,13 @@ export const spawnGitProcess = (
   path: string,
   options?: IGitSpawnOptions
 ): ChildProcessWithoutNullStreams => {
-  const {
-    command,
-    args: commandArgs,
-    cwd,
-    env,
-  } = resolveGitCommand(args, path, options?.env)
+  const resolvedCommand = resolveGitCommand(args, path, options?.env)
+
+  if (resolvedCommand === null) {
+    return dugiteSpawn(args, path, options)
+  }
+
+  const { command, args: commandArgs, cwd, env } = resolvedCommand
 
   const child = spawn(command, commandArgs, {
     cwd,

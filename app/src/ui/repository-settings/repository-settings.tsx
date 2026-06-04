@@ -98,7 +98,6 @@ interface IRepositorySettingsState {
   readonly repositoryAccount: Account | null
   readonly gitSourceKind: RepositoryGitSource['kind']
   readonly externalGitPath: string
-  readonly initialGitSourceOverride: RepositoryGitSource
   readonly isValidExternalGitPath: boolean
   readonly showInvalidExternalGitPathWarning: boolean
   readonly gitSourceSaveDisabled: boolean
@@ -153,7 +152,6 @@ export class RepositorySettings extends React.Component<
         initialGitSourceOverride.kind === 'external'
           ? initialGitSourceOverride.path
           : '',
-      initialGitSourceOverride,
       isValidExternalGitPath: initialGitSourceOverride.kind !== 'external',
       showInvalidExternalGitPathWarning: false,
       gitSourceSaveDisabled:

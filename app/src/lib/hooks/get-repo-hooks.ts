@@ -42,7 +42,36 @@ const knownHooks = [
 // getRepoHooks is used by withHooksEnv which is used by git in core.ts so we
 // have to be careful to not accidentally run into a circular dependency here
 // where we invoke git which calls us which calls git which calls us, etc. To
-// avoid that we call dugite directly here.
+// avoid that we bypass the high-level git wrapper and call the process wrapper
+// directly.
+
+const getGitOutput = async (args: string[], path: string) => {
+  const { exitCode, stdout, stderr } = await execGitProcess(args, path)
+
+  if (exitCode !== 0) {
+    return Promise.reject(
+      new Error(`Git command failed with exit code ${exitCode}: ${stderr}`)
+    )
+  }
+
+  return stdout
+}
+
+const resolveHooksPath = async (path: string, hooksPath: string) => {
+  const translatedHooksPath = translateWslPathValue(hooksPath) ?? hooksPath
+  return isAbsolute(translatedHooksPath)
+    ? translatedHooksPath
+    : resolve(path, translatedHooksPath)
+}
+
+const getDefaultHooksPath = async (path: string) =>
+  resolveHooksPath(
+    path,
+    (await getGitOutput(['rev-parse', '--git-path', 'hooks'], path)).replace(
+      /\r?\n$/,
+      ''
+    )
+  )
 
 /**
  * Returns the names of executable Git hooks found in the given repository.
@@ -61,15 +90,11 @@ export async function* getRepoHooks(path: string, filter?: string[]) {
   )
 
   const configuredHooksPath = stdout.split('\0')[0]
-  const translatedHooksPath =
-    translateWslPathValue(configuredHooksPath) ?? configuredHooksPath
 
   const hooksPath =
     exitCode === 0
-      ? isAbsolute(translatedHooksPath)
-        ? translatedHooksPath
-        : resolve(path, translatedHooksPath)
-      : join(path, '.git', 'hooks')
+      ? await resolveHooksPath(path, configuredHooksPath)
+      : await getDefaultHooksPath(path)
 
   const files = await readdir(hooksPath, { withFileTypes: true })
     .then(entries => entries.filter(x => x.isFile()))

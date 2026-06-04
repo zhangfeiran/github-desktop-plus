@@ -1,7 +1,7 @@
 import { git } from './core'
 import { Repository } from '../../models/repository'
 import { isAbsolute, normalize } from 'path'
-import { toWslPath, translateWslPathValue } from './source'
+import { isWslRepositoryPath, toWslPath, translateWslPathValue } from './source'
 
 /**
  * Look up a config value by name in the repository.
@@ -208,19 +208,16 @@ export async function addGlobalConfigValue(
  * if the path is owner by a different user than the current.
  */
 export async function addSafeDirectory(path: string) {
-  const gitSafeDirectoryPath = path.startsWith('\\\\wsl.localhost\\Ubuntu\\')
-    ? toWslPath(path)
-    : path
+  if (isWslRepositoryPath(path)) {
+    await addGlobalConfigValueIfMissing('safe.directory', toWslPath(path), path)
+    return
+  }
 
   // UNC-paths on Windows need to be prefixed with `%(prefix)/`, see
   // https://github.com/git-for-windows/git/commit/e394a16023cbb62784e380f70ad8a833fb960d68
+  let gitSafeDirectoryPath = path
   if (__WIN32__ && gitSafeDirectoryPath[0] === '/') {
-    await addGlobalConfigValueIfMissing(
-      'safe.directory',
-      gitSafeDirectoryPath,
-      path
-    )
-    return
+    gitSafeDirectoryPath = `%(prefix)/${gitSafeDirectoryPath}`
   }
 
   await addGlobalConfigValueIfMissing('safe.directory', gitSafeDirectoryPath)

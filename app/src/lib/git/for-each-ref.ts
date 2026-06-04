@@ -9,6 +9,7 @@ import {
 } from '../../models/branch'
 import { createForEachRefParser } from './git-delimiter-parser'
 import { translateWslPathValue } from './source'
+import { normalizePath } from '../helpers/path'
 
 /** Get all the branches. */
 export async function getBranches(
@@ -110,6 +111,7 @@ export async function getBranchesDifferingFromUpstream(
 
   const localBranches = []
   const remoteBranchShas = new Map<string, string>()
+  const repositoryPath = normalizePath(repository.path)
 
   // First we need to collect the relevant info from the command output:
   // - For local branches with upstream: name, ref, SHA and the upstream.
@@ -122,7 +124,10 @@ export async function getBranchesDifferingFromUpstream(
       // Exclude symbolic refs and the current branch
       continue
     }
-    if (worktreePath.length > 0 && worktreePath !== repository.path) {
+    if (
+      worktreePath.length > 0 &&
+      normalizePath(worktreePath) !== repositoryPath
+    ) {
       // Exclude branches checked out in other worktrees, since they can't be fast-forwarded from here
       continue
     }

@@ -444,7 +444,6 @@ import {
 } from '../custom-integration'
 import { updateStore } from '../../ui/lib/update-store'
 import { BypassReasonType } from '../../ui/secret-scanning/bypass-push-protection-dialog'
-// import { getRepoHooks } from '../hooks/get-repo-hooks'
 import { setTrackedRepositoryGitSources } from '../git/source'
 import {
   ICopilotConflictResolutionResponse,

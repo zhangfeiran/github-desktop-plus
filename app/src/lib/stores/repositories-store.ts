@@ -225,7 +225,7 @@ export class RepositoriesStore extends TypedBaseStore<
     apiRepo: IAPIFullRepository,
     gitDir?: string
   ) {
-    await this.db.transaction(
+    const gitSourceOverride = await this.db.transaction(
       'rw',
       this.db.repositories,
       this.db.gitHubRepositories,
@@ -237,8 +237,10 @@ export class RepositoriesStore extends TypedBaseStore<
           login
         )
         const existingRepo = await this.db.repositories.get({ path })
+        const gitSourceOverride =
+          existingRepo?.gitSourceOverride ?? getRepositoryGitSource(path)
 
-        return await this.db.repositories.put({
+        await this.db.repositories.put({
           ...(existingRepo?.id !== undefined && { id: existingRepo.id }),
           path,
           alias: null,
@@ -247,16 +249,17 @@ export class RepositoriesStore extends TypedBaseStore<
           gitHubRepositoryID: ghRepo.dbID,
           missing: false,
           lastStashCheckDate: null,
-          gitSourceOverride:
-            existingRepo?.gitSourceOverride ?? getRepositoryGitSource(path),
+          gitSourceOverride,
           isTutorialRepository: true,
           login,
           gitDir,
         })
+
+        return gitSourceOverride
       }
     )
 
-    setTrackedRepositoryGitSource(path, getRepositoryGitSource(path))
+    setTrackedRepositoryGitSource(path, gitSourceOverride)
     this.emitUpdatedRepositories()
   }
 
@@ -522,7 +525,7 @@ export class RepositoriesStore extends TypedBaseStore<
     )
 
     await this.db.repositories.update(repository.id, {
-      missing: false,
+      missing,
       path,
       gitSourceOverride,
     })

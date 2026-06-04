@@ -40,6 +40,16 @@ describe('git/source', () => {
     )
   })
 
+  it('defaults missing WSL repository source overrides to WSL Git', () => {
+    assert.deepEqual(
+      normalizeRepositoryGitSource(
+        '\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo',
+        null
+      ),
+      { kind: 'wsl' }
+    )
+  })
+
   it('prefers tracked repository overrides over path defaults', () => {
     setTrackedRepositoryGitSources([
       {

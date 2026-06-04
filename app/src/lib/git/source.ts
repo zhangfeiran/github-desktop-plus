@@ -1,4 +1,8 @@
-import type { RepositoryGitSource } from '../../models/repository-git-source'
+import {
+  BundledGitSource,
+  type RepositoryGitSource,
+  WslGitSource,
+} from '../../models/repository-git-source'
 
 export const WslGitRepositoryPrefix = '\\\\wsl.localhost\\Ubuntu\\'
 
@@ -14,6 +18,10 @@ export function isWslRepositoryPath(path: string): boolean {
   return path.replace(/\//g, '\\').toLowerCase().startsWith(normalizedWslPrefix)
 }
 
+function getDefaultRepositoryGitSource(path: string): RepositoryGitSource {
+  return isWslRepositoryPath(path) ? WslGitSource : BundledGitSource
+}
+
 export function normalizeRepositoryGitSource(
   repositoryPath: string,
   gitSource: RepositoryGitSource | null | undefined
@@ -23,10 +31,10 @@ export function normalizeRepositoryGitSource(
   }
 
   if (gitSource?.kind === 'wsl' && !isWslRepositoryPath(repositoryPath)) {
-    return { kind: 'bundled' }
+    return BundledGitSource
   }
 
-  return gitSource ?? { kind: 'bundled' }
+  return gitSource ?? getDefaultRepositoryGitSource(repositoryPath)
 }
 
 export function setTrackedRepositoryGitSources(
@@ -69,7 +77,7 @@ export function getTrackedRepositoryGitSource(path: string) {
 export function getRepositoryGitSource(path: string): RepositoryGitSource {
   return (
     getTrackedRepositoryGitSource(path) ??
-    (isWslRepositoryPath(path) ? { kind: 'wsl' } : { kind: 'bundled' })
+    getDefaultRepositoryGitSource(path)
   )
 }
 
@@ -105,7 +113,11 @@ export function fromWslPath(path: string): string {
 
   const normalizedForwardSlashes = path.replace(/\\/g, '/')
 
-  if (normalizedForwardSlashes.toLowerCase().startsWith('/wsl.localhost/ubuntu/')) {
+  if (
+    normalizedForwardSlashes
+      .toLowerCase()
+      .startsWith('/wsl.localhost/ubuntu/')
+  ) {
     return `\\\\${normalizedForwardSlashes
       .slice(1)
       .replace(/\//g, '\\')}`
