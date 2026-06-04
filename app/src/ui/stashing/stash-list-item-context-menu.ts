@@ -17,7 +17,7 @@ export const generateStashListContextMenu = (
 ) => {
   const items: ReadonlyArray<IMenuItem> = [
     {
-      label: 'Restore to Changes',
+      label: 'Restore Changes',
       action: () => onRestore(config),
     },
     {

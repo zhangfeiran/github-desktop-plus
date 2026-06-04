@@ -61,7 +61,7 @@ export class StashDiffHeader extends React.Component<
             disabled={isRestoring || isDiscarding}
           >
             <Octicon symbol={octicons.fileDiff} className="mr" />
-            Restore to Changes
+            Restore Changes
           </Button>
           <Button
             onClick={this.onDiscardClick}
