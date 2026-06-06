@@ -100,7 +100,15 @@ export class Repository {
       gitSourceOverride
     )
     this.mainWorkTree = { path }
-    this.name = (gitHubRepository && gitHubRepository.name) || getBaseName(path)
+    const worktreeInfo = getWorktreePathInfoSync(path)
+    if (worktreeInfo !== null) {
+      this._isLinkedWorktree = worktreeInfo.isLinkedWorktree
+      this._mainWorktreePath = worktreeInfo.mainWorktreePath ?? path
+      this._hasLoadedWorktreeInfo = true
+    }
+    this.name =
+      (gitHubRepository && gitHubRepository.name) ||
+      getBaseName(worktreeInfo?.mainWorktreePath ?? path)
 
     this.hash = createEqualityHash(
       path,

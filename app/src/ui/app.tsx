@@ -1143,10 +1143,7 @@ export class App extends React.Component<IAppProps, IAppState> {
   private getWindowTitle(state: IAppState = this.state): string {
     const repository = state.selectedState?.repository
     if (repository) {
-      const repositoryTitle =
-        repository instanceof Repository
-          ? repository.alias ?? repository.name
-          : repository.name
+      const repositoryTitle = this.getCurrentRepositoryTitle(repository, state)
       return `${repositoryTitle} - GitHub Desktop`
     }
 
@@ -3440,9 +3437,10 @@ export class App extends React.Component<IAppProps, IAppState> {
     let icon: OcticonSymbol
     let title: string
     if (repository) {
-      const alias = repository instanceof Repository ? repository.alias : null
       icon = iconForRepository(repository)
-      title = (alias ?? repository.name) + this.getWorktreeSuffix(repository)
+      title =
+        this.getCurrentRepositoryTitle(repository) +
+        this.getWorktreeSuffix(repository)
     } else if (this.state.repositories.length > 0) {
       icon = octicons.repo
       title = __DARWIN__ ? 'Select a Repository' : 'Select a repository'
@@ -3489,6 +3487,28 @@ export class App extends React.Component<IAppProps, IAppState> {
         enableFocusTrap={enableFocusTrap}
       />
     )
+  }
+
+  private getCurrentRepositoryTitle(
+    repository: Repository | CloningRepository,
+    state: IAppState = this.state
+  ): string {
+    if (!(repository instanceof Repository)) {
+      return repository.name
+    }
+
+    if (!repository.isLinkedWorktree) {
+      return repository.alias ?? repository.name
+    }
+
+    const mainRepository = matchExistingRepository(
+      state.repositories,
+      repository.mainWorktreePath
+    )
+
+    return mainRepository instanceof Repository
+      ? mainRepository.alias ?? mainRepository.name
+      : repository.alias ?? repository.name
   }
 
   private getWorktreeSuffix(
