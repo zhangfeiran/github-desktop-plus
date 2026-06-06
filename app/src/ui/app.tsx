@@ -226,6 +226,12 @@ import { ManageRemotesDialog } from './manage-remotes/manage-remotes-dialog'
 import { AddRemoteDialog } from './manage-remotes/add-remote-dialog'
 import { getEditorOverrideLabel } from '../models/editor-override'
 import { CantDeleteMainBranch } from './delete-branch/cant-delete-main-branch'
+import {
+  addPinnedRepository,
+  getPinnedRepositories,
+  removePinnedRepository,
+} from '../lib/stores/repository-pinning'
+import { normalizePath } from '../lib/helpers/path'
 
 const MinuteInMilliseconds = 1000 * 60
 const HourInMilliseconds = MinuteInMilliseconds * 60
@@ -3561,9 +3567,28 @@ export class App extends React.Component<IAppProps, IAppState> {
       this.props.dispatcher.changeRepositoryGroupName(repository, null)
     }
 
+    const onPinRepository = (repository: Repository) => {
+      for (const r of this.getWorktreeFamily(repository)) {
+        addPinnedRepository(r)
+      }
+      this.forceUpdate()
+    }
+
+    const onUnpinRepository = (repository: Repository) => {
+      for (const r of this.getWorktreeFamily(repository)) {
+        removePinnedRepository(r)
+      }
+      this.forceUpdate()
+    }
+
+    const isPinned =
+      repository instanceof Repository &&
+      getPinnedRepositories().includes(repository.id)
+
     const items = generateRepositoryListContextMenu({
       onRemoveRepository: this.removeRepository,
       onShowRepository: this.showRepository,
+      onOpenInNewWindow: this.openRepositoryInNewWindow,
       onOpenInShell: this.openInShell,
       onOpenInExternalEditor: this.openInExternalEditor,
       askForConfirmationOnRemoveRepository:
@@ -3581,9 +3606,29 @@ export class App extends React.Component<IAppProps, IAppState> {
         ? undefined
         : this.state.selectedShell,
       onCopyRepoPath: path => this.props.dispatcher.copyPathToClipboard(path),
+      isPinned,
+      onPinRepository:
+        repository instanceof Repository ? onPinRepository : undefined,
+      onUnpinRepository:
+        repository instanceof Repository ? onUnpinRepository : undefined,
     })
 
     showContextualMenu(items)
+  }
+
+  private getWorktreeFamily(repository: Repository): ReadonlyArray<Repository> {
+    const mainPath = normalizePath(
+      repository.isLinkedWorktree
+        ? repository.mainWorktreePath
+        : repository.path
+    )
+    return this.state.repositories.filter(
+      (r): r is Repository =>
+        r instanceof Repository &&
+        (normalizePath(r.path) === mainPath ||
+          (r.isLinkedWorktree &&
+            normalizePath(r.mainWorktreePath) === mainPath))
+    )
   }
 
   private renderPushPullToolbarButton() {

@@ -29,10 +29,8 @@ export class WorktreeListItem extends React.Component<IWorktreeListItemProps> {
         <Octicon className="icon" symbol={icon} />
         <TooltippedContent
           className="name"
-          tooltip={name}
-          onlyWhenOverflowed={true}
+          tooltip={worktree.path}
           tagName="div"
-          disabled={enableAccessibleListToolTips()}
         >
           <HighlightText text={name} highlight={matches.title} />
         </TooltippedContent>

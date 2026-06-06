@@ -184,6 +184,19 @@ export class RepositoriesList extends React.Component<
     }
   }
 
+  public componentWillReceiveProps() {
+    const pinnedRepositoriesIds = getPinnedRepositories()
+    if (
+      pinnedRepositoriesIds.length !==
+        this.state.pinnedRepositoriesIds.length ||
+      pinnedRepositoriesIds.some(
+        (id, index) => id !== this.state.pinnedRepositoriesIds[index]
+      )
+    ) {
+      this.setState({ pinnedRepositoriesIds })
+    }
+  }
+
   private shouldShowBranchName(item: IRepositoryListItem): boolean {
     const { showBranchNameInRepoList } = this.props
     switch (showBranchNameInRepoList) {
