@@ -49,6 +49,10 @@ const remoteRegexes: ReadonlyArray<{ protocol: GitProtocol; regex: RegExp }> = [
     protocol: 'ssh',
     regex: new RegExp('^ssh://git@(.+)/(.+)/(.+?)(?:/|\\.git)?$'),
   },
+  {
+    protocol: 'https',
+    regex: new RegExp('^([^/:]+)/(.+)/([^/]+?)(?:/|\\.git/?)?$'),
+  },
 ]
 
 /** Parse the remote information from URL. */

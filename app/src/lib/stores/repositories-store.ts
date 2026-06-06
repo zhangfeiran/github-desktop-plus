@@ -490,10 +490,7 @@ export class RepositoriesStore extends TypedBaseStore<
       gitSourceOverride: normalizedGitSourceOverride,
     })
 
-    setTrackedRepositoryGitSource(
-      repository.path,
-      normalizedGitSourceOverride
-    )
+    setTrackedRepositoryGitSource(repository.path, normalizedGitSourceOverride)
     this.emitUpdatedRepositories()
   }
 
@@ -678,8 +675,8 @@ export class RepositoriesStore extends TypedBaseStore<
 
         const skeletonRepo: IDatabaseGitHubRepository = {
           id: existingRepo?.id,
-          cloneURL: null,
-          htmlURL: null,
+          cloneURL: match.cloneURL ?? null,
+          htmlURL: match.htmlURL ?? null,
           lastPruneDate: null,
           name: match.name,
           ownerID: owner.id,

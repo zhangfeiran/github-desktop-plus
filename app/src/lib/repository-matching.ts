@@ -5,7 +5,7 @@ import { CloningRepository } from '../models/cloning-repository'
 import { Repository } from '../models/repository'
 import { Account } from '../models/account'
 import { IRemote } from '../models/remote'
-import { getHTMLURL } from './api'
+import { getGiteeAPIEndpoint, getGitCodeAPIEndpoint, getHTMLURL } from './api'
 import { parseRemote, parseRepositoryIdentifier } from './remote-parsing'
 import { caseInsensitiveEquals } from './compare'
 import { GitHubRepository } from '../models/github-repository'
@@ -25,6 +25,59 @@ export interface IMatchedGitHubRepository {
 
   /** The account matching the repository remote */
   readonly account: Account
+
+  /** The repository's browser URL, if known from the remote. */
+  readonly htmlURL?: string
+
+  /** The repository's clone URL, if known from the remote. */
+  readonly cloneURL?: string
+}
+
+function getPublicGitHostEndpoint(hostname: string): string | null {
+  switch (hostname.toLowerCase()) {
+    case 'gitee.com':
+      return getGiteeAPIEndpoint()
+    case 'gitcode.com':
+      return getGitCodeAPIEndpoint()
+    default:
+      return null
+  }
+}
+
+function getPublicGitHostMatch(
+  remote: string,
+  login: string | null
+): IMatchedGitHubRepository | null {
+  const parsedRemote = parseRemote(remote)
+  if (parsedRemote === null) {
+    return null
+  }
+
+  const endpoint = getPublicGitHostEndpoint(parsedRemote.hostname)
+  if (endpoint === null) {
+    return null
+  }
+
+  const htmlURL = `https://${parsedRemote.hostname}/${parsedRemote.owner}/${parsedRemote.name}`
+
+  return {
+    name: parsedRemote.name,
+    owner: parsedRemote.owner,
+    account: new Account(
+      login ?? parsedRemote.owner,
+      endpoint,
+      '',
+      '',
+      0,
+      [],
+      '',
+      -1,
+      login ?? parsedRemote.owner,
+      'free'
+    ),
+    htmlURL,
+    cloneURL: `${htmlURL}.git`,
+  }
 }
 
 /** Try to use the list of users and a remote URL to guess a GitHub repository. */
@@ -70,7 +123,7 @@ export function matchGitHubRepository(
     }
   }
 
-  return hostnameMatch
+  return hostnameMatch ?? getPublicGitHostMatch(remote, login)
 }
 
 /**

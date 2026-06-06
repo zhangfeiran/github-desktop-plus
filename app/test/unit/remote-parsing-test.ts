@@ -51,6 +51,14 @@ describe('URL remote parsing', () => {
     assert.equal(remote.name, 'repo')
   })
 
+  it('parses bare host URLs', () => {
+    const remote = parseRemote('gitcode.com/group/repo.git')
+    assert(remote !== null)
+    assert.equal(remote.hostname, 'gitcode.com')
+    assert.equal(remote.owner, 'group')
+    assert.equal(remote.name, 'repo')
+  })
+
   it('parses SSH URLs', () => {
     const remote = parseRemote('git@github.com:hubot/repo.git')
     assert(remote !== null)

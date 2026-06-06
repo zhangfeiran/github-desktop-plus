@@ -8,6 +8,7 @@ import {
 import { Account } from '../../src/models/account'
 import { GitHubRepository } from '../../src/models/github-repository'
 import { gitHubRepoFixture } from '../helpers/github-repo-builder'
+import { getGiteeAPIEndpoint, getGitCodeAPIEndpoint } from '../../src/lib/api'
 
 describe('repository-matching', () => {
   describe('matchGitHubRepository', () => {
@@ -204,6 +205,32 @@ describe('repository-matching', () => {
         null
       )
       assert(repo === null)
+    })
+
+    it('matches bare GitCode URLs without an account', () => {
+      const repo = matchGitHubRepository(
+        [],
+        'gitcode.com/groupname/reponame',
+        null
+      )
+      assert(repo !== null)
+      assert.equal(repo.owner, 'groupname')
+      assert.equal(repo.name, 'reponame')
+      assert.equal(repo.account.endpoint, getGitCodeAPIEndpoint())
+      assert.equal(repo.htmlURL, 'https://gitcode.com/groupname/reponame')
+    })
+
+    it('matches bare Gitee URLs without an account', () => {
+      const repo = matchGitHubRepository(
+        [],
+        'gitee.com/groupname/reponame',
+        null
+      )
+      assert(repo !== null)
+      assert.equal(repo.owner, 'groupname')
+      assert.equal(repo.name, 'reponame')
+      assert.equal(repo.account.endpoint, getGiteeAPIEndpoint())
+      assert.equal(repo.htmlURL, 'https://gitee.com/groupname/reponame')
     })
   })
 

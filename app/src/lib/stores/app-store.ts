@@ -377,6 +377,7 @@ import { getDefaultDir } from '../../ui/lib/default-dir'
 import { WorkflowPreferences } from '../../models/workflow-preferences'
 import { RepositoryIndicatorUpdater } from './helpers/repository-indicator-updater'
 import { isAttributableEmailFor } from '../email'
+import { isGitee, isGitCode } from '../endpoint-capabilities'
 import { TrashNameLabel } from '../../ui/lib/context-menu'
 import { GitError as DugiteError } from 'dugite'
 import {
@@ -5405,6 +5406,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     const { account, owner, name } = match
     const { endpoint } = account
+
+    if (isGitee(endpoint) || isGitCode(endpoint)) {
+      const ghRepo = await repoStore.upsertGitHubRepositoryFromMatch(
+        match,
+        repository.login
+      )
+      return repoStore.setGitHubRepository(repository, ghRepo)
+    }
+
     const api = API.fromAccount(account)
     const apiRepo = await api.fetchRepository(owner, name)
 
