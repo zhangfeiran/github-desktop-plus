@@ -128,8 +128,6 @@ export function groupRepositories(
   options: IGroupRepositoriesOptions = {}
 ): ReadonlyArray<IFilterListGroup<IRepositoryListItem, RepositoryListGroup>> {
   const showWorktreesInSidebar = options.showWorktreesInSidebar ?? false
-  const includeRecentGroup = repositories.length > recentRepositoriesThreshold
-  const recentSet = includeRecentGroup ? new Set(recentRepositories) : undefined
   const groups = new Map<string, RepoGroupItem>()
   const repositoryByPath = new Map<string, Repository>()
   const storedRepositoryPaths = new Set<string>()
@@ -144,6 +142,23 @@ export function groupRepositories(
     storedRepositoryPaths.add(normalizedPath)
   }
 
+  const shouldShowRepository = (repository: Repositoryish) => {
+    if (
+      showWorktreesInSidebar ||
+      !(repository instanceof Repository) ||
+      !repository.isLinkedWorktree
+    ) {
+      return true
+    }
+
+    return !repositoryByPath.has(normalizePath(repository.mainWorktreePath))
+  }
+
+  const visibleRepositories = repositories.filter(shouldShowRepository)
+  const includeRecentGroup =
+    visibleRepositories.length > recentRepositoriesThreshold
+  const recentSet = includeRecentGroup ? new Set(recentRepositories) : undefined
+
   const addToGroup = (group: RepositoryListGroup, repo: Repositoryish) => {
     const key = getGroupKey(group)
     let rg = groups.get(key)
@@ -155,7 +170,7 @@ export function groupRepositories(
     rg.repos.push(repo)
   }
 
-  for (const repo of repositories) {
+  for (const repo of visibleRepositories) {
     if (recentSet?.has(repo.id) && repo instanceof Repository) {
       addToGroup({ kind: 'recent', displayName: repo.groupName }, repo)
     }
