@@ -86,6 +86,7 @@ import {
   DiffSelection,
   DiffSelectionType,
   DiffType,
+  HistoryCommitDiffMode,
   ImageDiffType,
   ITextDiff,
 } from '../../models/diff'
@@ -1610,6 +1611,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       file: null,
       changesetData: { files: [], linesAdded: 0, linesDeleted: 0 },
       diff: null,
+      diffMode: HistoryCommitDiffMode.FirstParent,
     }))
   }
 
@@ -1646,6 +1648,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       file: null,
       changesetData: { files: [], linesAdded: 0, linesDeleted: 0 },
       diff: null,
+      diffMode: HistoryCommitDiffMode.FirstParent,
     }))
 
     this.emitUpdate()
@@ -2353,20 +2356,40 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<void> {
     const state = this.repositoryStateCache.get(repository)
     const { commitSelection } = state
-    const { shas: currentSHAs, isContiguous } = commitSelection
+    const {
+      shas: currentSHAs,
+      isContiguous,
+      diffMode: requestedDiffMode,
+    } = commitSelection
     if (currentSHAs.length === 0 || (currentSHAs.length > 1 && !isContiguous)) {
       return
     }
 
     const gitStore = this.gitStoreCache.get(repository)
-    const changesetData = await gitStore.performFailableOperation(() =>
-      currentSHAs.length > 1
-        ? getCommitRangeChangedFiles(
-            repository,
-            this.orderShasByHistory(repository, currentSHAs)
-          )
-        : getChangedFiles(repository, currentSHAs[0])
-    )
+    let loadedDiffMode = requestedDiffMode
+    const changesetData = await gitStore.performFailableOperation(async () => {
+      if (currentSHAs.length > 1) {
+        return getCommitRangeChangedFiles(
+          repository,
+          this.orderShasByHistory(repository, currentSHAs)
+        )
+      }
+
+      try {
+        return await getChangedFiles(repository, currentSHAs[0], loadedDiffMode)
+      } catch (e) {
+        if (loadedDiffMode !== HistoryCommitDiffMode.Remerge) {
+          throw e
+        }
+
+        log.warn(
+          `[History] Unable to load remerge changed files for ${currentSHAs[0]}, falling back to first-parent diff`,
+          e
+        )
+        loadedDiffMode = HistoryCommitDiffMode.FirstParent
+        return getChangedFiles(repository, currentSHAs[0], loadedDiffMode)
+      }
+    })
     if (!changesetData) {
       return
     }
@@ -2374,9 +2397,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // The selection could have changed between when we started loading the
     // changed files and we finished. We might wanna store the changed files per
     // SHA/path.
+    const stateAfterLoad = this.repositoryStateCache.get(repository)
+    const latestCommitSelection = stateAfterLoad.commitSelection
     if (
-      commitSelection.shas.length !== currentSHAs.length ||
-      !commitSelection.shas.every((sha, i) => sha === currentSHAs[i])
+      latestCommitSelection.shas.length !== currentSHAs.length ||
+      !latestCommitSelection.shas.every((sha, i) => sha === currentSHAs[i]) ||
+      latestCommitSelection.diffMode !== requestedDiffMode
     ) {
       return
     }
@@ -2395,6 +2421,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       file: firstFileOrDefault,
       changesetData,
       diff: null,
+      diffMode: loadedDiffMode,
     }))
 
     this.emitUpdate()
@@ -2422,7 +2449,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
 
     const stateBeforeLoad = this.repositoryStateCache.get(repository)
-    const { shas, isContiguous } = stateBeforeLoad.commitSelection
+    const {
+      shas,
+      isContiguous,
+      diffMode: requestedDiffMode,
+    } = stateBeforeLoad.commitSelection
 
     if (shas.length === 0) {
       if (__DEV__) {
@@ -2438,6 +2469,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
+    let loadedDiffMode = requestedDiffMode
     const diff =
       shas.length > 1
         ? await getCommitRangeDiff(
@@ -2446,19 +2478,43 @@ export class AppStore extends TypedBaseStore<IAppState> {
             this.orderShasByHistory(repository, shas),
             this.hideWhitespaceInHistoryDiff
           )
-        : await getCommitDiff(
-            repository,
-            file,
-            shas[0],
-            this.hideWhitespaceInHistoryDiff
-          )
+        : await (async () => {
+            try {
+              return await getCommitDiff(
+                repository,
+                file,
+                shas[0],
+                this.hideWhitespaceInHistoryDiff,
+                loadedDiffMode
+              )
+            } catch (e) {
+              if (loadedDiffMode !== HistoryCommitDiffMode.Remerge) {
+                throw e
+              }
+
+              log.warn(
+                `[History] Unable to load remerge diff for ${shas[0]}, falling back to first-parent diff`,
+                e
+              )
+              loadedDiffMode = HistoryCommitDiffMode.FirstParent
+              return getCommitDiff(
+                repository,
+                file,
+                shas[0],
+                this.hideWhitespaceInHistoryDiff,
+                loadedDiffMode
+              )
+            }
+          })()
 
     const stateAfterLoad = this.repositoryStateCache.get(repository)
-    const { shas: shasAfter } = stateAfterLoad.commitSelection
+    const { shas: shasAfter, diffMode: diffModeAfter } =
+      stateAfterLoad.commitSelection
     // A whole bunch of things could have happened since we initiated the diff load
     if (
       shasAfter.length !== shas.length ||
-      !shas.every((sha, i) => sha === shasAfter[i])
+      !shas.every((sha, i) => sha === shasAfter[i]) ||
+      diffModeAfter !== requestedDiffMode
     ) {
       return
     }
@@ -2472,9 +2528,31 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.repositoryStateCache.updateCommitSelection(repository, () => ({
       diff,
+      diffMode: loadedDiffMode,
     }))
 
     this.emitUpdate()
+  }
+
+  public async _setHistoryCommitDiffMode(
+    repository: Repository,
+    diffMode: HistoryCommitDiffMode
+  ): Promise<void> {
+    const { commitSelection } = this.repositoryStateCache.get(repository)
+
+    if (commitSelection.diffMode === diffMode) {
+      return
+    }
+
+    this.repositoryStateCache.updateCommitSelection(repository, () => ({
+      diffMode,
+      file: null,
+      changesetData: { files: [], linesAdded: 0, linesDeleted: 0 },
+      diff: null,
+    }))
+
+    this.emitUpdate()
+    return this._loadChangedFilesForCurrentSelection(repository)
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
@@ -10282,6 +10360,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         changesetData: changesetData ?? emptyChangeSet,
         file: null,
         diff: null,
+        diffMode: HistoryCommitDiffMode.FirstParent,
       },
       mergeStatus:
         commitSHAs.length > 0 || !hasMergeBase

@@ -8,7 +8,7 @@ import type {
 import { Account } from '../models/account'
 import { CommitIdentity } from '../models/commit-identity'
 import { IConfigValueOrigin } from './git/config'
-import { IDiff, ImageDiffType } from '../models/diff'
+import { HistoryCommitDiffMode, IDiff, ImageDiffType } from '../models/diff'
 import { Repository, ILocalRepositoryState } from '../models/repository'
 import { Branch, IAheadBehind } from '../models/branch'
 import { Tip } from '../models/tip'
@@ -830,6 +830,9 @@ export interface ICommitSelection {
 
   /** The diff of the currently-selected file */
   readonly diff: IDiff | null
+
+  /** Which diff strategy is used when showing a single merge commit. */
+  readonly diffMode: HistoryCommitDiffMode
 }
 
 export enum ChangesSelectionKind {

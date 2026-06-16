@@ -13,14 +13,52 @@
     border-right: var(--base-border);
   }
 
+  .empty-file-list {
+    border-right: var(--base-border);
+    color: var(--text-secondary-color);
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing);
+    text-align: center;
+  }
+
   .file-list-header {
     background: var(--box-alt-background-color);
     border-bottom: 1px solid var(--box-border-color);
     border-right: var(--base-border);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-half);
     height: 30px;
     line-height: 30px;
     flex: 0 0 auto;
     padding: 0 var(--spacing);
     text-align: center;
+  }
+
+  .history-file-count {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .history-diff-mode-toggle {
+    display: flex;
+    flex: 0 0 auto;
+    gap: var(--spacing-half);
+    margin: 0;
+    padding: 0;
+    border: 0;
+
+    .radio-button-component {
+      margin: 0;
+      line-height: normal;
+      white-space: nowrap;
+
+      & + .radio-button-component {
+        margin-top: 0;
+      }
+    }
   }
 }

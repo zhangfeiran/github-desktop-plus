@@ -6,6 +6,7 @@ import {
   WorkingDirectoryFileChange,
   WorkingDirectoryStatus,
 } from '../../models/status'
+import { HistoryCommitDiffMode } from '../../models/diff'
 import { TipState } from '../../models/tip'
 import { WorktreeEntry } from '../../models/worktree'
 import {
@@ -314,6 +315,7 @@ function getInitialRepositoryState(): IRepositoryState {
       file: null,
       changesetData: { files: [], linesAdded: 0, linesDeleted: 0 },
       diff: null,
+      diffMode: HistoryCommitDiffMode.FirstParent,
     },
     changesState: {
       workingDirectory: WorkingDirectoryStatus.fromFiles(

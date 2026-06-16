@@ -29,6 +29,8 @@ import {
   getBinaryPaths,
   getBranchMergeBaseChangedFiles,
   getBranchMergeBaseDiff,
+  getChangedFiles,
+  getCommitDiff,
   git,
 } from '../../../src/lib/git'
 import { getStatusOrThrow } from '../../helpers/status'
@@ -36,6 +38,7 @@ import { getStatusOrThrow } from '../../helpers/status'
 import { GitError as DugiteError, exec } from 'dugite'
 import { makeCommit, switchTo } from '../../helpers/repository-scaffolding'
 import { join } from 'node:path'
+import { HistoryCommitDiffMode } from '../../../src/models/diff'
 
 async function getTextDiff(
   repo: Repository,
@@ -735,4 +738,65 @@ describe('git/diff', () => {
       assert(diff.text.includes('feature'))
     })
   })
+
+  describe('getCommitDiff/remerge', () => {
+    it('loads the remerge diff for a merge commit', async t => {
+      const { repository, mergeSha } = await setupResolvedMergeCommit(t)
+      const changesetData = await getChangedFiles(
+        repository,
+        mergeSha,
+        HistoryCommitDiffMode.Remerge
+      )
+      const file = changesetData.files[0]
+
+      const diff = await getCommitDiff(
+        repository,
+        file,
+        mergeSha,
+        false,
+        HistoryCommitDiffMode.Remerge
+      )
+
+      assert.equal(diff.kind, DiffType.Text)
+      if (diff.kind !== DiffType.Text) {
+        return
+      }
+
+      assert(diff.text.includes('-<<<<<<<'))
+      assert(diff.text.includes('-side'))
+      assert(diff.text.includes('+resolved'))
+    })
+  })
 })
+
+async function setupResolvedMergeCommit(t: import('node:test').TestContext) {
+  const repository = await setupEmptyRepository(t)
+
+  await makeCommit(repository, {
+    entries: [{ path: 'foo.txt', contents: 'base\n' }],
+    commitMessage: 'base',
+  })
+  await exec(['branch', 'side'], repository.path)
+
+  await makeCommit(repository, {
+    entries: [{ path: 'foo.txt', contents: 'main\n' }],
+    commitMessage: 'main',
+  })
+
+  await switchTo(repository, 'side')
+  await makeCommit(repository, {
+    entries: [{ path: 'foo.txt', contents: 'side\n' }],
+    commitMessage: 'side',
+  })
+
+  await switchTo(repository, 'master')
+  const mergeResult = await exec(['merge', 'side'], repository.path)
+  assert.notEqual(mergeResult.exitCode, 0)
+
+  await writeFile(join(repository.path, 'foo.txt'), 'resolved\n')
+  await exec(['add', 'foo.txt'], repository.path)
+  await exec(['commit', '-m', 'merge'], repository.path)
+
+  const { stdout } = await exec(['rev-parse', 'HEAD'], repository.path)
+  return { repository, mergeSha: stdout.trim() }
+}

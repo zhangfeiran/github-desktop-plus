@@ -68,7 +68,12 @@ import { CloneRepositoryTab } from '../../models/clone-repository-tab'
 import { CloningRepository } from '../../models/cloning-repository'
 import { Commit, ICommitContext, CommitOneLine } from '../../models/commit'
 import { ICommitMessage } from '../../models/commit-message'
-import { DiffSelection, ImageDiffType, ITextDiff } from '../../models/diff'
+import {
+  DiffSelection,
+  HistoryCommitDiffMode,
+  ImageDiffType,
+  ITextDiff,
+} from '../../models/diff'
 import { FetchType } from '../../models/fetch'
 import { GitHubRepository } from '../../models/github-repository'
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
@@ -347,6 +352,14 @@ export class Dispatcher {
     file: CommittedFileChange
   ): Promise<void> {
     return this.appStore._changeFileSelection(repository, file)
+  }
+
+  /** Change how the selected history merge commit is diffed. */
+  public setHistoryCommitDiffMode(
+    repository: Repository,
+    diffMode: HistoryCommitDiffMode
+  ): Promise<void> {
+    return this.appStore._setHistoryCommitDiffMode(repository, diffMode)
   }
 
   /** Set the repository filter text. */

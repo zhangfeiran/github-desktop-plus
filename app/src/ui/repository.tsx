@@ -617,8 +617,15 @@ export class RepositoryView extends React.Component<
 
   private renderContentForHistory(): JSX.Element {
     const { commitSelection, commitLookup, localCommitSHAs } = this.props.state
-    const { changesetData, file, diff, shas, shasInDiff, isContiguous } =
-      commitSelection
+    const {
+      changesetData,
+      file,
+      diff,
+      shas,
+      shasInDiff,
+      isContiguous,
+      diffMode,
+    } = commitSelection
 
     const selectedCommits = []
     for (const sha of shas) {
@@ -643,6 +650,7 @@ export class RepositoryView extends React.Component<
         changesetData={changesetData}
         selectedFile={file}
         currentDiff={diff}
+        diffMode={diffMode}
         emoji={this.props.emoji}
         commitSummaryWidth={this.props.commitSummaryWidth}
         selectedDiffType={this.props.imageDiffType}

@@ -4,7 +4,7 @@ import * as Path from 'path'
 import { Repository } from '../../models/repository'
 import { CommittedFileChange } from '../../models/status'
 import { Commit } from '../../models/commit'
-import { IDiff, ImageDiffType } from '../../models/diff'
+import { HistoryCommitDiffMode, IDiff, ImageDiffType } from '../../models/diff'
 
 import { encodePathAsUrl } from '../../lib/path'
 import { revealInFileManager } from '../../lib/app-shell'
@@ -41,6 +41,7 @@ import { Account } from '../../models/account'
 import { Emoji } from '../../lib/emoji'
 import { assertNever } from '../../lib/fatal-error'
 import { GitHubRepository } from '../../models/github-repository'
+import { RadioButton } from '../lib/radio-button'
 import {
   DiffPresentationStateComponent,
   IDiffPresentationState,
@@ -56,6 +57,7 @@ interface ISelectedCommitsProps {
   readonly changesetData: IChangesetData
   readonly selectedFile: CommittedFileChange | null
   readonly currentDiff: IDiff | null
+  readonly diffMode: HistoryCommitDiffMode
   readonly commitSummaryWidth: IConstrainedValue
   readonly selectedDiffType: ImageDiffType
   /** The name of the currently selected external editor */
@@ -146,7 +148,10 @@ export class SelectedCommits extends DiffPresentationStateComponent<
     const currentValue = this.props.selectedCommits.map(c => c.sha).join('')
     const nextValue = nextProps.selectedCommits.map(c => c.sha).join('')
 
-    if (currentValue !== nextValue) {
+    if (
+      currentValue !== nextValue ||
+      this.props.diffMode !== nextProps.diffMode
+    ) {
       this.setState({ isExpanded: false, selectedFiles: [] })
     }
   }
@@ -298,7 +303,12 @@ export class SelectedCommits extends DiffPresentationStateComponent<
   private renderFileList() {
     const files = this.props.changesetData.files
     if (files.length === 0) {
-      return <div className="fill-window">No files in commit</div>
+      return (
+        <>
+          {this.renderFileHeader()}
+          <div className="empty-file-list">No files in commit</div>
+        </>
+      )
     }
 
     // -1 for right hand side border
@@ -324,8 +334,54 @@ export class SelectedCommits extends DiffPresentationStateComponent<
     const filesPlural = fileCount === 1 ? 'file' : 'files'
     return (
       <div className="file-list-header">
-        {fileCount} changed {filesPlural}
+        <span className="history-file-count">
+          {fileCount} changed {filesPlural}
+        </span>
+        {this.renderDiffModeToggle()}
       </div>
+    )
+  }
+
+  private renderDiffModeToggle() {
+    if (
+      this.props.selectedCommits.length !== 1 ||
+      !this.props.selectedCommits[0].isMergeCommit
+    ) {
+      return null
+    }
+
+    return (
+      <fieldset
+        className="history-diff-mode-toggle"
+        aria-label="Merge commit diff mode"
+      >
+        <RadioButton
+          value={HistoryCommitDiffMode.FirstParent}
+          checked={this.props.diffMode === HistoryCommitDiffMode.FirstParent}
+          label="First parent"
+          onSelected={this.onFirstParentDiffSelected}
+        />
+        <RadioButton
+          value={HistoryCommitDiffMode.Remerge}
+          checked={this.props.diffMode === HistoryCommitDiffMode.Remerge}
+          label="Remerge"
+          onSelected={this.onRemergeDiffSelected}
+        />
+      </fieldset>
+    )
+  }
+
+  private onFirstParentDiffSelected = () => {
+    return this.props.dispatcher.setHistoryCommitDiffMode(
+      this.props.repository,
+      HistoryCommitDiffMode.FirstParent
+    )
+  }
+
+  private onRemergeDiffSelected = () => {
+    return this.props.dispatcher.setHistoryCommitDiffMode(
+      this.props.repository,
+      HistoryCommitDiffMode.Remerge
     )
   }
 

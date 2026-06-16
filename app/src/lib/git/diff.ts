@@ -19,6 +19,7 @@ import {
   LineEndingsChange,
   parseLineEndingText,
   ILargeTextDiff,
+  HistoryCommitDiffMode,
 } from '../../models/diff'
 
 import { DiffParser } from '../diff-parser'
@@ -116,22 +117,38 @@ export async function getCommitDiff(
   repository: Repository,
   file: FileChange,
   commitish: string,
-  hideWhitespaceInDiff: boolean = false
+  hideWhitespaceInDiff: boolean = false,
+  diffMode: HistoryCommitDiffMode = HistoryCommitDiffMode.FirstParent
 ): Promise<IDiff> {
-  const args = [
-    'log',
-    commitish,
-    ...(hideWhitespaceInDiff ? ['-w'] : []),
-    '-m',
-    '-1',
-    '--first-parent',
-    '--patch-with-raw',
-    '--format=',
-    '-z',
-    '--no-color',
-    '--',
-    ensureRelativePath(file.path),
-  ]
+  const args =
+    diffMode === HistoryCommitDiffMode.Remerge
+      ? [
+          'log',
+          commitish,
+          ...(hideWhitespaceInDiff ? ['-w'] : []),
+          '-1',
+          '--remerge-diff',
+          '--patch-with-raw',
+          '--format=',
+          '-z',
+          '--no-color',
+          '--',
+          ensureRelativePath(file.path),
+        ]
+      : [
+          'log',
+          commitish,
+          ...(hideWhitespaceInDiff ? ['-w'] : []),
+          '-m',
+          '-1',
+          '--first-parent',
+          '--patch-with-raw',
+          '--format=',
+          '-z',
+          '--no-color',
+          '--',
+          ensureRelativePath(file.path),
+        ]
 
   if (
     file.status.kind === AppFileStatusKind.Renamed ||
@@ -144,7 +161,9 @@ export async function getCommitDiff(
     encoding: 'buffer',
   })
 
-  return buildDiff(stdout, repository, file, commitish, commitish)
+  return buildDiff(stdout, repository, file, commitish, commitish, undefined, {
+    disableImageDiff: diffMode === HistoryCommitDiffMode.Remerge,
+  })
 }
 
 /**
@@ -539,13 +558,14 @@ export async function convertDiff(
   diff: IRawDiff,
   newestCommitish: string,
   oldestCommitish: string,
-  lineEndingsChange?: LineEndingsChange
+  lineEndingsChange?: LineEndingsChange,
+  options: { readonly disableImageDiff?: boolean } = {}
 ): Promise<IDiff> {
   const extension = Path.extname(file.path).toLowerCase()
 
   // SVG files are text-based but can also be rendered as images. Return an
   // image diff that also includes the text diff so the viewer can show both.
-  if (extension === '.svg') {
+  if (extension === '.svg' && !options.disableImageDiff) {
     const imageDiff = await getImageDiff(
       repository,
       file,
@@ -569,13 +589,13 @@ export async function convertDiff(
 
   if (diff.isBinary) {
     // some extension we don't know how to parse, never mind
-    if (!imageFileExtensions.has(extension)) {
+    if (options.disableImageDiff || !imageFileExtensions.has(extension)) {
       return {
         kind: DiffType.Binary,
       }
-    } else {
-      return getImageDiff(repository, file, newestCommitish, oldestCommitish)
     }
+
+    return getImageDiff(repository, file, newestCommitish, oldestCommitish)
   }
 
   return {
@@ -723,7 +743,8 @@ async function buildDiff(
   file: FileChange,
   newestCommitish: string,
   oldestCommitish: string,
-  lineEndingsChange?: LineEndingsChange
+  lineEndingsChange?: LineEndingsChange,
+  options: { readonly disableImageDiff?: boolean } = {}
 ): Promise<IDiff> {
   if (file.status.submoduleStatus !== undefined) {
     return buildSubmoduleDiff(
@@ -763,7 +784,8 @@ async function buildDiff(
     diff,
     newestCommitish,
     oldestCommitish,
-    lineEndingsChange
+    lineEndingsChange,
+    options
   )
 }
 

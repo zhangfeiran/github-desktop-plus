@@ -1,10 +1,18 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
+import { writeFile } from 'fs/promises'
+import { join } from 'path'
+import { exec } from 'dugite'
 import { Repository } from '../../../src/models/repository'
 import { getChangedFiles, getCommits } from '../../../src/lib/git'
-import { setupFixtureRepository } from '../../helpers/repositories'
+import {
+  setupEmptyRepository,
+  setupFixtureRepository,
+} from '../../helpers/repositories'
 import { AppFileStatusKind } from '../../../src/models/status'
 import { setupLocalConfig } from '../../helpers/local-config'
+import { HistoryCommitDiffMode } from '../../../src/models/diff'
+import { makeCommit, switchTo } from '../../helpers/repository-scaffolding'
 
 describe('git/log', () => {
   describe('getCommits', () => {
@@ -155,6 +163,31 @@ describe('git/log', () => {
         AppFileStatusKind.Modified
       )
     })
+
+    it('loads remerge changed files for a merge commit', async t => {
+      const { repository, mergeSha } = await setupResolvedMergeCommit(t)
+
+      const firstParentChangeset = await getChangedFiles(repository, mergeSha)
+      const remergeChangeset = await getChangedFiles(
+        repository,
+        mergeSha,
+        HistoryCommitDiffMode.Remerge
+      )
+
+      assert.equal(remergeChangeset.files.length, 1)
+      assert.equal(remergeChangeset.files[0].path, 'foo.txt')
+      assert.equal(
+        remergeChangeset.files[0].status.kind,
+        AppFileStatusKind.Modified
+      )
+      assert.equal(remergeChangeset.linesAdded, 1)
+      assert.equal(remergeChangeset.linesDeleted, 5)
+
+      assert.notEqual(
+        remergeChangeset.linesDeleted,
+        firstParentChangeset.linesDeleted
+      )
+    })
   })
 
   it('detects submodule changes within commits', async t => {
@@ -167,3 +200,35 @@ describe('git/log', () => {
     assert(changesetData.files[1].status.submoduleStatus !== undefined)
   })
 })
+
+async function setupResolvedMergeCommit(t: import('node:test').TestContext) {
+  const repository = await setupEmptyRepository(t)
+
+  await makeCommit(repository, {
+    entries: [{ path: 'foo.txt', contents: 'base\n' }],
+    commitMessage: 'base',
+  })
+  await exec(['branch', 'side'], repository.path)
+
+  await makeCommit(repository, {
+    entries: [{ path: 'foo.txt', contents: 'main\n' }],
+    commitMessage: 'main',
+  })
+
+  await switchTo(repository, 'side')
+  await makeCommit(repository, {
+    entries: [{ path: 'foo.txt', contents: 'side\n' }],
+    commitMessage: 'side',
+  })
+
+  await switchTo(repository, 'master')
+  const mergeResult = await exec(['merge', 'side'], repository.path)
+  assert.notEqual(mergeResult.exitCode, 0)
+
+  await writeFile(join(repository.path, 'foo.txt'), 'resolved\n')
+  await exec(['add', 'foo.txt'], repository.path)
+  await exec(['commit', '-m', 'merge'], repository.path)
+
+  const { stdout } = await exec(['rev-parse', 'HEAD'], repository.path)
+  return { repository, mergeSha: stdout.trim() }
+}

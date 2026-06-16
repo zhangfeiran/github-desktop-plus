@@ -188,6 +188,28 @@ index 24219cc..bf711a5 100644
     i++
   })
 
+  it('parses remerge diff headers', () => {
+    const diffText = `diff --git a/f.txt b/f.txt
+remerge CONFLICT (content): Merge conflict in f.txt
+index fd7b564..2ab19ae 100644
+--- a/f.txt
++++ b/f.txt
+@@ -1,5 +1 @@
+-<<<<<<< main
+-main
+-=======
+-side
+->>>>>>> side
++resolved
+`
+
+    const parser = new DiffParser()
+    const diff = parser.parse(diffText)
+    assert(diff.header.includes('remerge CONFLICT'))
+    assert.equal(diff.hunks.length, 1)
+    assert.equal(diff.hunks[0].lines.length, 7)
+  })
+
   it('parses new files without a newline at end of file', () => {
     const diffText = `diff --git a/test2.txt b/test2.txt
 new file mode 100644

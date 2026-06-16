@@ -11,6 +11,7 @@ import {
 import { Repository } from '../../models/repository'
 import { Commit } from '../../models/commit'
 import { CommitIdentity } from '../../models/commit-identity'
+import { HistoryCommitDiffMode } from '../../models/diff'
 import { parseRawUnfoldedTrailers } from './interpret-trailers'
 import { createLogParser } from './git-delimiter-parser'
 import { forceUnwrap } from '../fatal-error'
@@ -219,26 +220,43 @@ export interface IChangesetData {
 /** Get the files that were changed in the given commit. */
 export async function getChangedFiles(
   repository: Repository,
-  sha: string
+  sha: string,
+  diffMode: HistoryCommitDiffMode = HistoryCommitDiffMode.FirstParent
 ): Promise<IChangesetData> {
   // opt-in for rename detection (-M) and copies detection (-C)
   // this is equivalent to the user configuring 'diff.renames' to 'copies'
   // NOTE: order here matters - doing -M before -C means copies aren't detected
-  const args = [
-    'log',
-    sha,
-    '-C',
-    '-M',
-    '-m',
-    '-1',
-    '--no-show-signature',
-    '--first-parent',
-    '--raw',
-    '--format=format:',
-    '--numstat',
-    '-z',
-    '--',
-  ]
+  const args =
+    diffMode === HistoryCommitDiffMode.Remerge
+      ? [
+          'log',
+          sha,
+          '-C',
+          '-M',
+          '-1',
+          '--remerge-diff',
+          '--no-show-signature',
+          '--raw',
+          '--format=format:',
+          '--numstat',
+          '-z',
+          '--',
+        ]
+      : [
+          'log',
+          sha,
+          '-C',
+          '-M',
+          '-m',
+          '-1',
+          '--no-show-signature',
+          '--first-parent',
+          '--raw',
+          '--format=format:',
+          '--numstat',
+          '-z',
+          '--',
+        ]
 
   const { stdout } = await git(args, repository.path, 'getChangesFiles')
   return parseRawLogWithNumstat(stdout, sha, `${sha}^`)
