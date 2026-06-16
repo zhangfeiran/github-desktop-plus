@@ -49,16 +49,13 @@ describe('RepositoryListItem', () => {
     const repository = createRepository()
     const view = render(
       <RepositoryListItem
-        title={repository.alias ?? repository.name}
         repository={repository}
         needsDisambiguation={false}
         matches={noMatches}
         aheadBehind={{ ahead: 2, behind: 1 }}
         changedFilesCount={3}
         branchName={'main'}
-        isNestedWorktree={false}
-        mainWorktreeName={null}
-        isPrunableWorktree={false}
+        worktree={null}
       />
     )
 
@@ -78,16 +75,13 @@ describe('RepositoryListItem', () => {
     const repository = createRepository('desktop-app')
     const view = render(
       <RepositoryListItem
-        title={repository.alias ?? repository.name}
         repository={repository}
         needsDisambiguation={true}
         matches={noMatches}
         aheadBehind={null}
         changedFilesCount={0}
         branchName={'main'}
-        isNestedWorktree={false}
-        mainWorktreeName={null}
-        isPrunableWorktree={false}
+        worktree={null}
       />
     )
 
@@ -102,16 +96,13 @@ describe('RepositoryListItem', () => {
     const repository = createRepository('desktop-app')
     const view = render(
       <RepositoryListItem
-        title={repository.alias ?? repository.name}
         repository={repository}
         needsDisambiguation={true}
         matches={noMatches}
         aheadBehind={null}
         changedFilesCount={0}
         branchName={'main'}
-        isNestedWorktree={false}
-        mainWorktreeName={null}
-        isPrunableWorktree={false}
+        worktree={null}
       />
     )
 

@@ -1,0 +1,11 @@
+.git-hooks-flatpak-warning {
+  .warning-icon {
+    color: var(--warning-badge-icon-color);
+  }
+
+  .link-button-component {
+    display: inline;
+  }
+
+  margin-bottom: var(--spacing-double);
+}

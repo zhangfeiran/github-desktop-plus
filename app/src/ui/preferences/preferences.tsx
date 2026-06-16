@@ -110,6 +110,7 @@ interface IPreferencesProps {
   readonly confirmUndoCommit: boolean
   readonly askForConfirmationOnCommitFilteredChanges: boolean
   readonly confirmCommitMessageOverride: boolean
+  readonly confirmWorktreeRemoval: boolean
   readonly uncommittedChangesStrategy: UncommittedChangesStrategy
   readonly selectedExternalEditor: string | null
   readonly selectedShell: Shell
@@ -125,7 +126,7 @@ interface IPreferencesProps {
   readonly titleBarStyle: TitleBarStyle
   readonly showRecentRepositories: boolean
   readonly showWorktrees: boolean
-  readonly showWorktreesInSidebar: boolean
+  readonly showWorktreesInRepoList: boolean
   readonly showCompareTab: boolean
   readonly repositoryIndicatorsEnabled: boolean
   readonly showBranchNameInRepoList: ShowBranchNameInRepoListSetting
@@ -166,6 +167,7 @@ interface IPreferencesState {
   readonly confirmUndoCommit: boolean
   readonly askForConfirmationOnCommitFilteredChanges: boolean
   readonly confirmCommitMessageOverride: boolean
+  readonly confirmWorktreeRemoval: boolean
   readonly uncommittedChangesStrategy: UncommittedChangesStrategy
   readonly availableEditors: ReadonlyArray<string>
   readonly useCustomEditor: boolean
@@ -179,7 +181,7 @@ interface IPreferencesState {
   readonly titleBarStyle: TitleBarStyle
   readonly showRecentRepositories: boolean
   readonly showWorktrees: boolean
-  readonly showWorktreesInSidebar: boolean
+  readonly showWorktreesInRepoList: boolean
   readonly showCompareTab: boolean
   /**
    * If unable to save Git configuration values (name, email)
@@ -270,6 +272,7 @@ export class Preferences extends React.Component<
       confirmUndoCommit: false,
       askForConfirmationOnCommitFilteredChanges: false,
       confirmCommitMessageOverride: true,
+      confirmWorktreeRemoval: true,
       uncommittedChangesStrategy: defaultUncommittedChangesStrategy,
       selectedExternalEditor: this.props.selectedExternalEditor,
       availableShells: [],
@@ -277,7 +280,7 @@ export class Preferences extends React.Component<
       titleBarStyle: this.props.titleBarStyle,
       showRecentRepositories: this.props.showRecentRepositories,
       showWorktrees: this.props.showWorktrees,
-      showWorktreesInSidebar: this.props.showWorktreesInSidebar,
+      showWorktreesInRepoList: this.props.showWorktreesInRepoList,
       showCompareTab: this.props.showCompareTab,
       repositoryIndicatorsEnabled: this.props.repositoryIndicatorsEnabled,
       showBranchNameInRepoList: this.props.showBranchNameInRepoList,
@@ -368,6 +371,7 @@ export class Preferences extends React.Component<
       askForConfirmationOnCommitFilteredChanges:
         this.props.askForConfirmationOnCommitFilteredChanges,
       confirmCommitMessageOverride: this.props.confirmCommitMessageOverride,
+      confirmWorktreeRemoval: this.props.confirmWorktreeRemoval,
       uncommittedChangesStrategy: this.props.uncommittedChangesStrategy,
       availableShells,
       availableEditors,
@@ -687,9 +691,9 @@ export class Preferences extends React.Component<
             }
             showWorktrees={this.state.showWorktrees}
             onShowWorktreesChanged={this.onShowWorktreesChanged}
-            showWorktreesInSidebar={this.state.showWorktreesInSidebar}
-            onShowWorktreesInSidebarChanged={
-              this.onShowWorktreesInSidebarChanged
+            showWorktreesInRepoList={this.state.showWorktreesInRepoList}
+            onShowWorktreesInRepoListChanged={
+              this.onShowWorktreesInRepoListChanged
             }
             showCompareTab={this.state.showCompareTab}
             onShowCompareTabChanged={this.onShowCompareTabChanged}
@@ -744,6 +748,7 @@ export class Preferences extends React.Component<
             confirmCommitMessageOverride={
               this.state.confirmCommitMessageOverride
             }
+            confirmWorktreeRemoval={this.state.confirmWorktreeRemoval}
             onConfirmRepositoryRemovalChanged={
               this.onConfirmRepositoryRemovalChanged
             }
@@ -760,6 +765,9 @@ export class Preferences extends React.Component<
             }
             onConfirmCommitMessageOverrideChanged={
               this.onConfirmCommitMessageOverrideChanged
+            }
+            onConfirmWorktreeRemovalChanged={
+              this.onConfirmWorktreeRemovalChanged
             }
             uncommittedChangesStrategy={this.state.uncommittedChangesStrategy}
             onUncommittedChangesStrategyChanged={
@@ -901,6 +909,10 @@ export class Preferences extends React.Component<
 
   private onConfirmCommitMessageOverrideChanged = (value: boolean) => {
     this.setState({ confirmCommitMessageOverride: value })
+  }
+
+  private onConfirmWorktreeRemovalChanged = (value: boolean) => {
+    this.setState({ confirmWorktreeRemoval: value })
   }
 
   private onUncommittedChangesStrategyChanged = (
@@ -1071,10 +1083,10 @@ export class Preferences extends React.Component<
     this.setState({ showWorktrees })
   }
 
-  private onShowWorktreesInSidebarChanged = (
-    showWorktreesInSidebar: boolean
+  private onShowWorktreesInRepoListChanged = (
+    showWorktreesInRepoList: boolean
   ) => {
-    this.setState({ showWorktreesInSidebar })
+    this.setState({ showWorktreesInRepoList })
   }
 
   private onShowCompareTabChanged = (showCompareTab: boolean) => {
@@ -1163,9 +1175,12 @@ export class Preferences extends React.Component<
       }
 
       if (
-        this.state.showWorktreesInSidebar !== this.props.showWorktreesInSidebar
+        this.state.showWorktreesInRepoList !==
+        this.props.showWorktreesInRepoList
       ) {
-        dispatcher.setShowWorktreesInSidebar(this.state.showWorktreesInSidebar)
+        dispatcher.setShowWorktreesInRepoList(
+          this.state.showWorktreesInRepoList
+        )
       }
 
       if (this.state.showCompareTab !== this.props.showCompareTab) {
@@ -1271,6 +1286,9 @@ export class Preferences extends React.Component<
     )
     await dispatcher.setConfirmCommitMessageOverrideSetting(
       this.state.confirmCommitMessageOverride
+    )
+    await dispatcher.setConfirmWorktreeRemovalSetting(
+      this.state.confirmWorktreeRemoval
     )
 
     if (this.state.selectedExternalEditor) {

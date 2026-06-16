@@ -53,8 +53,8 @@ interface IAppearanceProps {
   readonly onShowRecentRepositoriesChanged: (show: boolean) => void
   readonly showWorktrees: boolean
   readonly onShowWorktreesChanged: (show: boolean) => void
-  readonly showWorktreesInSidebar: boolean
-  readonly onShowWorktreesInSidebarChanged: (show: boolean) => void
+  readonly showWorktreesInRepoList: boolean
+  readonly onShowWorktreesInRepoListChanged: (show: boolean) => void
   readonly showCompareTab: boolean
   readonly onShowCompareTabChanged: (show: boolean) => void
   readonly showBranchNameInRepoList: ShowBranchNameInRepoListSetting
@@ -82,7 +82,7 @@ interface IAppearanceState {
   readonly titleBarStyle: TitleBarStyle
   readonly showRecentRepositories: boolean
   readonly showWorktrees: boolean
-  readonly showWorktreesInSidebar: boolean
+  readonly showWorktreesInRepoList: boolean
   readonly showCompareTab: boolean
 }
 
@@ -120,7 +120,7 @@ export class Appearance extends React.Component<
       titleBarStyle: props.titleBarStyle,
       showRecentRepositories: props.showRecentRepositories,
       showWorktrees: props.showWorktrees,
-      showWorktreesInSidebar: props.showWorktreesInSidebar,
+      showWorktreesInRepoList: props.showWorktreesInRepoList,
       showCompareTab: props.showCompareTab,
     }
 
@@ -134,15 +134,7 @@ export class Appearance extends React.Component<
   }
 
   public async componentDidUpdate(prevProps: IAppearanceProps) {
-    if (
-      prevProps.selectedTheme === this.props.selectedTheme &&
-      prevProps.selectedTabSize === this.props.selectedTabSize &&
-      prevProps.selectedDiffFontSize === this.props.selectedDiffFontSize &&
-      prevProps.selectedDiffFontFamily === this.props.selectedDiffFontFamily &&
-      prevProps.showWorktrees === this.props.showWorktrees &&
-      prevProps.showWorktreesInSidebar === this.props.showWorktreesInSidebar &&
-      prevProps.showCompareTab === this.props.showCompareTab
-    ) {
+    if (prevProps === this.props) {
       return
     }
 
@@ -164,7 +156,7 @@ export class Appearance extends React.Component<
       selectedDiffFontSize,
       selectedDiffFontFamily,
       showWorktrees: this.props.showWorktrees,
-      showWorktreesInSidebar: this.props.showWorktreesInSidebar,
+      showWorktreesInRepoList: this.props.showWorktreesInRepoList,
       showCompareTab: this.props.showCompareTab,
     })
 
@@ -216,20 +208,20 @@ export class Appearance extends React.Component<
     this.props.onShowWorktreesChanged(show)
   }
 
+  private onShowWorktreesInRepoListChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    const show = event.currentTarget.checked
+    this.setState({ showWorktreesInRepoList: show })
+    this.props.onShowWorktreesInRepoListChanged(show)
+  }
+
   private onShowCompareTabChanged = (
     event: React.FormEvent<HTMLInputElement>
   ) => {
     const show = event.currentTarget.checked
     this.setState({ showCompareTab: show })
     this.props.onShowCompareTabChanged(show)
-  }
-
-  private onShowWorktreesInSidebarChanged = (
-    event: React.FormEvent<HTMLInputElement>
-  ) => {
-    const show = event.currentTarget.checked
-    this.setState({ showWorktreesInSidebar: show })
-    this.props.onShowWorktreesInSidebarChanged(show)
   }
 
   private onSelectedTabSizeChanged = (
@@ -482,14 +474,15 @@ export class Appearance extends React.Component<
             }
             onChange={this.onShowWorktreesChanged}
           />
+
           <Checkbox
-            label="Show worktrees in repository sidebar"
+            label="Show worktrees in repository list"
             value={
-              this.state.showWorktreesInSidebar
+              this.state.showWorktreesInRepoList
                 ? CheckboxValue.On
                 : CheckboxValue.Off
             }
-            onChange={this.onShowWorktreesInSidebarChanged}
+            onChange={this.onShowWorktreesInRepoListChanged}
           />
         </div>
         <div className="advanced-section">

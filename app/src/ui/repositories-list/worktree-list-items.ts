@@ -60,7 +60,7 @@ const pruneVirtualRepositoryIds = (
   const knownWorktreePaths = new Set<string>(storedRepositoryPaths)
 
   for (const state of localRepositoryStateLookup.values()) {
-    for (const worktree of state.allWorktrees) {
+    for (const worktree of state.worktrees) {
       knownWorktreePaths.add(normalizePath(worktree.path))
     }
   }
@@ -140,9 +140,12 @@ export function toSortedRepositoryListItems({
       parentRepository !== null
         ? localRepositoryStateLookup.get(parentRepository.id)
         : null
+    const mainWorktreeEntry = repoState?.worktrees.find(
+      worktree => worktree.type === 'main'
+    )
     const startupWorktreeEntry =
       (isLinkedWorktree || isVirtualLinkedWorktree) && parentRepoState != null
-        ? getWorktreeEntryForPath(parentRepoState.allWorktrees, worktreePath)
+        ? getWorktreeEntryForPath(parentRepoState.worktrees, worktreePath)
         : null
     const title =
       isLinkedWorktree || isVirtualLinkedWorktree
@@ -194,6 +197,7 @@ export function toSortedRepositoryListItems({
       isPrunableWorktree: startupWorktreeEntry?.isPrunable ?? false,
       worktreePath: options?.worktreePath ?? null,
       sourceRepository: options?.sourceRepository ?? parentRepository,
+      worktree: startupWorktreeEntry ?? mainWorktreeEntry ?? null,
     }
   }
 
@@ -204,7 +208,7 @@ export function toSortedRepositoryListItems({
     emittedVirtualPaths: Set<string>
   ) => {
     const repoState = localRepositoryStateLookup.get(repository.id)
-    const allWorktrees = repoState?.allWorktrees ?? []
+    const allWorktrees = repoState?.worktrees ?? []
     const excludedPaths = new Set<string>([
       ...storedRepositoryPaths,
       ...emittedVirtualPaths,

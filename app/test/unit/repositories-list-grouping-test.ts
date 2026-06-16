@@ -329,7 +329,7 @@ describe('repository list grouping', () => {
         false
       )
 
-      const allWorktrees: ReadonlyArray<WorktreeEntry> = [
+      const worktrees: ReadonlyArray<WorktreeEntry> = [
         {
           path: mainRepoPath,
           head: 'a',
@@ -355,7 +355,7 @@ describe('repository list grouping', () => {
         changedFilesCount: 0,
         branchName: 'main',
         defaultBranchName: 'main',
-        allWorktrees,
+        worktrees,
       })
 
       const grouped = groupRepositories([mainRepo], cache, [], {
@@ -388,7 +388,7 @@ describe('repository list grouping', () => {
       aheadBehind: null,
       branchName: 'main',
       defaultBranchName: 'main',
-      allWorktrees: [
+      worktrees: [
         {
           path: '/tmp/repo',
           head: 'abc',
@@ -454,7 +454,7 @@ describe('repository list grouping', () => {
         false
       )
 
-      const allWorktrees: ReadonlyArray<WorktreeEntry> = [
+      const worktrees: ReadonlyArray<WorktreeEntry> = [
         {
           path: mainRepoPath,
           head: 'a',
@@ -480,7 +480,7 @@ describe('repository list grouping', () => {
         changedFilesCount: 0,
         branchName: 'main',
         defaultBranchName: 'main',
-        allWorktrees,
+        worktrees,
       })
 
       const grouped = groupRepositories([linkedRepo, mainRepo], cache, [], {
@@ -540,7 +540,7 @@ describe('repository list grouping', () => {
         changedFilesCount: 0,
         branchName: 'feature/a',
         defaultBranchName: 'main',
-        allWorktrees: [
+        worktrees: [
           {
             path: mainRepoPath,
             head: 'a',

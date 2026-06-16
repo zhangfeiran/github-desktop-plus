@@ -71,6 +71,12 @@ interface IRepositoryViewProps {
   readonly shouldShowGenerateCommitMessageCallOut: boolean
 
   /**
+   * Whether the user has disabled Copilot commit message generation by
+   * selecting "None" as the model. When true, the Copilot button is hidden.
+   */
+  readonly commitMessageGenerationDisabled: boolean
+
+  /**
    * A value indicating whether or not the application is currently presenting
    * a modal dialog such as the preferences, or an error dialog
    */
@@ -360,6 +366,9 @@ export class RepositoryView extends React.Component<
         isGeneratingCommitMessage={this.props.state.isGeneratingCommitMessage}
         shouldShowGenerateCommitMessageCallOut={
           this.props.shouldShowGenerateCommitMessageCallOut
+        }
+        commitMessageGenerationDisabled={
+          this.props.commitMessageGenerationDisabled
         }
         commitToAmend={this.props.state.commitToAmend}
         isPushPullFetchInProgress={this.props.state.isPushPullFetchInProgress}

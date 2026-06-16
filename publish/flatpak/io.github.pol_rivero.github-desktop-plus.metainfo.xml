@@ -12,33 +12,7 @@
     <p>
       This is an up-to-date fork of GitHub Desktop, with many quality of life improvements and advanced features for power users.
     </p>
-    <p>General:</p>
-    <ul>
-      <li>Red color for destructive action buttons.</li>
-      <li>Add icons to some similar-looking buttons for faster visual recognition.</li>
-      <li>Allow generating branch name presets by calling an external script (e.g. fetching ticket numbers from an issue tracker).</li>
-      <li>Bitbucket and GitLab integration: preview and create pull requests, view pull requests status (including checks), display a commit or PR in Bitbucket/GitLab (web browser), and correctly set repository owner (instead of displaying "Other").</li>
-    </ul>
-    <p>Repositories list:</p>
-    <ul>
-      <li>Pull all button to fetch and pull from all remotes at once.</li>
-      <li>Allow hiding the 'Recent' repositories section.</li>
-    </ul>
-    <p>Branches list:</p>
-    <ul>
-      <li>Add warning indicator to local-only branches (branches that are not on the remote).</li>
-      <li>Allow manually setting which is the default branch for a repository (even if it doesn't match the one configured in the remote).</li>
-    </ul>
-    <p>History tab:</p>
-    <ul>
-      <li>Search commits by title, message, tag, or hash.</li>
-      <li>Use a different font style for merge commits in order to make them visually distinct, since most of the time they are not as relevant.</li>
-      <li>If a commit modifies only 1 file, allow double-clicking the commit to open the file. For other commits, you can still double-click the file as usual.</li>
-    </ul>
-    <p>Changes tab:</p>
-    <ul>
-      <li>Context menu option to permanently discard changes without sending to trash (useful when the there are many changed files and the regular "Discard" is extremely slow).</li>
-    </ul>
+    <p>See https://github.com/pol-rivero/github-desktop-plus for a full list of added features.</p>
   </description>
   <url type="homepage">https://github.com/pol-rivero/github-desktop-plus</url>
   <url type="vcs-browser">https://github.com/pol-rivero/github-desktop-plus</url>

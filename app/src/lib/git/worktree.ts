@@ -1,8 +1,8 @@
-import { git } from './core'
-import { Repository } from '../../models/repository'
 import * as Path from 'path'
 import * as Fs from 'fs'
+import type { Repository } from '../../models/repository'
 import type { WorktreeEntry, WorktreeType } from '../../models/worktree'
+import { git } from './core'
 import { getBranches } from './for-each-ref'
 import { normalizePath } from '../helpers/path'
 import { translateWslPathValue } from './source'
@@ -60,11 +60,13 @@ export function parseWorktreePorcelainOutput(
     return []
   }
 
-  const blocks = stdout.trim().split('\n\n')
+  // With -z, worktree blocks are separated by double NUL and fields within
+  // a block are separated by single NUL
+  const blocks = stdout.replace(/\0$/, '').split('\0\0')
   const entries: WorktreeEntry[] = []
 
   for (let i = 0; i < blocks.length; i++) {
-    const lines = blocks[i].split('\n')
+    const lines = blocks[i].split('\0')
     let path = ''
     let head = ''
     let branch: string | null = null
@@ -74,7 +76,12 @@ export function parseWorktreePorcelainOutput(
 
     for (const line of lines) {
       if (line.startsWith('worktree ')) {
-        path = line.substring('worktree '.length)
+        // Git for Windows will output paths using forward slashes, i.e.
+        // c:/Users/niik/... but repositories added in Desktop always pass
+        // through getRepositoryType which uses path.resolve to deduce the
+        // absolute top level directory and that will normalize paths as well
+        // so by normalizing here we can be more confident about comparing paths
+        path = Path.normalize(line.substring('worktree '.length))
       } else if (line.startsWith('HEAD ')) {
         head = line.substring('HEAD '.length)
       } else if (line.startsWith('branch ')) {
@@ -99,7 +106,7 @@ export async function listWorktrees(
   repository: Repository
 ): Promise<ReadonlyArray<WorktreeEntry>> {
   const result = await git(
-    ['worktree', 'list', '--porcelain'],
+    ['worktree', 'list', '--porcelain', '-z'],
     repository.path,
     'listWorktrees'
   )
@@ -131,9 +138,13 @@ export async function addWorktree(
   repository: Repository,
   path: string,
   options: {
+    /** Existing branch name to check out */
     readonly branch?: string
+    /** Branch name used with -b (create new branch) */
     readonly createBranch?: string
+    /** Add the worktree detached at commit-ish */
     readonly detach?: boolean
+    /** Commit-ish to check out (branch name, ref, or SHA) */
     readonly commitish?: string
   } = {}
 ): Promise<void> {
@@ -179,11 +190,17 @@ export async function addWorktreeForBranchName(
 }
 
 export async function removeWorktree(
-  repository: Repository,
-  path: string
+  repositoryPath: string,
+  worktreePath: string,
+  force: boolean = false
 ): Promise<void> {
-  const args = ['worktree', 'remove', '--force', path]
-  await git(args, repository.path, 'removeWorktree')
+  const args = ['worktree', 'remove']
+  if (force) {
+    args.push('--force')
+  }
+  args.push(worktreePath)
+
+  await git(args, repositoryPath, 'removeWorktree')
 }
 
 export async function pruneWorktrees(repository: Repository): Promise<void> {

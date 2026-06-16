@@ -5,6 +5,7 @@ import { render, screen, fireEvent } from '../../helpers/ui/render'
 import { CopilotPreferences } from '../../../src/ui/preferences/copilot'
 import {
   DefaultCopilotModel,
+  DisabledCopilotModel,
   type CopilotFeature,
 } from '../../../src/lib/stores/copilot-store'
 import type { ModelInfo } from '@github/copilot-sdk'
@@ -99,12 +100,54 @@ describe('CopilotPreferences', () => {
     const view = render(<CopilotPreferences {...defaults()} />)
 
     const optgroups = view.container.querySelectorAll('optgroup')
-    assert.strictEqual(optgroups.length, 1)
+    assert.strictEqual(optgroups.length, 2)
     assert.strictEqual(optgroups[0].label, 'GitHub Copilot')
 
     const options = view.container.querySelectorAll('option')
-    assert.strictEqual(options[0].textContent, 'GPT-5 mini (default)')
-    assert.strictEqual(options[1].textContent, 'Claude Sonnet')
+    assert.strictEqual(options[0].textContent, 'None (hide Copilot button)')
+    assert.strictEqual(options[1].textContent, 'GPT-5 mini (default)')
+    assert.strictEqual(options[2].textContent, 'Claude Sonnet')
+  })
+
+  it('offers a "None" option to disable commit message generation', () => {
+    const view = render(<CopilotPreferences {...defaults()} />)
+    const options = Array.from(view.container.querySelectorAll('option'))
+    const none = options.find(o => o.value === DisabledCopilotModel)
+    assert.ok(none)
+    assert.strictEqual(none!.textContent, 'None (hide Copilot button)')
+  })
+
+  it('selects the None option when generation is disabled', () => {
+    const view = render(
+      <CopilotPreferences
+        {...defaults()}
+        selectedCopilotModels={{
+          'commit-message-generation': DisabledCopilotModel,
+        }}
+      />
+    )
+    const select = view.container.querySelector('select') as HTMLSelectElement
+    assert.strictEqual(select.value, DisabledCopilotModel)
+  })
+
+  it('emits the None value when generation is disabled', () => {
+    const changed: Array<{ feature: CopilotFeature; model: string | null }> = []
+    const view = render(
+      <CopilotPreferences
+        {...defaults()}
+        onSelectedCopilotModelChanged={(f, m) =>
+          changed.push({ feature: f, model: m })
+        }
+      />
+    )
+    const select = view.container.querySelector('select') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: DisabledCopilotModel } })
+    assert.deepStrictEqual(changed, [
+      {
+        feature: 'commit-message-generation',
+        model: DisabledCopilotModel,
+      },
+    ])
   })
 
   it('renders a BYOK optgroup per provider', () => {
@@ -114,7 +157,12 @@ describe('CopilotPreferences', () => {
     const labels = Array.from(view.container.querySelectorAll('optgroup')).map(
       g => g.label
     )
-    assert.deepStrictEqual(labels, ['GitHub Copilot', 'Ollama'])
+    assert.deepStrictEqual(labels, [
+      'GitHub Copilot',
+      'Ollama',
+      'GitHub Copilot',
+      'Ollama',
+    ])
   })
 
   it('selects the default Copilot model when no model is selected', () => {
@@ -337,5 +385,70 @@ describe('CopilotPreferences', () => {
     assert.ok(addButton)
     fireEvent.click(addButton!)
     assert.strictEqual(called, 1)
+  })
+
+  describe('conflict resolution model picker', () => {
+    const previousPreviewFeatures = process.env.GITHUB_DESKTOP_PREVIEW_FEATURES
+
+    function withConflictResolutionEnabled(enabled: boolean, fn: () => void) {
+      if (enabled) {
+        process.env.GITHUB_DESKTOP_PREVIEW_FEATURES = '1'
+      } else {
+        delete process.env.GITHUB_DESKTOP_PREVIEW_FEATURES
+      }
+      try {
+        fn()
+      } finally {
+        if (previousPreviewFeatures === undefined) {
+          delete process.env.GITHUB_DESKTOP_PREVIEW_FEATURES
+        } else {
+          process.env.GITHUB_DESKTOP_PREVIEW_FEATURES = previousPreviewFeatures
+        }
+      }
+    }
+
+    it('renders a second picker when the feature flag is enabled', () => {
+      withConflictResolutionEnabled(true, () => {
+        const view = render(<CopilotPreferences {...defaults()} />)
+        const selects = view.container.querySelectorAll('select')
+        assert.strictEqual(selects.length, 2)
+      })
+    })
+
+    it('emits the conflict-resolution feature on change', () => {
+      withConflictResolutionEnabled(true, () => {
+        const changed: Array<{
+          feature: CopilotFeature
+          model: string | null
+        }> = []
+        const view = render(
+          <CopilotPreferences
+            {...defaults()}
+            onSelectedCopilotModelChanged={(f, m) =>
+              changed.push({ feature: f, model: m })
+            }
+          />
+        )
+        const selects = view.container.querySelectorAll('select')
+        const conflictSelect = selects[1] as HTMLSelectElement
+        fireEvent.change(conflictSelect, {
+          target: {
+            value: encodeModelKey({
+              kind: 'copilot',
+              modelId: 'claude-sonnet',
+            }),
+          },
+        })
+        assert.deepStrictEqual(changed, [
+          {
+            feature: 'conflict-resolution',
+            model: encodeModelKey({
+              kind: 'copilot',
+              modelId: 'claude-sonnet',
+            }),
+          },
+        ])
+      })
+    })
   })
 })

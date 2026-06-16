@@ -1,3 +1,5 @@
+import * as Path from 'path'
+
 import {
   isRepositoryWithGitHubRepository,
   hasDefaultRemoteUrl,
@@ -6,6 +8,7 @@ import {
 import { RepoType } from '../../models/github-repository'
 import { IMenuItem } from '../../lib/menu-item'
 import { Repositoryish } from './group-repositories'
+import { WorktreeEntry } from '../../models/worktree'
 import { clipboard } from 'electron'
 import {
   RevealInFileManagerLabel,
@@ -18,20 +21,12 @@ interface IRepositoryListItemContextMenuConfig {
   shellLabel: string | undefined
   externalEditorLabel: string | undefined
   askForConfirmationOnRemoveRepository: boolean
-  showWorktreesInSidebar: boolean
-  readonly isLinkedWorktreeRow?: boolean
-  readonly isVirtualLinkedWorktreeRow?: boolean
-  readonly isPrunableWorktreeRow?: boolean
   onViewOnGitHub: (repository: Repositoryish) => void
-  onOpenInNewWindow?: (repository: Repositoryish) => void
-  onOpenInShell: (repository: Repositoryish) => void
-  onShowRepository: (repository: Repositoryish) => void
-  onOpenInExternalEditor: (repository: Repositoryish) => void
+  onOpenInNewWindow?: (repository: Repositoryish, path?: string) => void
+  onOpenInShell: (repository: Repositoryish, path?: string) => void
+  onShowRepository: (repository: Repositoryish, path?: string) => void
+  onOpenInExternalEditor: (repository: Repositoryish, path?: string) => void
   onRemoveRepository: (repository: Repositoryish) => void
-  onRemoveLinkedWorktree?: () => void
-  onPruneStaleWorktrees?: () => void
-  onAddNewWorktree: (repository: Repository) => void
-  onRenameWorktree?: (repository: Repository) => void
   onChangeRepositoryAlias: (repository: Repository) => void
   onRemoveRepositoryAlias: (repository: Repository) => void
   onChangeRepositoryGroupName: (repository: Repository) => void
@@ -40,20 +35,15 @@ interface IRepositoryListItemContextMenuConfig {
   isPinned?: boolean
   onPinRepository?: (repository: Repository) => void
   onUnpinRepository?: (repository: Repository) => void
+  onCreateWorktree?: (repository: Repository) => void
+  onShowWorktrees?: (repository: Repository) => void
+  worktreePath?: string
 }
 
 export const generateRepositoryListContextMenu = (
   config: IRepositoryListItemContextMenuConfig
 ) => {
   const { repository } = config
-  const isLinkedWorktreeRow = config.isLinkedWorktreeRow ?? false
-  const isPrunableWorktreeRow = config.isPrunableWorktreeRow ?? false
-  const identityMenuItems = [
-    ...buildNewWorkreeMenuItems(config),
-    ...buildAliasMenuItems(config),
-    ...buildGroupNameMenuItems(config),
-    ...buildPinMenuItems(config),
-  ]
   const missing = repository instanceof Repository && repository.missing
   const isGitHub =
     repository instanceof Repository &&
@@ -70,8 +60,11 @@ export const generateRepositoryListContextMenu = (
     : DefaultShellLabel
 
   const items: ReadonlyArray<IMenuItem> = [
-    ...identityMenuItems,
-    ...(identityMenuItems.length > 0 ? [{ type: 'separator' as const }] : []),
+    ...buildAliasMenuItems(config),
+    ...buildGroupNameMenuItems(config),
+    ...buildPinMenuItems(config),
+    ...buildWorktreeMenuItems(config),
+    { type: 'separator' },
     {
       label: __DARWIN__ ? 'Copy Repo Name' : 'Copy repo name',
       action: () => clipboard.writeText(repository.name),
@@ -94,61 +87,124 @@ export const generateRepositoryListContextMenu = (
             label: __DARWIN__
               ? 'Open Repository in New Window'
               : 'Open repository in new window',
-            action: () => config.onOpenInNewWindow?.(repository),
+            action: () =>
+              config.onOpenInNewWindow?.(repository, config.worktreePath),
           },
         ]
       : []),
     {
       label: openInShell,
-      action: () => config.onOpenInShell(repository),
+      action: () => config.onOpenInShell(repository, config.worktreePath),
       enabled: !missing,
     },
     {
       label: RevealInFileManagerLabel,
-      action: () => config.onShowRepository(repository),
+      action: () => config.onShowRepository(repository, config.worktreePath),
       enabled: !missing,
     },
     {
       label: openInExternalEditor,
-      action: () => config.onOpenInExternalEditor(repository),
+      action: () =>
+        config.onOpenInExternalEditor(repository, config.worktreePath),
       enabled: !missing,
     },
-    ...(isPrunableWorktreeRow && config.onPruneStaleWorktrees !== undefined
-      ? [
-          { type: 'separator' as const },
-          {
-            label: __DARWIN__
-              ? 'Prune Stale Worktrees'
-              : 'Prune stale worktrees',
-            action: config.onPruneStaleWorktrees,
-          },
-        ]
-      : []),
-    ...(!(isPrunableWorktreeRow && isLinkedWorktreeRow)
-      ? [
-          { type: 'separator' as const },
-          {
-            label: isPrunableWorktreeRow
-              ? config.askForConfirmationOnRemoveRepository
-                ? 'Remove…'
-                : 'Remove'
-              : isLinkedWorktreeRow
-              ? 'Delete…'
-              : config.askForConfirmationOnRemoveRepository
-              ? 'Remove…'
-              : 'Remove',
-            action:
-              !isPrunableWorktreeRow &&
-              isLinkedWorktreeRow &&
-              config.onRemoveLinkedWorktree !== undefined
-                ? config.onRemoveLinkedWorktree
-                : () => config.onRemoveRepository(repository),
-          },
-        ]
-      : []),
+    { type: 'separator' },
+    {
+      label: config.askForConfirmationOnRemoveRepository ? 'Remove…' : 'Remove',
+      action: () => config.onRemoveRepository(repository),
+    },
   ]
 
   return items
+}
+
+interface IWorktreeListItemContextMenuConfig {
+  repository: Repository
+  worktree: WorktreeEntry
+  shellLabel: string | undefined
+  externalEditorLabel: string | undefined
+  onCreateWorktree: (repository: Repository) => void
+  onRenameWorktree: (repository: Repository, worktreePath: string) => void
+  onDeleteWorktree: (repository: Repository, worktreePath: string) => void
+  onViewOnGitHub: (repository: Repositoryish) => void
+  onOpenWorktreeInNewWindow: (
+    repository: Repository,
+    worktreePath: string
+  ) => void
+  onOpenInShell: (repository: Repositoryish, path?: string) => void
+  onShowRepository: (repository: Repositoryish, path?: string) => void
+  onOpenInExternalEditor: (repository: Repositoryish, path?: string) => void
+  onCopyWorktreePath: (path: string) => void
+}
+
+export const generateWorktreeListItemContextMenu = (
+  config: IWorktreeListItemContextMenuConfig
+): ReadonlyArray<IMenuItem> => {
+  const { repository, worktree } = config
+  const path = worktree.path
+  const name = Path.basename(path)
+  const isGitHub = isRepositoryWithGitHubRepository(repository)
+  const hasOriginUrl = hasDefaultRemoteUrl(repository)
+  const canModify = !worktree.isLocked
+  const openInExternalEditor = config.externalEditorLabel
+    ? `Open in ${config.externalEditorLabel}`
+    : DefaultEditorLabel
+  const openInShell = config.shellLabel
+    ? `Open in ${config.shellLabel}`
+    : DefaultShellLabel
+
+  return [
+    {
+      label: __DARWIN__ ? 'New Worktree…' : 'New worktree…',
+      action: () => config.onCreateWorktree(repository),
+    },
+    {
+      label: __DARWIN__ ? 'Rename Worktree…' : 'Rename worktree…',
+      action: () => config.onRenameWorktree(repository, path),
+      enabled: canModify,
+    },
+    { type: 'separator' },
+    {
+      label: __DARWIN__ ? 'Copy Worktree Name' : 'Copy worktree name',
+      action: () => clipboard.writeText(name),
+    },
+    {
+      label: __DARWIN__ ? 'Copy Worktree Path' : 'Copy worktree path',
+      action: () => config.onCopyWorktreePath(path),
+    },
+    { type: 'separator' },
+    {
+      label: getViewOnBrowserLabel(
+        isGitHub ? repository.gitHubRepository.type : null
+      ),
+      action: () => config.onViewOnGitHub(repository),
+      enabled: isGitHub || hasOriginUrl,
+    },
+    {
+      label: __DARWIN__
+        ? 'Open Worktree in New Window'
+        : 'Open worktree in new window',
+      action: () => config.onOpenWorktreeInNewWindow(repository, path),
+    },
+    {
+      label: openInShell,
+      action: () => config.onOpenInShell(repository, path),
+    },
+    {
+      label: RevealInFileManagerLabel,
+      action: () => config.onShowRepository(repository, path),
+    },
+    {
+      label: openInExternalEditor,
+      action: () => config.onOpenInExternalEditor(repository, path),
+    },
+    { type: 'separator' },
+    {
+      label: __DARWIN__ ? 'Delete Worktree…' : 'Delete worktree…',
+      action: () => config.onDeleteWorktree(repository, path),
+      enabled: canModify,
+    },
+  ]
 }
 
 function getViewOnBrowserLabel(repoType: RepoType | null) {
@@ -168,23 +224,6 @@ function getViewOnBrowserLabel(repoType: RepoType | null) {
   }
 }
 
-const buildNewWorkreeMenuItems = (
-  config: IRepositoryListItemContextMenuConfig
-): ReadonlyArray<IMenuItem> => {
-  const { repository } = config
-
-  if (!config.showWorktreesInSidebar || !(repository instanceof Repository)) {
-    return []
-  }
-
-  return [
-    {
-      label: __DARWIN__ ? 'Add New Worktree' : 'Add new worktree',
-      action: () => config.onAddNewWorktree(repository),
-    },
-  ]
-}
-
 const buildAliasMenuItems = (
   config: IRepositoryListItemContextMenuConfig
 ): ReadonlyArray<IMenuItem> => {
@@ -192,15 +231,6 @@ const buildAliasMenuItems = (
 
   if (!(repository instanceof Repository)) {
     return []
-  }
-
-  if (config.isLinkedWorktreeRow || config.isVirtualLinkedWorktreeRow) {
-    return [
-      {
-        label: __DARWIN__ ? `Rename Worktree` : `Rename worktree`,
-        action: () => config.onRenameWorktree?.(repository),
-      },
-    ]
   }
 
   const verb = repository.alias == null ? 'Create' : 'Change'
@@ -226,11 +256,7 @@ const buildGroupNameMenuItems = (
 ): ReadonlyArray<IMenuItem> => {
   const { repository } = config
 
-  if (
-    !(repository instanceof Repository) ||
-    config.isLinkedWorktreeRow ||
-    config.isVirtualLinkedWorktreeRow
-  ) {
+  if (!(repository instanceof Repository)) {
     return []
   }
 
@@ -256,11 +282,7 @@ const buildPinMenuItems = (
 ): ReadonlyArray<IMenuItem> => {
   const { repository } = config
 
-  if (
-    !(repository instanceof Repository) ||
-    config.isLinkedWorktreeRow ||
-    config.isVirtualLinkedWorktreeRow
-  ) {
+  if (!(repository instanceof Repository)) {
     return []
   }
 
@@ -283,4 +305,36 @@ const buildPinMenuItems = (
   }
 
   return []
+}
+
+const buildWorktreeMenuItems = (
+  config: IRepositoryListItemContextMenuConfig
+): ReadonlyArray<IMenuItem> => {
+  const { repository, onCreateWorktree, onShowWorktrees } = config
+
+  if (!(repository instanceof Repository)) {
+    return []
+  }
+
+  if (onCreateWorktree === undefined && onShowWorktrees === undefined) {
+    return []
+  }
+
+  const items: Array<IMenuItem> = []
+
+  if (onShowWorktrees !== undefined) {
+    items.push({
+      label: __DARWIN__ ? 'Show Worktrees' : 'Show worktrees',
+      action: () => onShowWorktrees(repository),
+    })
+  }
+
+  if (onCreateWorktree !== undefined) {
+    items.push({
+      label: __DARWIN__ ? 'New Worktree…' : 'New worktree…',
+      action: () => onCreateWorktree(repository),
+    })
+  }
+
+  return items
 }

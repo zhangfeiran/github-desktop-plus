@@ -9,6 +9,7 @@ import { getHTMLURL } from '../../lib/api'
 import { compare } from '../../lib/compare'
 import type { IFilterListGroup, IFilterListItem } from '../lib/filter-list'
 import { IAheadBehind } from '../../models/branch'
+import { WorktreeEntry } from '../../models/worktree'
 import { assertNever } from '../../lib/fatal-error'
 import { isGHE, isGHES } from '../../lib/endpoint-capabilities'
 import { Owner } from '../../models/owner'
@@ -63,19 +64,28 @@ export type Repositoryish = Repository | CloningRepository
 export interface IRepositoryListItem extends IFilterListItem {
   readonly text: ReadonlyArray<string>
   readonly id: string
-  readonly title: string
   readonly repository: Repositoryish
   readonly needsDisambiguation: boolean
   readonly aheadBehind: IAheadBehind | null
   readonly changedFilesCount: number
   readonly branchName: string | null
   readonly defaultBranchName: string | null
+  readonly title: string
   readonly isNestedWorktree: boolean
   readonly mainWorktreeName: string | null
   readonly isVirtualLinkedWorktree: boolean
   readonly isPrunableWorktree: boolean
   readonly worktreePath: string | null
   readonly sourceRepository: Repository | null
+  /**
+   * The worktree this row represents, when worktrees are shown in the list.
+   *
+   * The repository row carries the main worktree (so clicking it switches to
+   * the main worktree); linked worktrees each get their own row nested below
+   * it. `null` when worktree info isn't available (feature disabled or not yet
+   * loaded), in which case the row is a plain repository row.
+   */
+  readonly worktree: WorktreeEntry | null
 }
 
 interface IGroupRepositoriesOptions {
@@ -205,6 +215,7 @@ const toSortedListItems = (
       }
     }
   }
+
   return toSortedRepositoryListItems({
     group,
     repositories,
@@ -231,18 +242,27 @@ export function buildPinnedGroup(
     return null
   }
 
-  const idToItem = new Map<number, IRepositoryListItem>()
+  const idToItems = new Map<number, IRepositoryListItem[]>()
+  const completedIds = new Set<number>()
   for (const group of allGroups) {
     for (const item of group.items) {
-      if (item.repository.id > 0 && !idToItem.has(item.repository.id)) {
-        idToItem.set(item.repository.id, item)
+      const id = item.repository.id
+      if (id <= 0 || completedIds.has(id)) {
+        continue
       }
+      const rows = idToItems.get(id)
+      if (rows === undefined) {
+        idToItems.set(id, [item])
+      } else {
+        rows.push(item)
+      }
+    }
+    for (const id of idToItems.keys()) {
+      completedIds.add(id)
     }
   }
 
-  const items = pinnedIds
-    .map(id => idToItem.get(id))
-    .filter((item): item is IRepositoryListItem => item !== undefined)
+  const items = pinnedIds.flatMap(id => idToItems.get(id) ?? [])
 
   if (items.length === 0) {
     return null

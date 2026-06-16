@@ -149,9 +149,11 @@ import { RepositoryGitSource } from '../../models/repository-git-source'
 import { convertToCopyPath, normalizePath } from '../../lib/helpers/path'
 import { EOL } from 'os'
 import {
-  ICopilotConflictResolutionResponse,
   IConflictResolutionProgress,
+  IFileResolution,
+  ICopilotResolutionSummary,
 } from '../../lib/copilot-conflict-resolution'
+import { WorktreeEntry } from '../../models/worktree'
 
 /**
  * An error handler function.
@@ -835,6 +837,13 @@ export class Dispatcher {
     return this.appStore._pull(repository)
   }
 
+  public fastForwardBranch(
+    repository: Repository,
+    branch: Branch
+  ): Promise<void> {
+    return this.appStore._fastForwardBranch(repository, branch)
+  }
+
   public async pullAllRepositories(): Promise<void> {
     try {
       await this.appStore._pullAllRepositories()
@@ -1171,6 +1180,46 @@ export class Dispatcher {
   }
 
   /**
+   * Switch the repository to a different worktree path.
+   *
+   * If the target path is already registered as a separate repository, that
+   * repository is selected instead.
+   */
+  public async switchWorktree(
+    repository: Repository,
+    worktree: WorktreeEntry
+  ): Promise<void> {
+    await this.appStore
+      ._switchWorktree(repository, worktree)
+      .catch(e => this.postError(e))
+  }
+
+  /**
+   * Delete a worktree. If the worktree being deleted is the currently selected
+   * one, the repository is switched to the main worktree first.
+   */
+  public async deleteWorktree(
+    repository: Repository,
+    worktreePath: string,
+    force?: boolean
+  ): Promise<void> {
+    await this.appStore
+      ._deleteWorktree(repository, worktreePath, force)
+      .catch(e => this.postError(e))
+  }
+
+  /**
+   * Request deletion of a worktree, showing a confirmation dialog if the
+   * user's preferences require it.
+   */
+  public requestDeleteWorktree(
+    repository: Repository,
+    worktreePath: string
+  ): void {
+    this.appStore._requestDeleteWorktree(repository, worktreePath)
+  }
+
+  /**
    * Set the width of the Push/Push toolbar button to the given value.
    * This affects the toolbar button and its dropdown element.
    *
@@ -1307,7 +1356,10 @@ export class Dispatcher {
   public resolveConflictsWithCopilot(
     repository: Repository,
     onProgress?: (progress: IConflictResolutionProgress) => void
-  ): Promise<ICopilotConflictResolutionResponse | null> {
+  ): Promise<{
+    readonly resolutions: ReadonlyArray<IFileResolution>
+    readonly summary: ICopilotResolutionSummary
+  } | null> {
     return this.appStore._resolveConflictsWithCopilot(repository, onProgress)
   }
 
@@ -1317,6 +1369,30 @@ export class Dispatcher {
    */
   public startCopilotConflictResolution(repository: Repository): Promise<void> {
     return this.appStore._startCopilotConflictResolution(repository)
+  }
+
+  /**
+   * Cancel the in-flight Copilot conflict resolution, tearing down the
+   * underlying SDK turn immediately rather than letting it run to completion.
+   */
+  public abortCopilotConflictResolution(repository: Repository): void {
+    return this.appStore._abortCopilotConflictResolution(repository)
+  }
+
+  /**
+   * User-facing entry point invoked from the manual conflicts dialog's
+   * "Resolve with Copilot" button. Handles account-availability check,
+   * first-click tracking, and the AI-tool disclaimer popup before
+   * transitioning to the loading interstitial.
+   */
+  public attemptCopilotConflictResolution(
+    repository: Repository
+  ): Promise<void> {
+    return this.appStore._attemptCopilotConflictResolution(repository)
+  }
+
+  public updateCopilotConflictResolutionDisclaimerLastSeen() {
+    return this.appStore._updateCopilotConflictResolutionDisclaimerLastSeen()
   }
 
   /**
@@ -2224,6 +2300,22 @@ export class Dispatcher {
       } else {
         await this.showPopup({ type: PopupType.AddRepository, path })
       }
+    } else if (action.kind === 'open-worktree') {
+      const { repositories } = this.appStore.getState()
+      const repository = repositories.find(
+        (r): r is Repository =>
+          r instanceof Repository && r.id === action.repositoryId
+      )
+
+      if (repository !== undefined) {
+        await this.appStore
+          ._switchWorktreeByPath(repository, action.worktreePath)
+          .catch(e => this.postError(e))
+      } else {
+        log.warn(
+          `Could not find repository with id ${action.repositoryId} to open worktree`
+        )
+      }
     }
   }
 
@@ -2807,6 +2899,10 @@ export class Dispatcher {
     return this.appStore._setConfirmCommitMessageOverrideSetting(value)
   }
 
+  public setConfirmWorktreeRemovalSetting(value: boolean) {
+    return this.appStore._setConfirmWorktreeRemovalSetting(value)
+  }
+
   /**
    * Converts a local repository to use the given fork
    * as its default remote and associated `GitHubRepository`.
@@ -3100,8 +3196,8 @@ export class Dispatcher {
     this.appStore._setShowWorktrees(showWorktrees)
   }
 
-  public setShowWorktreesInSidebar(showWorktreesInSidebar: boolean) {
-    this.appStore._setShowWorktreesInSidebar(showWorktreesInSidebar)
+  public setShowWorktreesInRepoList(showWorktreesInRepoList: boolean) {
+    this.appStore._setShowWorktreesInRepoList(showWorktreesInRepoList)
   }
 
   public setShowCompareTab(showCompareTab: boolean) {

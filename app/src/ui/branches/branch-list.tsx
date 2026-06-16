@@ -1,7 +1,7 @@
 import * as React from 'react'
 import * as Path from 'path'
 
-import { Branch, BranchType } from '../../models/branch'
+import { Branch } from '../../models/branch'
 import { WorktreeEntry } from '../../models/worktree'
 
 import { assertNever } from '../../lib/fatal-error'
@@ -144,6 +144,12 @@ interface IBranchListProps {
 
   /** Optional: Callback for if delete context menu should exist */
   readonly onDeleteBranch?: (branchName: string) => void
+
+  /** Optional: Callback to checkout a branch in a new worktree */
+  readonly onCheckoutInNewWorktree?: (branch: Branch) => void
+
+  /** Optional: Callback if option to fetch branches should exist */
+  readonly onPullSingleBranch?: (branchName: string) => void
 }
 
 /** The Branches list component. */
@@ -234,32 +240,36 @@ export class BranchList extends React.Component<IBranchListProps> {
   ) => {
     event.preventDefault()
 
-    const { onRenameBranch, onDeleteBranch, onSetAsDefaultBranch } = this.props
+    const {
+      onRenameBranch,
+      onDeleteBranch,
+      onCheckoutInNewWorktree,
+      onSetAsDefaultBranch,
+      onPullSingleBranch,
+    } = this.props
 
     if (
       onRenameBranch === undefined &&
       onDeleteBranch === undefined &&
-      onSetAsDefaultBranch === undefined
+      onSetAsDefaultBranch === undefined &&
+      onCheckoutInNewWorktree === undefined
     ) {
       return
     }
 
-    const { type, name, nameWithoutRemote } = item.branch
-    const isLocal = type === BranchType.Local
-    const isInUseByOtherWorktree = !!this.inUseByOtherWorktreeName(item)
+    const { branch } = item
 
     const items = generateBranchContextMenuItems({
-      name,
-      nameWithoutRemote,
-      isLocal,
+      branch,
       repoType: this.props.repository.gitHubRepository?.type,
-      isInUseByOtherWorktree,
       onRenameBranch,
       onSetAsDefaultBranch:
-        nameWithoutRemote === this.props.defaultBranch?.name
+        branch.nameWithoutRemote === this.props.defaultBranch?.name
           ? undefined
           : onSetAsDefaultBranch,
       onDeleteBranch,
+      onPullSingleBranch,
+      onCheckoutInNewWorktree,
     })
 
     showContextualMenu(items)

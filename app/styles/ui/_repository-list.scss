@@ -34,8 +34,8 @@
     // name and truncate accordingly
     width: 100%;
 
-    &.nested-worktree {
-      padding-left: calc(var(--spacing) + 20px);
+    &.repository-worktree-item {
+      padding-left: calc(16px + var(--spacing) + var(--spacing-half));
     }
 
     .icon-for-repository {
@@ -91,13 +91,6 @@
         margin-right: 2px;
         vertical-align: text-bottom;
       }
-    }
-
-    .worktrees-loading {
-      color: var(--text-secondary-color);
-      font-size: var(--font-size-sm);
-      margin-left: var(--spacing);
-      flex-shrink: 0;
     }
   }
 
@@ -223,19 +216,6 @@
 
     .octicon {
       color: var(--tab-bar-active-color);
-      width: auto;
-    }
-  }
-
-  .prunable-indicator-wrapper {
-    display: flex;
-    min-width: 12px;
-    justify-content: center;
-    align-items: center;
-    margin-left: var(--spacing-half);
-
-    .octicon {
-      color: var(--toolbar-dropdown-text-warning-color);
       width: auto;
     }
   }

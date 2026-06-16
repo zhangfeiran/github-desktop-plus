@@ -1,29 +1,27 @@
 import * as React from 'react'
 import * as Path from 'path'
 
-import { Repository } from '../../models/repository'
-import { Dispatcher } from '../dispatcher'
 import { Dialog, DialogContent, DialogFooter } from '../dialog'
 import { Ref } from '../lib/ref'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
-import { removeWorktree, getMainWorktreePath } from '../../lib/git/worktree'
-import { normalizePath } from '../../lib/helpers/path'
-import {
-  getPreferredWorktreePath,
-  clearPreferredWorktreePath,
-} from '../../lib/worktree-preferences'
+import { Repository } from '../../models/repository'
+import { Checkbox, CheckboxValue } from '../lib/checkbox'
 
 interface IDeleteWorktreeDialogProps {
   readonly repository: Repository
   readonly worktreePath: string
-  readonly storedRepositoryToRemove: Repository | null
-  readonly isDeletingCurrentWorktree: boolean
-  readonly dispatcher: Dispatcher
+  readonly askForConfirmationOnWorktreeRemoval: boolean
+  readonly onDeleteWorktree: (
+    repository: Repository,
+    worktreePath: string
+  ) => Promise<void>
+  readonly onConfirmWorktreeRemovalChanged: (value: boolean) => void
   readonly onDismissed: () => void
 }
 
 interface IDeleteWorktreeDialogState {
   readonly isDeleting: boolean
+  readonly confirmWorktreeRemoval: boolean
 }
 
 export class DeleteWorktreeDialog extends React.Component<
@@ -35,6 +33,7 @@ export class DeleteWorktreeDialog extends React.Component<
 
     this.state = {
       isDeleting: false,
+      confirmWorktreeRemoval: props.askForConfirmationOnWorktreeRemoval,
     }
   }
 
@@ -46,7 +45,7 @@ export class DeleteWorktreeDialog extends React.Component<
         id="delete-worktree"
         title={__DARWIN__ ? 'Delete Worktree' : 'Delete worktree'}
         type="warning"
-        onSubmit={this.onDeleteWorktree}
+        onSubmit={this.onSubmit}
         onDismissed={this.props.onDismissed}
         disabled={this.state.isDeleting}
         loading={this.state.isDeleting}
@@ -57,6 +56,15 @@ export class DeleteWorktreeDialog extends React.Component<
           <p id="delete-worktree-confirmation">
             Are you sure you want to delete the worktree <Ref>{name}</Ref>?
           </p>
+          <Checkbox
+            label="Do not show this message again"
+            value={
+              this.state.confirmWorktreeRemoval
+                ? CheckboxValue.Off
+                : CheckboxValue.On
+            }
+            onChange={this.onConfirmWorktreeRemovalChanged}
+          />
         </DialogContent>
         <DialogFooter>
           <OkCancelButtonGroup destructive={true} okButtonText="Delete" />
@@ -65,62 +73,24 @@ export class DeleteWorktreeDialog extends React.Component<
     )
   }
 
-  private onDeleteWorktree = async () => {
+  private onConfirmWorktreeRemovalChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    const value = !event.currentTarget.checked
+    this.setState({ confirmWorktreeRemoval: value })
+  }
+
+  private onSubmit = async () => {
     this.setState({ isDeleting: true })
 
-    const {
-      repository,
-      worktreePath,
-      dispatcher,
-      storedRepositoryToRemove,
-      isDeletingCurrentWorktree = false,
-    } = this.props
+    this.props.onConfirmWorktreeRemovalChanged(
+      this.state.confirmWorktreeRemoval
+    )
 
-    const mainPathForCleanup = await getMainWorktreePath(repository)
-
-    try {
-      if (isDeletingCurrentWorktree) {
-        // When deleting the currently selected worktree, we must switch away
-        // first. Otherwise git runs from the directory being deleted and the
-        // app is left pointing at a non-existent path.
-        if (mainPathForCleanup === null) {
-          throw new Error('Could not find main worktree')
-        }
-
-        const mainPath = mainPathForCleanup
-
-        const addedRepos = await dispatcher.addRepositories(
-          [mainPath],
-          repository.login
-        )
-        if (addedRepos.length === 0) {
-          throw new Error('Could not add main worktree repository')
-        }
-
-        const mainRepo = addedRepos[0]
-        await dispatcher.selectRepository(mainRepo)
-        await removeWorktree(mainRepo, worktreePath)
-      } else {
-        await removeWorktree(repository, worktreePath)
-      }
-
-      if (storedRepositoryToRemove !== null) {
-        await dispatcher.removeRepository(storedRepositoryToRemove, false)
-      } else if (!isDeletingCurrentWorktree) {
-        await dispatcher.refreshRepository(repository)
-      }
-    } catch (e) {
-      dispatcher.postError(e)
-      this.setState({ isDeleting: false })
-      return
-    }
-
-    const resolvedMainPath = mainPathForCleanup ?? repository.path
-    const preferred = getPreferredWorktreePath(resolvedMainPath)
-    if (preferred && normalizePath(preferred) === normalizePath(worktreePath)) {
-      clearPreferredWorktreePath(resolvedMainPath)
-    }
-
+    await this.props.onDeleteWorktree(
+      this.props.repository,
+      this.props.worktreePath
+    )
     this.props.onDismissed()
   }
 }

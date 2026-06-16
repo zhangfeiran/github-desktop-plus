@@ -63,6 +63,7 @@ interface IChangesSidebarProps {
   readonly onShowCommitProgress: (() => void) | undefined
   readonly isGeneratingCommitMessage: boolean
   readonly shouldShowGenerateCommitMessageCallOut: boolean
+  readonly commitMessageGenerationDisabled: boolean
   readonly commitToAmend: Commit | null
   readonly isPushPullFetchInProgress: boolean
   // Used in receiveProps, no-unused-prop-types doesn't know that
@@ -480,6 +481,9 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
           isGeneratingCommitMessage={this.props.isGeneratingCommitMessage}
           shouldShowGenerateCommitMessageCallOut={
             this.props.shouldShowGenerateCommitMessageCallOut
+          }
+          commitMessageGenerationDisabled={
+            this.props.commitMessageGenerationDisabled
           }
           commitToAmend={this.props.commitToAmend}
           showCoAuthoredBy={showCoAuthoredBy}

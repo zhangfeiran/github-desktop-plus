@@ -1,4 +1,4 @@
-import { Branch } from '../../models/branch'
+import { Branch, BranchType } from '../../models/branch'
 import { Commit } from '../../models/commit'
 import { PullRequest } from '../../models/pull-request'
 import { Repository } from '../../models/repository'
@@ -7,12 +7,10 @@ import {
   WorkingDirectoryStatus,
 } from '../../models/status'
 import { HistoryCommitDiffMode } from '../../models/diff'
-import { TipState } from '../../models/tip'
-import { WorktreeEntry } from '../../models/worktree'
+import { Tip, TipState } from '../../models/tip'
 import {
   HistoryTabMode,
   IBranchesState,
-  IWorktreesState,
   IChangesState,
   ICompareState,
   IRepositoryState,
@@ -28,6 +26,7 @@ import { DefaultCommitMessage } from '../../models/commit-message'
 import { sendNonFatalException } from '../helpers/non-fatal-exception'
 import { IStatsStore } from '../stats'
 import { RepoRulesInfo } from '../../models/repo-rules'
+import { WorktreeEntry } from '../../models/worktree'
 
 export class RepositoryStateCache {
   private readonly repositoryState = new Map<string, IRepositoryState>()
@@ -173,17 +172,6 @@ export class RepositoryStateCache {
     })
   }
 
-  public updateWorktreesState<K extends keyof IWorktreesState>(
-    repository: Repository,
-    fn: (worktreesState: IWorktreesState) => Pick<IWorktreesState, K>
-  ) {
-    this.update(repository, state => {
-      const worktreesState = state.worktreesState
-      const newState = merge(worktreesState, fn(worktreesState))
-      return { worktreesState: newState }
-    })
-  }
-
   public updateMultiCommitOperationUndoState<
     K extends keyof IMultiCommitOperationUndoState
   >(
@@ -253,6 +241,48 @@ export class RepositoryStateCache {
   ) {
     this.update(repository, () => {
       return { pullRequestState }
+    })
+  }
+
+  /**
+   * Pre-seed the state for a target repository with shared data from a source
+   * repository. This is used when switching worktrees so that the UI has data
+   * to display immediately while the full refresh runs in the background.
+   *
+   * Only state that is shared across worktrees in the same git repository is
+   * copied. Worktree-specific state (working directory, checked-out branch,
+   * in-flight operations) is left at its initial values.
+   */
+  public seedFromWorktree(
+    target: Repository,
+    source: Repository,
+    worktree: WorktreeEntry
+  ) {
+    const sourceState = this.repositoryState.get(source.hash)
+    if (sourceState === undefined) {
+      return
+    }
+
+    const targetState = this.get(target)
+
+    this.repositoryState.set(target.hash, {
+      ...targetState,
+      branchesState: {
+        ...targetState.branchesState,
+        defaultBranch: sourceState.branchesState.defaultBranch,
+        upstreamDefaultBranch: sourceState.branchesState.upstreamDefaultBranch,
+        allBranches: sourceState.branchesState.allBranches,
+        recentBranches: sourceState.branchesState.recentBranches,
+        openPullRequests: sourceState.branchesState.openPullRequests,
+        forcePushBranches: sourceState.branchesState.forcePushBranches,
+        tip: tipFromWorkTreeEntry(worktree, sourceState.branchesState),
+      },
+      worktrees: sourceState.worktrees,
+      commitLookup: sourceState.commitLookup,
+      remote: sourceState.remote,
+      lastFetched: sourceState.lastFetched,
+      commitAuthor: sourceState.commitAuthor,
+      localTags: sourceState.localTags,
     })
   }
 
@@ -354,10 +384,7 @@ function getInitialRepositoryState(): IRepositoryState {
       isLoadingPullRequests: false,
       forcePushBranches: new Map<string, string>(),
     },
-    worktreesState: {
-      allWorktrees: new Array<WorktreeEntry>(),
-      currentWorktree: null,
-    },
+    worktrees: [],
     compareState: {
       formState: {
         kind: HistoryTabMode.History,
@@ -405,4 +432,34 @@ function getInitialRepositoryState(): IRepositoryState {
     signOffCommits: false,
     allowEmptyCommit: false,
   }
+}
+
+function tipFromWorkTreeEntry(
+  worktree: WorktreeEntry,
+  branchesState: IBranchesState
+): Tip {
+  if (worktree.branch && worktree.head) {
+    // TODO - worktrees: isGone and author.date
+    const branch =
+      branchesState.allBranches.find(b => b.ref === worktree.branch) ??
+      new Branch(
+        worktree.branch.replace(/^refs\/heads\//, ''),
+        null,
+        { sha: worktree.head, author: { date: new Date() } },
+        BranchType.Local,
+        worktree.branch,
+        false
+      )
+
+    return { kind: TipState.Valid, branch }
+  }
+
+  if (worktree.head) {
+    return {
+      kind: TipState.Detached,
+      currentSha: worktree.head,
+    }
+  }
+
+  return { kind: TipState.Unknown }
 }

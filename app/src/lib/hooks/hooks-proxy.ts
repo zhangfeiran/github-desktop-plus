@@ -1,6 +1,7 @@
-import { basename, join } from 'path'
+import { basename, join, resolve } from 'path'
 import { ProcessProxyConnection as Connection } from 'process-proxy'
 import type { HookCallbackOptions } from '../git'
+import { resolveGitExecPath } from 'dugite'
 import { ShellEnvResult } from './get-shell-env'
 import { shellFriendlyNames } from './config'
 import { Writable } from 'stream'
@@ -145,10 +146,12 @@ export const createHooksProxy = (
     ]
 
     const terminalOutput: Buffer[] = []
+    const gitDir = resolve(__dirname, 'git')
+    const gitExecPath = resolveGitExecPath(gitDir)
     const gitSource = getRepositoryGitSource(proxyCwd)
-    const shellEnv =
+    const shellEnv: ShellEnvResult =
       gitSource.kind === 'wsl'
-        ? ({ kind: 'success', env: {} } satisfies ShellEnvResult)
+        ? { kind: 'success', env: {} }
         : await getShellEnv(proxyCwd)
 
     if (shellEnv.kind === 'failure') {
@@ -178,7 +181,20 @@ export const createHooksProxy = (
       const child = spawnGitProcess(args, proxyCwd, {
         // GITHUB_DESKTOP lets hooks know they're run from GitHub Desktop.
         // See https://github.com/desktop/desktop/issues/19001
-        env: { ...shellEnv.env, ...safeEnv, GITHUB_DESKTOP: '1' },
+        env: {
+          ...shellEnv.env,
+          ...safeEnv,
+          // The bundled Git can't resolve its own exec-path when spawned this
+          // way (it reports "//libexec/git-core"), so set it explicitly. Native
+          // Git prepends GIT_EXEC_PATH to the hook's PATH, which is what makes
+          // the bundled git-lfs (and git) findable from inside the hook. This
+          // matters most in sandboxed builds (e.g. Flatpak) where no system
+          // git-lfs exists on PATH to fall back on.
+          GIT_EXEC_PATH: gitExecPath,
+          // GITHUB_DESKTOP lets hooks know they're run from GitHub Desktop.
+          // See https://github.com/desktop/desktop/issues/19001
+          GITHUB_DESKTOP: '1',
+        },
       })
       child
         .on('error', err => reject(err))

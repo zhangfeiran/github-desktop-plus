@@ -12,6 +12,7 @@ import {
 } from '../lib/app-state'
 import { Dispatcher } from './dispatcher'
 import { AppStore, GitHubUserStore, IssuesStore } from '../lib/stores'
+import { DisabledCopilotModel } from '../lib/stores/copilot-store'
 import { assertNever } from '../lib/fatal-error'
 import { shell } from '../lib/app-shell'
 import { updateStore, UpdateStatus } from './lib/update-store'
@@ -52,6 +53,7 @@ import {
   DeleteBranch,
   DeleteRemoteBranch,
 } from './delete-branch'
+import { CantDeleteMainBranch } from './delete-branch/cant-delete-main-branch'
 import { CloningRepositoryView } from './cloning-repository'
 import {
   Toolbar,
@@ -73,6 +75,7 @@ import {
   uninstallWindowsCLI,
   openRepositoryInNewWindow,
   setWindowTitle,
+  setWindowSelectedRepository,
 } from './main-process-proxy'
 import { DiscardChanges } from './discard-changes'
 import { Welcome } from './welcome'
@@ -84,6 +87,7 @@ import { EditCopilotBYOKProviderDialog } from './copilot/edit-byok-provider-dial
 import { EditCopilotBYOKModelDialog } from './copilot/edit-byok-model-dialog'
 import { ConfirmDeleteCopilotBYOKProviderDialog } from './copilot/confirm-delete-byok-provider-dialog'
 import type { IBYOKProvider } from '../lib/copilot/byok'
+import { getConflictResolutionModelDisplay } from '../lib/copilot/conflict-resolution-model'
 import { OpenWithExternalEditor } from './open-with-external-editor/open-with-external-editor'
 import { RepositorySettings } from './repository-settings'
 import { AppError } from './app-error'
@@ -203,13 +207,16 @@ import { webUtils } from 'electron'
 import { showTestUI } from './lib/test-ui-components/test-ui-components'
 import { ConfirmCommitFilteredChanges } from './changes/confirm-commit-filtered-changes-dialog'
 import { AboutTestDialog } from './about/about-test-dialog'
-import { enableCopilotSdkCommitMessageGeneration } from '../lib/feature-flag'
+import {
+  enableCopilotSdkCommitMessageGeneration,
+  enableWorktreeSupport,
+} from '../lib/feature-flag'
 import {
   ISecretScanResult,
   PushProtectionErrorDialog,
 } from './secret-scanning/push-protection-error-dialog'
 import { GenerateCommitMessageOverrideWarning } from './generate-commit-message/generate-commit-message-override-warning'
-import { GenerateCommitMessageDisclaimer } from './generate-commit-message/generate-commit-message-disclaimer'
+import { CopilotDisclaimer } from './copilot/copilot-disclaimer'
 import { IAPICreatePushProtectionBypassResponse } from '../lib/api'
 import {
   BypassPushProtectionDialog,
@@ -221,17 +228,17 @@ import { CommitProgress } from './commit-progress/commit-progress'
 import { AddWorktreeDialog } from './worktrees/add-worktree-dialog'
 import { RenameWorktreeDialog } from './worktrees/rename-worktree-dialog'
 import { DeleteWorktreeDialog } from './worktrees/delete-worktree-dialog'
-import { CantDeleteWorktreeUncommittedChanges } from './worktrees/cant-delete-worktree-uncommitted-changes-dialog'
+import { DeleteWorktreeFailedDialog } from './worktrees/delete-worktree-failed-dialog'
 import { ManageRemotesDialog } from './manage-remotes/manage-remotes-dialog'
 import { AddRemoteDialog } from './manage-remotes/add-remote-dialog'
 import { getEditorOverrideLabel } from '../models/editor-override'
-import { CantDeleteMainBranch } from './delete-branch/cant-delete-main-branch'
 import {
   addPinnedRepository,
   getPinnedRepositories,
   removePinnedRepository,
 } from '../lib/stores/repository-pinning'
 import { normalizePath } from '../lib/helpers/path'
+import { WorktreeEntry } from '../models/worktree'
 
 const MinuteInMilliseconds = 1000 * 60
 const HourInMilliseconds = MinuteInMilliseconds * 60
@@ -502,6 +509,8 @@ export class App extends React.Component<IAppProps, IAppState> {
         return this.showBranches()
       case 'show-worktrees':
         return this.showWorktrees()
+      case 'create-worktree':
+        return this.showCreateWorktree()
       case 'remove-repository':
         return this.removeRepository(this.getRepository())
       case 'create-repository':
@@ -1026,21 +1035,39 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private showWorktrees() {
-    const state = this.state.selectedState
-    if (state?.type !== SelectionType.Repository) {
+    if (!enableWorktreeSupport()) {
       return
     }
 
-    if (!this.state.showWorktrees) {
-      this.props.dispatcher.setShowWorktrees(true)
-      this.setBanner({ type: BannerType.WorktreesEnabled })
+    const state = this.state.selectedState
+    if (state == null || state.type !== SelectionType.Repository) {
+      return
     }
 
-    if (this.state.currentFoldout?.type === FoldoutType.Worktree) {
+    if (
+      this.state.currentFoldout &&
+      this.state.currentFoldout.type === FoldoutType.Worktree
+    ) {
       return this.props.dispatcher.closeFoldout(FoldoutType.Worktree)
     }
 
     return this.props.dispatcher.showFoldout({ type: FoldoutType.Worktree })
+  }
+
+  private showCreateWorktree() {
+    if (!enableWorktreeSupport()) {
+      return
+    }
+
+    const state = this.state.selectedState
+    if (state == null || state.type !== SelectionType.Repository) {
+      return
+    }
+
+    this.props.dispatcher.showPopup({
+      type: PopupType.AddWorktree,
+      repository: state.repository,
+    })
   }
 
   private push(options?: { forceWithLease: boolean }) {
@@ -1134,11 +1161,19 @@ export class App extends React.Component<IAppProps, IAppState> {
     })
 
     this.updateWindowTitle()
+    this.updateSelectedRepository()
   }
 
   public componentDidUpdate(prevProps: IAppProps, prevState: IAppState): void {
     if (this.getWindowTitle(prevState) !== this.getWindowTitle()) {
       this.updateWindowTitle()
+    }
+
+    if (
+      this.getSelectedRepositoryPath(prevState) !==
+      this.getSelectedRepositoryPath()
+    ) {
+      this.updateSelectedRepository()
     }
   }
 
@@ -1150,14 +1185,24 @@ export class App extends React.Component<IAppProps, IAppState> {
     const repository = state.selectedState?.repository
     if (repository) {
       const repositoryTitle = this.getCurrentRepositoryTitle(repository, state)
-      return `${repositoryTitle} - GitHub Desktop`
+      return `${repositoryTitle} - Desktop Plus`
     }
 
-    return 'GitHub Desktop'
+    return 'Desktop Plus'
   }
 
   private updateWindowTitle() {
     setWindowTitle(this.getWindowTitle())
+  }
+
+  private getSelectedRepositoryPath(
+    state: IAppState = this.state
+  ): string | null {
+    return state.selectedState?.repository.path ?? null
+  }
+
+  private updateSelectedRepository() {
+    setWindowSelectedRepository(this.getSelectedRepositoryPath())
   }
 
   /**
@@ -1791,6 +1836,9 @@ export class App extends React.Component<IAppProps, IAppState> {
             confirmCommitMessageOverride={
               this.state.askForConfirmationOnCommitMessageOverride
             }
+            confirmWorktreeRemoval={
+              this.state.askForConfirmationOnWorktreeRemoval
+            }
             uncommittedChangesStrategy={this.state.uncommittedChangesStrategy}
             selectedExternalEditor={this.state.selectedExternalEditor}
             useWindowsOpenSSH={this.state.useWindowsOpenSSH}
@@ -1814,7 +1862,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             titleBarStyle={this.state.titleBarStyle}
             showRecentRepositories={this.state.showRecentRepositories}
             showWorktrees={this.state.showWorktrees}
-            showWorktreesInSidebar={this.state.showWorktreesInSidebar}
+            showWorktreesInRepoList={this.state.showWorktreesInRepoList}
             showCompareTab={this.state.showCompareTab}
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
             hideWindowOnQuit={this.state.hideWindowOnQuit}
@@ -2480,6 +2528,14 @@ export class App extends React.Component<IAppProps, IAppState> {
             branchSortOrder={this.state.branchSortOrder}
             accounts={this.state.accounts}
             cachedRepoRulesets={this.state.cachedRepoRulesets}
+            shouldShowCopilotConflictResolutionCallOut={
+              !this.state.copilotConflictResolutionButtonClicked
+            }
+            copilotConflictResolutionModel={getConflictResolutionModelDisplay(
+              this.state.selectedCopilotModels['conflict-resolution'] ?? null,
+              this.state.copilotModels,
+              this.state.byokProviders
+            )}
             openFileInExternalEditor={this.getOpenFileInExternalEditorHandler(
               popup.repository
             )}
@@ -2864,14 +2920,38 @@ export class App extends React.Component<IAppProps, IAppState> {
         )
       }
       case PopupType.GenerateCommitMessageDisclaimer: {
+        const { repository, filesSelected } = popup
+        const onAccepted = () => {
+          this.props.dispatcher.updateCommitMessageGenerationDisclaimerLastSeen()
+          this.props.dispatcher.generateCommitMessage(repository, filesSelected)
+        }
         return (
-          <GenerateCommitMessageDisclaimer
+          <CopilotDisclaimer
             key="generate-commit-message-disclaimer"
-            dispatcher={this.props.dispatcher}
-            repository={popup.repository}
-            filesSelected={popup.filesSelected}
+            // eslint-disable-next-line react/jsx-no-bind
+            onAccepted={onAccepted}
             onDismissed={onPopupDismissedFn}
-          />
+          >
+            Review and edit the generated message carefully before use.
+          </CopilotDisclaimer>
+        )
+      }
+      case PopupType.CopilotConflictResolutionDisclaimer: {
+        const { repository } = popup
+        const onAccepted = () => {
+          this.props.dispatcher.updateCopilotConflictResolutionDisclaimerLastSeen()
+          this.props.dispatcher.attemptCopilotConflictResolution(repository)
+        }
+        return (
+          <CopilotDisclaimer
+            key="copilot-conflict-resolution-disclaimer"
+            // eslint-disable-next-line react/jsx-no-bind
+            onAccepted={onAccepted}
+            onDismissed={onPopupDismissedFn}
+          >
+            Review the suggested resolutions carefully before applying them to
+            your files.
+          </CopilotDisclaimer>
         )
       }
       case PopupType.HookFailed: {
@@ -2895,12 +2975,19 @@ export class App extends React.Component<IAppProps, IAppState> {
         )
       }
       case PopupType.AddWorktree: {
+        const allBranches =
+          this.state.selectedState?.type === SelectionType.Repository
+            ? this.state.selectedState.state.branchesState.allBranches
+            : []
         return (
           <AddWorktreeDialog
             key="add-worktree"
             repository={popup.repository}
             dispatcher={this.props.dispatcher}
             onDismissed={onPopupDismissedFn}
+            initialBranchName={popup.initialBranchName}
+            initialWorktreeName={popup.initialWorktreeName}
+            allBranches={allBranches}
           />
         )
       }
@@ -2921,21 +3008,31 @@ export class App extends React.Component<IAppProps, IAppState> {
             key="delete-worktree"
             repository={popup.repository}
             worktreePath={popup.worktreePath}
-            storedRepositoryToRemove={popup.storedRepositoryToRemove}
-            isDeletingCurrentWorktree={popup.isDeletingCurrentWorktree}
-            dispatcher={this.props.dispatcher}
+            askForConfirmationOnWorktreeRemoval={
+              this.state.askForConfirmationOnWorktreeRemoval
+            }
+            onDeleteWorktree={this.onDeleteWorkTree}
+            onConfirmWorktreeRemovalChanged={
+              this.onConfirmWorktreeRemovalChanged
+            }
             onDismissed={onPopupDismissedFn}
           />
         )
       }
-      case PopupType.CantDeleteWorktreeUncommittedChanges:
+      case PopupType.DeleteWorktreeFailed: {
         return (
-          <CantDeleteWorktreeUncommittedChanges
-            key="cant-delete-worktree-uncommitted-changes"
+          <DeleteWorktreeFailedDialog
+            key="delete-worktree-failed"
+            repository={popup.repository}
             worktreePath={popup.worktreePath}
+            error={popup.error}
+            originalWorktree={popup.originalWorktree}
+            onDeleteWorktree={this.onDeleteWorkTree}
+            onSwitchToWorktree={this.onSwitchToWorktree}
             onDismissed={onPopupDismissedFn}
           />
         )
+      }
       case PopupType.ManageRemotes:
         return (
           <ManageRemotesDialog
@@ -2959,6 +3056,25 @@ export class App extends React.Component<IAppProps, IAppState> {
       default:
         return assertNever(popup, `Unknown popup type: ${popup}`)
     }
+  }
+
+  private onSwitchToWorktree = (
+    repository: Repository,
+    worktree: WorktreeEntry
+  ) => {
+    return this.props.dispatcher.switchWorktree(repository, worktree)
+  }
+
+  private onDeleteWorkTree = (
+    repository: Repository,
+    worktreePath: string,
+    force?: boolean
+  ) => {
+    return this.props.dispatcher.deleteWorktree(repository, worktreePath, force)
+  }
+
+  private onConfirmWorktreeRemovalChanged = (value: boolean) => {
+    this.props.dispatcher.setConfirmWorktreeRemovalSetting(value)
   }
 
   private onUpdateCommitOptions = (
@@ -3275,14 +3391,7 @@ export class App extends React.Component<IAppProps, IAppState> {
 
     const { useCustomShell, selectedShell } = this.state
     const filterText = this.state.repositoryFilterText
-    const repositories = this.state.showWorktreesInSidebar
-      ? [...this.state.repositories]
-      : this.state.repositories.filter(
-          r => !(r instanceof Repository && r.isLinkedWorktree)
-        )
-    const localRepositoryStateLookup = this.state.showWorktreesInSidebar
-      ? new Map(this.state.localRepositoryStateLookup)
-      : this.state.localRepositoryStateLookup
+    const repositories = this.state.repositories
     return (
       <RepositoriesList
         filterText={filterText}
@@ -3292,7 +3401,7 @@ export class App extends React.Component<IAppProps, IAppState> {
         repositories={repositories}
         recentRepositories={this.state.recentRepositories}
         showRecentRepositories={this.state.showRecentRepositories}
-        localRepositoryStateLookup={localRepositoryStateLookup}
+        localRepositoryStateLookup={this.state.localRepositoryStateLookup}
         askForConfirmationOnRemoveRepository={
           this.state.askForConfirmationOnRepositoryRemoval
         }
@@ -3306,7 +3415,8 @@ export class App extends React.Component<IAppProps, IAppState> {
         shellLabel={useCustomShell ? undefined : selectedShell}
         dispatcher={this.props.dispatcher}
         showBranchNameInRepoList={this.state.showBranchNameInRepoList}
-        showWorktreesInSidebar={this.state.showWorktreesInSidebar}
+        showWorktrees={this.state.showWorktrees}
+        showWorktreesInRepoList={this.state.showWorktreesInRepoList}
       />
     )
   }
@@ -3325,22 +3435,26 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
   }
 
-  private openInShell = (repository: Repository | CloningRepository) => {
+  private openInShell = (
+    repository: Repository | CloningRepository,
+    path?: string
+  ) => {
     if (!(repository instanceof Repository)) {
       return
     }
 
-    this.props.dispatcher.openShell(repository.path)
+    this.props.dispatcher.openShell(path ?? repository.path)
   }
 
   private openRepositoryInNewWindow = (
-    repository: Repository | CloningRepository | null
+    repository: Repository | CloningRepository | null,
+    path?: string
   ) => {
     if (!(repository instanceof Repository) || repository.missing) {
       return
     }
 
-    openRepositoryInNewWindow(repository.path)
+    openRepositoryInNewWindow(path ?? repository.path)
   }
 
   private showRepositoryPreferences = () => {
@@ -3366,13 +3480,17 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private openInExternalEditor = (
-    repository: Repository | CloningRepository
+    repository: Repository | CloningRepository,
+    path?: string
   ) => {
     if (!(repository instanceof Repository)) {
       return
     }
 
-    this.props.dispatcher.openInExternalEditor(repository, repository.path)
+    this.props.dispatcher.openInExternalEditor(
+      repository,
+      path ?? repository.path
+    )
   }
 
   private openRepositoryInSelectedEditor = async (
@@ -3403,12 +3521,15 @@ export class App extends React.Component<IAppProps, IAppState> {
     this.props.dispatcher.openInExternalEditor(nonCloningRepository, fullPath)
   }
 
-  private showRepository = (repository: Repository | CloningRepository) => {
+  private showRepository = (
+    repository: Repository | CloningRepository,
+    path?: string
+  ) => {
     if (!(repository instanceof Repository)) {
       return
     }
 
-    shell.showFolderContents(repository.path)
+    shell.showFolderContents(path ?? repository.path)
   }
 
   private onRepositoryDropdownStateChanged = (newState: DropdownState) => {
@@ -3521,11 +3642,7 @@ export class App extends React.Component<IAppProps, IAppState> {
     repository: Repository | CloningRepository
   ): string {
     // If the worktrees dropdown is enabled, there is no need to add a suffix to the repository name
-    if (
-      this.state.showWorktrees ||
-      !(repository instanceof Repository) ||
-      !repository.isLinkedWorktree
-    ) {
+    if (this.state.showWorktrees || !(repository instanceof Repository)) {
       return ''
     }
     const worktreeName = Path.basename(repository.path)
@@ -3536,13 +3653,6 @@ export class App extends React.Component<IAppProps, IAppState> {
     const repository = this.state.selectedState?.repository
     if (repository === undefined) {
       return
-    }
-
-    const onAddNewWorktree = (repository: Repository) => {
-      this.props.dispatcher.showPopup({
-        type: PopupType.AddWorktree,
-        repository,
-      })
     }
 
     const onChangeRepositoryAlias = (repository: Repository) => {
@@ -3585,6 +3695,17 @@ export class App extends React.Component<IAppProps, IAppState> {
       repository instanceof Repository &&
       getPinnedRepositories().includes(repository.id)
 
+    const onCreateWorktree = (repository: Repository) => {
+      this.props.dispatcher.showPopup({
+        type: PopupType.AddWorktree,
+        repository,
+      })
+    }
+
+    const onShowWorktrees = () => {
+      this.showWorktrees()
+    }
+
     const items = generateRepositoryListContextMenu({
       onRemoveRepository: this.removeRepository,
       onShowRepository: this.showRepository,
@@ -3593,14 +3714,14 @@ export class App extends React.Component<IAppProps, IAppState> {
       onOpenInExternalEditor: this.openInExternalEditor,
       askForConfirmationOnRemoveRepository:
         this.state.askForConfirmationOnRepositoryRemoval,
-      showWorktreesInSidebar: this.state.showWorktreesInSidebar,
       externalEditorLabel: this.getExternalEditorLabel(repository),
-      onAddNewWorktree: onAddNewWorktree,
       onChangeRepositoryAlias: onChangeRepositoryAlias,
       onRemoveRepositoryAlias: onRemoveRepositoryAlias,
       onChangeRepositoryGroupName: onChangeRepositoryGroupName,
       onRemoveRepositoryGroupName: onRemoveRepositoryGroupName,
       onViewOnGitHub: this.viewOnGitHub,
+      onCreateWorktree: enableWorktreeSupport() ? onCreateWorktree : undefined,
+      onShowWorktrees: enableWorktreeSupport() ? onShowWorktrees : undefined,
       repository: repository,
       shellLabel: this.state.useCustomShell
         ? undefined
@@ -3837,23 +3958,34 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private renderWorktreeToolbarButton(): JSX.Element | null {
-    const selection = this.state.selectedState
-
-    if (selection?.type !== SelectionType.Repository) {
+    if (!enableWorktreeSupport()) {
       return null
     }
-
     if (!this.state.showWorktrees) {
       return null
     }
+
+    const selection = this.state.selectedState
+
+    if (selection == null || selection.type !== SelectionType.Repository) {
+      return null
+    }
+
+    const { worktrees } = selection.state
 
     const currentFoldout = this.state.currentFoldout
 
     const isOpen =
       currentFoldout !== null && currentFoldout.type === FoldoutType.Worktree
 
+    // Only show the worktree dropdown when there are linked worktrees or if the
+    // foldout is open. This allows the user to create a worktree from the app
+    // menu even when there are no worktrees.
+    if (worktrees.length <= 1 && !isOpen) {
+      return null
+    }
+
     const repository = selection.repository
-    const repositoryState = selection.state
 
     const enableFocusTrap = this.state.currentPopup === null
 
@@ -3861,13 +3993,11 @@ export class App extends React.Component<IAppProps, IAppState> {
       <WorktreeDropdown
         dispatcher={this.props.dispatcher}
         repository={repository}
-        repositoryState={repositoryState}
+        worktrees={worktrees}
         isOpen={isOpen}
         onDropDownStateChanged={this.onWorktreeDropdownStateChanged}
         enableFocusTrap={enableFocusTrap}
-        repositories={this.state.repositories}
         worktreeDropdownWidth={this.state.worktreeDropdownWidth}
-        localRepositoryStateLookup={this.state.localRepositoryStateLookup}
       />
     )
   }
@@ -4044,6 +4174,10 @@ export class App extends React.Component<IAppProps, IAppState> {
           showCompareTab={this.state.showCompareTab}
           shouldShowGenerateCommitMessageCallOut={
             !this.state.commitMessageGenerationButtonClicked
+          }
+          commitMessageGenerationDisabled={
+            this.state.selectedCopilotModels['commit-message-generation'] ===
+            DisabledCopilotModel
           }
           skipCommitHooks={selectedState.state.skipCommitHooks}
           signOffCommits={selectedState.state.signOffCommits}

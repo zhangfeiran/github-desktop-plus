@@ -98,7 +98,6 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
   private renderBranchFoldout = (): JSX.Element | null => {
     const repositoryState = this.props.repositoryState
     const branchesState = repositoryState.branchesState
-    const worktreesState = repositoryState.worktreesState
 
     const tip = repositoryState.branchesState.tip
     const currentBranch = tip.kind === TipState.Valid ? tip.branch : null
@@ -108,7 +107,7 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
         recentBranches={branchesState.recentBranches}
         currentBranch={currentBranch}
         defaultBranch={branchesState.defaultBranch}
-        allWorktrees={worktreesState.allWorktrees}
+        allWorktrees={repositoryState.worktrees}
         dispatcher={this.props.dispatcher}
         repository={this.props.repository}
         selectedTab={this.props.selectedTab}
@@ -118,8 +117,11 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
         branchSortOrder={this.props.branchSortOrder}
         emoji={this.props.emoji}
         onDeleteBranch={this.onDeleteBranch}
+        onPullSingleBranch={this.onPullSingleBranch}
         onRenameBranch={this.onRenameBranch}
         onSetAsDefaultBranch={this.onSetAsDefaultBranch}
+        onCheckoutInNewWorktree={this.onCheckoutInNewWorktree}
+        onCheckoutPRInNewWorktree={this.onCheckoutPRInNewWorktree}
         underlineLinks={this.props.underlineLinks}
       />
     )
@@ -315,13 +317,11 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
       return
     }
 
-    const { name, type, nameWithoutRemote } = tip.branch
+    const { branch } = tip
+
     const items = generateBranchContextMenuItems({
-      name,
-      nameWithoutRemote,
-      isLocal: type === BranchType.Local,
+      branch,
       repoType: this.props.repository.gitHubRepository?.type,
-      isInUseByOtherWorktree: false,
       onRenameBranch: this.onRenameBranch,
       onViewBranchOnGitHub:
         isRepositoryWithGitHubRepository(this.props.repository) &&
@@ -332,7 +332,7 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
         ? this.onViewPullRequestOnGithub
         : undefined,
       onSetAsDefaultBranch:
-        nameWithoutRemote === this.props.repository.defaultBranch
+        branch.nameWithoutRemote === this.props.repository.defaultBranch
           ? undefined
           : this.onSetAsDefaultBranch,
       onDeleteBranch: this.onDeleteBranch,
@@ -443,6 +443,48 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
       branch,
       existsOnRemote: aheadBehind !== null,
     })
+  }
+
+  private onCheckoutInNewWorktree = (branch: Branch) => {
+    this.props.dispatcher.closeFoldout(FoldoutType.Branch)
+    this.props.dispatcher.showPopup({
+      type: PopupType.AddWorktree,
+      repository: this.props.repository,
+      initialBranchName: branch.name,
+      initialWorktreeName: `${this.props.repository.name}-${branch.nameWithoutRemote}`,
+    })
+  }
+
+  private onCheckoutPRInNewWorktree = (pullRequest: PullRequest) => {
+    this.props.dispatcher.closeFoldout(FoldoutType.Branch)
+    this.props.dispatcher.showPopup({
+      type: PopupType.AddWorktree,
+      repository: this.props.repository,
+      initialBranchName: pullRequest.head.ref,
+      initialWorktreeName: `${this.props.repository.name}-${pullRequest.pullRequestNumber}`,
+    })
+  }
+
+  private onPullSingleBranch = async (branchName: string) => {
+    try {
+      const tip = this.props.repositoryState.branchesState.tip
+      const currentBranch = tip.kind === TipState.Valid ? tip.branch : null
+      const selectedBranch = this.getBranchWithName(branchName)
+      if (!selectedBranch) {
+        return
+      }
+
+      if (selectedBranch.ref === currentBranch?.ref) {
+        await this.props.dispatcher.pull(this.props.repository)
+      } else {
+        await this.props.dispatcher.fastForwardBranch(
+          this.props.repository,
+          selectedBranch
+        )
+      }
+    } catch (error) {
+      this.props.dispatcher.postError(error)
+    }
   }
 
   private onBadgeClick = () => {

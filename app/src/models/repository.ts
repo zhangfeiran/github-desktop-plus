@@ -14,10 +14,7 @@ import { getRemotes } from '../lib/git'
 import { findDefaultRemote } from '../lib/stores/helpers/find-default-remote'
 import { isTrustedRemoteHost } from '../lib/api'
 import { EditorOverride } from './editor-override'
-import {
-  BundledGitSource,
-  RepositoryGitSource,
-} from './repository-git-source'
+import { BundledGitSource, RepositoryGitSource } from './repository-git-source'
 import { normalizeRepositoryGitSource } from '../lib/git/source'
 
 export enum LoginSpecialValue {
@@ -45,8 +42,9 @@ export type WorkingTree = {
 export class Repository {
   public readonly name: string
   /**
-   * The main working tree (what we commonly
-   * think of as the repository's working directory)
+   * The main working tree (what we commonly think of as the repository's
+   * working directory). For a linked worktree repository this stores the linked
+   * worktree path; the name is kept to minimize merge churn with upstream.
    */
   private readonly mainWorkTree: WorkingTree
 
@@ -139,9 +137,6 @@ export class Repository {
   }
 
   public get path(): string {
-    // NOTE: This is not actually the main worktree. We preserve the name "mainWorkTree" to
-    // minimize merge conflicts when pulling changes from the official repo (desktop/desktop).
-    // If isLinkedWorktree = true, this is actually the path to the linked worktree
     return this.mainWorkTree.path
   }
 
@@ -196,12 +191,6 @@ export class Repository {
   }
 
   public readonly gitSourceOverride: RepositoryGitSource = BundledGitSource
-}
-
-/** A worktree linked to a main working tree (aka `Repository`) */
-export type LinkedWorkTree = WorkingTree & {
-  /** The sha of the head commit in this work tree */
-  readonly head: string
 }
 
 /** Identical to `Repository`, except it **must** have a `gitHubRepository` */
@@ -288,9 +277,10 @@ export interface ILocalRepositoryState {
    */
   readonly defaultBranchName: string | null
   /**
-   * All worktrees known for this repository.
+   * The worktrees associated with this repository (including the main
+   * worktree), or an empty array when not loaded / the feature is disabled.
    */
-  readonly allWorktrees: ReadonlyArray<WorktreeEntry>
+  readonly worktrees: ReadonlyArray<WorktreeEntry>
 }
 
 /**
@@ -412,6 +402,11 @@ function getCustomOverrideHash(
   )
 }
 
-function getGitSourceOverrideHash(gitSourceOverride: RepositoryGitSource): string {
-  return createEqualityHash(gitSourceOverride.kind, 'path' in gitSourceOverride ? gitSourceOverride.path : null)
+function getGitSourceOverrideHash(
+  gitSourceOverride: RepositoryGitSource
+): string {
+  return createEqualityHash(
+    gitSourceOverride.kind,
+    'path' in gitSourceOverride ? gitSourceOverride.path : null
+  )
 }

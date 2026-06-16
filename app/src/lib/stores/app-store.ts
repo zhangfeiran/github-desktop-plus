@@ -5,7 +5,6 @@ import {
   ShowBranchNameInRepoListSetting,
 } from '../../models/show-branch-name-in-repo-list'
 import { TitleBarStyle } from '../../ui/lib/title-bar-style'
-import pLimit from 'p-limit'
 import {
   IBranchNamePreset,
   parseBranchNamePresets,
@@ -27,18 +26,6 @@ import { EditorOverride } from '../../models/editor-override'
 import { stageResolvedConflictFiles } from '../git/stage'
 import { normalizePath } from '../helpers/path'
 import {
-  getPreferredWorktreePath,
-  clearPreferredWorktreePath,
-  setPreferredWorktreePath,
-} from '../worktree-preferences'
-import {
-  findSidebarWorktreeStateRepository,
-  getCurrentWorktreeEntryForRepository,
-  withSidebarWorktrees,
-  createSidebarStateFromStatus,
-  shouldRefreshSidebarWorktrees,
-} from './helpers/sidebar-worktrees'
-import {
   AccountsStore,
   CloningRepositoriesStore,
   CopilotStore,
@@ -52,6 +39,7 @@ import {
   UpstreamRemoteName,
 } from '.'
 import type { CopilotFeature, CopilotModelSelections } from './copilot-store'
+import { DisabledCopilotModel } from './copilot-store'
 import {
   IBYOKProvider,
   loadBYOKProviders,
@@ -210,6 +198,7 @@ import { RepositoryGitSource } from '../../models/repository-git-source'
 import { formatCommitMessage } from '../format-commit-message'
 import {
   getAccountForCommitMessageGeneration,
+  getAccountForCopilotConflictResolution,
   getAccountForRepository,
 } from '../get-account-for-repository'
 import {
@@ -252,6 +241,8 @@ import {
   appendIgnoreFile,
   getRepositoryType,
   RepositoryType,
+  listWorktrees,
+  removeWorktree,
   getCommitRangeDiff,
   getCommitRangeChangedFiles,
   updateRemoteHEAD,
@@ -265,7 +256,6 @@ import {
   HookProgress,
   getConfigValueWithOrigin,
   IConfigValueOrigin,
-  listWorktrees,
   unstageAll,
   git,
 } from '../git'
@@ -340,6 +330,7 @@ import {
   enableCopilotConflictResolution,
   enableCopilotSdkCommitMessageGeneration,
   enableCustomIntegration,
+  enableWorktreeSupport,
 } from '../feature-flag'
 import { Banner, BannerType } from '../../models/banner'
 import { ComputedAction } from '../../models/computed-action'
@@ -445,19 +436,38 @@ import {
   migratedCustomIntegration,
 } from '../custom-integration'
 import { updateStore } from '../../ui/lib/update-store'
+import { startTimer } from '../../ui/lib/timing'
 import { BypassReasonType } from '../../ui/secret-scanning/bypass-push-protection-dialog'
 import { setTrackedRepositoryGitSources } from '../git/source'
 import {
-  ICopilotConflictResolutionResponse,
+  selectReferencedContext,
+  fallbackReferencedContext,
   IConflictResolutionProgress,
+  ICopilotResolutionSummary,
+  IFileResolution,
 } from '../copilot-conflict-resolution'
 import {
   buildConflictContext,
   gatherCommitContext,
+  IConflictContextCommit,
+  IConflictContextPullRequest,
+  IConflictResolutionContext,
 } from '../copilot-conflict-context'
+import {
+  extractPullRequestNumbersFromCommits,
+  findPullRequestsByNumbers,
+} from '../pull-request-refs'
 import { resolveWithin } from '../path'
+import { WorktreeEntry } from '../../models/worktree'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
+
+/**
+ * Upper bound on how many pull requests we'll resolve (across both sides)
+ * when gathering Copilot conflict-resolution context. Caps best-effort API
+ * lookups so a noisy set of `#NNNN` references can't stall resolution.
+ */
+const MaxPullRequestLookups = 10
 
 const RecentRepositoriesKey = 'recently-selected-repositories'
 /**
@@ -483,7 +493,6 @@ const branchDropdownWidthConfigKey: string = 'branch-dropdown-width'
 
 const defaultWorktreeDropdownWidth: number = 230
 const worktreeDropdownWidthConfigKey: string = 'worktree-dropdown-width'
-const MaxConcurrentSidebarWorktreePreloads = 4
 
 const defaultPushPullButtonWidth: number = 230
 const pushPullButtonWidthConfigKey: string = 'push-pull-button-width'
@@ -499,6 +508,7 @@ const askForConfirmationOnForcePushDefault = true
 const confirmUndoCommitDefault: boolean = true
 const confirmCommitFilteredChangesDefault: boolean = true
 const confirmCommitMessageOverrideDefault: boolean = true
+const confirmWorktreeRemovalDefault: boolean = true
 const askToMoveToApplicationsFolderKey: string = 'askToMoveToApplicationsFolder'
 const confirmRepoRemovalKey: string = 'confirmRepoRemoval'
 const showCommitLengthWarningKey: string = 'showCommitLengthWarning'
@@ -512,6 +522,7 @@ const confirmUndoCommitKey: string = 'confirmUndoCommit'
 const confirmCommitFilteredChangesKey: string =
   'confirmCommitFilteredChangesKey'
 const confirmCommitMessageOverrideKey: string = 'confirmCommitMessageOverride'
+const confirmWorktreeRemovalKey: string = 'confirmWorktreeRemoval'
 
 const uncommittedChangesStrategyKey = 'uncommittedChangesStrategyKind'
 
@@ -542,8 +553,8 @@ const diffFontFamilyKey = 'diff-font-family'
 const shellKey = 'shell'
 
 const showRecentRepositoriesKey = 'show-recent-repositories'
-const showWorktreesKey = 'show-worktrees'
-const showWorktreesInSidebarKey = 'show-worktrees-in-sidebar'
+const showWorktreesKey = 'show-worktrees-foldout'
+const showWorktreesInRepoListKey = 'show-worktrees-in-repo-list'
 const showCompareTabKey = 'show-compare-tab'
 const showCompareTabDefault = true
 const repositoryIndicatorsEnabledKey = 'enable-repository-indicators'
@@ -589,6 +600,12 @@ const commitMessageGenerationDisclaimerLastSeenKey =
 
 const commitMessageGenerationButtonClickedKey =
   'commit-message-generation-button-clicked'
+
+const copilotConflictResolutionDisclaimerLastSeenKey =
+  'copilot-conflict-resolution-disclaimer-last-seen'
+
+const copilotConflictResolutionButtonClickedKey =
+  'copilot-conflict-resolution-button-clicked'
 
 export const showChangesFilterKey = 'show-changes-filter'
 
@@ -678,6 +695,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     confirmCommitFilteredChangesDefault
   private confirmCommitMessageOverride: boolean =
     confirmCommitMessageOverrideDefault
+  private confirmWorktreeRemoval: boolean = confirmWorktreeRemovalDefault
   private imageDiffType: ImageDiffType = imageDiffTypeDefault
   private hideWhitespaceInChangesDiff: boolean =
     hideWhitespaceInChangesDiffDefault
@@ -722,8 +740,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private titleBarStyle: TitleBarStyle = __WIN32__ ? 'custom' : 'native'
   private showRecentRepositories: boolean = true
   private showWorktrees: boolean = false
-  private showWorktreesInSidebar: boolean = false
-  private readonly lastSidebarWorktreeRefreshAt = new Map<string, number>()
+  private showWorktreesInRepoList: boolean = false
   private showCompareTab: boolean = showCompareTabDefault
   private hideWindowOnQuit: boolean = __DARWIN__
 
@@ -778,7 +795,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private commitMessageGenerationDisclaimerLastSeen: number | null = null
   private commitMessageGenerationButtonClicked: boolean = false
 
+  private copilotConflictResolutionDisclaimerLastSeen: number | null = null
+  private copilotConflictResolutionButtonClicked: boolean = false
+
   private showChangesFilter: boolean = false
+
+  private overrideProgressTitle: string | null = null
 
   private selectedCopilotModels: CopilotModelSelections = {}
   private copilotModels: ReadonlyArray<ModelInfo> | null = null
@@ -848,8 +870,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       getBoolean(repositoryIndicatorsEnabledKey) ?? true
 
     this.showRecentRepositories = getBoolean(showRecentRepositoriesKey) ?? true
-    this.showWorktrees = getBoolean(showWorktreesKey) ?? false
-    this.showWorktreesInSidebar = getBoolean(showWorktreesInSidebarKey) ?? false
+    this.showWorktrees = getBoolean(showWorktreesKey) ?? true
+    this.showWorktreesInRepoList =
+      getBoolean(showWorktreesInRepoListKey) ?? false
     this.showCompareTab = getBoolean(showCompareTabKey, showCompareTabDefault)
 
     this.repositoryIndicatorUpdater = new RepositoryIndicatorUpdater(
@@ -1007,16 +1030,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
-  private pruneSidebarWorktreeRefreshCache() {
-    const currentRepositoryHashes = new Set(this.repositories.map(r => r.hash))
-
-    for (const hash of this.lastSidebarWorktreeRefreshAt.keys()) {
-      if (!currentRepositoryHashes.has(hash)) {
-        this.lastSidebarWorktreeRefreshAt.delete(hash)
-      }
-    }
-  }
-
   private recordTutorialStepCompleted(step: TutorialStep): void {
     if (!isValidTutorialStep(step)) {
       return
@@ -1132,11 +1145,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.repositoriesStore.onDidUpdate(updateRepositories => {
       this.repositories = updateRepositories
       setTrackedRepositoryGitSources(this.repositories)
-      this.pruneSidebarWorktreeRefreshCache()
       this.updateRepositorySelectionAfterRepositoriesChanged()
-      if (this.showWorktreesInSidebar) {
-        void this.preloadSidebarWorktrees()
-      }
       this.emitUpdate()
     })
 
@@ -1310,6 +1319,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this.confirmCommitFilteredChanges,
       askForConfirmationOnCommitMessageOverride:
         this.confirmCommitMessageOverride,
+      askForConfirmationOnWorktreeRemoval: this.confirmWorktreeRemoval,
       uncommittedChangesStrategy: this.uncommittedChangesStrategy,
       selectedExternalEditor: this.selectedExternalEditor,
       imageDiffType: this.imageDiffType,
@@ -1331,7 +1341,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       titleBarStyle: this.titleBarStyle,
       showRecentRepositories: this.showRecentRepositories,
       showWorktrees: this.showWorktrees,
-      showWorktreesInSidebar: this.showWorktreesInSidebar,
+      showWorktreesInRepoList: this.showWorktreesInRepoList,
       showCompareTab: this.showCompareTab,
       apiRepositories: this.apiRepositoriesStore.getState(),
       useWindowsOpenSSH: this.useWindowsOpenSSH,
@@ -1365,6 +1375,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this.commitMessageGenerationDisclaimerLastSeen,
       commitMessageGenerationButtonClicked:
         this.commitMessageGenerationButtonClicked,
+      copilotConflictResolutionDisclaimerLastSeen:
+        this.copilotConflictResolutionDisclaimerLastSeen,
+      copilotConflictResolutionButtonClicked:
+        this.copilotConflictResolutionButtonClicked,
       showChangesFilter: this.showChangesFilter,
       selectedCopilotModels: this.selectedCopilotModels,
       copilotModels: this.copilotModels,
@@ -1430,13 +1444,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
         recentBranches: gitStore.recentBranches,
         pullWithRebase: gitStore.pullWithRebase,
         currentPullRequest,
-      }
-    })
-
-    this.repositoryStateCache.updateWorktreesState(repository, () => {
-      return {
-        allWorktrees: gitStore.allWorktrees,
-        currentWorktree: gitStore.currentWorktree,
       }
     })
 
@@ -2576,57 +2583,19 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.selectedRepository = repository
 
+    this.emitUpdate()
     this.stopBackgroundFetching()
     this.stopPullRequestUpdater()
     this._clearBanner()
     this.stopBackgroundPruner()
 
     if (repository == null) {
-      this.emitUpdate()
       return Promise.resolve(null)
     }
 
     if (!(repository instanceof Repository)) {
-      this.emitUpdate()
       return Promise.resolve(null)
     }
-
-    // When returning to a repository that has worktrees, restore the
-    // previously active linked worktree so the user doesn't always land
-    // on the main worktree after switching repos.
-    // Disable this behavior if "Show worktrees in repository list" is enabled.
-    if (!this.showWorktreesInSidebar && !repository.isLinkedWorktree) {
-      const repoPath = normalizePath(repository.path)
-      const preferredPath = getPreferredWorktreePath(repoPath)
-
-      if (preferredPath && preferredPath !== repoPath) {
-        const linkedRepo = this.repositories.find(
-          r =>
-            r instanceof Repository && normalizePath(r.path) === preferredPath
-        )
-
-        if (linkedRepo instanceof Repository) {
-          repository = linkedRepo
-          this.selectedRepository = repository
-        } else {
-          const exists = await pathExists(preferredPath)
-          if (exists) {
-            const addedRepos = await this._addRepositories(
-              [preferredPath],
-              repository.login
-            )
-            if (addedRepos.length > 0) {
-              repository = addedRepos[0]
-              this.selectedRepository = repository
-            }
-          } else {
-            clearPreferredWorktreePath(repoPath)
-          }
-        }
-      }
-    }
-
-    this.emitUpdate()
 
     if (persistSelection) {
       setNumber(LastSelectedRepositoryIDKey, repository.id)
@@ -2936,12 +2905,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.accounts = accounts
     this.repositories = repositories
     setTrackedRepositoryGitSources(this.repositories)
-    this.pruneSidebarWorktreeRefreshCache()
 
     this.updateRepositorySelectionAfterRepositoriesChanged()
-    if (this.showWorktreesInSidebar) {
-      void this.preloadSidebarWorktrees()
-    }
 
     this.sidebarWidth = constrain(
       getNumber(sidebarWidthConfigKey, defaultSidebarWidth)
@@ -3038,6 +3003,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.confirmCommitMessageOverride = getBoolean(
       confirmCommitMessageOverrideKey,
       confirmCommitMessageOverrideDefault
+    )
+
+    this.confirmWorktreeRemoval = getBoolean(
+      confirmWorktreeRemovalKey,
+      confirmWorktreeRemovalDefault
     )
 
     this.uncommittedChangesStrategy =
@@ -3164,6 +3134,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
       false
     )
 
+    this.copilotConflictResolutionDisclaimerLastSeen =
+      getNumber(copilotConflictResolutionDisclaimerLastSeenKey) ?? null
+
+    this.copilotConflictResolutionButtonClicked = getBoolean(
+      copilotConflictResolutionButtonClickedKey,
+      false
+    )
+
     this.showChangesFilter = getBoolean(
       showChangesFilterKey,
       showChangesFilterDefault
@@ -3190,8 +3168,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const toolbarButtonsMinWidth =
       defaultPushPullButtonWidth +
       defaultBranchDropdownWidth +
-      (this.showWorktrees ? defaultWorktreeDropdownWidth : 0)
-    const numButtons = 2 + (this.showWorktrees ? 1 : 0)
+      defaultWorktreeDropdownWidth
 
     // Start with all the available width
     let available = window.innerWidth
@@ -3233,28 +3210,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
     this.stashedFilesWidth = constrain(this.stashedFilesWidth, 100, filesMax)
 
-    // Allocate worktree first (highest priority), then branch, then
+    // Allocate branch first (highest priority), then worktree, then
     // push-pull. Each subsequent allocation uses the clamped value of the
     // previous to prevent the total from exceeding the available space.
-    const worktreeDropdownMax =
-      available - defaultBranchDropdownWidth - defaultPushPullButtonWidth
-    const minimumWorktreeDropdownWidth =
-      defaultWorktreeDropdownWidth > available / numButtons
-        ? available / numButtons - 10
-        : defaultWorktreeDropdownWidth
-    this.worktreeDropdownWidth = constrain(
-      this.worktreeDropdownWidth,
-      minimumWorktreeDropdownWidth,
-      worktreeDropdownMax
-    )
-
     const branchDropdownMax =
-      available -
-      (this.showWorktrees ? clamp(this.worktreeDropdownWidth) : 0) -
-      defaultPushPullButtonWidth
+      available - defaultWorktreeDropdownWidth - defaultPushPullButtonWidth
     const minimumBranchDropdownWidth =
-      defaultBranchDropdownWidth > available / numButtons
-        ? available / numButtons - 10
+      defaultBranchDropdownWidth > available / 3
+        ? available / 3 - 10
         : defaultBranchDropdownWidth
     this.branchDropdownWidth = constrain(
       this.branchDropdownWidth,
@@ -3262,13 +3225,21 @@ export class AppStore extends TypedBaseStore<IAppState> {
       branchDropdownMax
     )
 
+    const worktreeDropdownMax =
+      available - clamp(this.branchDropdownWidth) - defaultPushPullButtonWidth
+    this.worktreeDropdownWidth = constrain(
+      this.worktreeDropdownWidth,
+      Math.min(available / 3 - 10, 170),
+      worktreeDropdownMax
+    )
+
     const pushPullButtonMaxWidth =
       available -
-      (this.showWorktrees ? clamp(this.worktreeDropdownWidth) : 0) -
-      clamp(this.branchDropdownWidth)
+      clamp(this.branchDropdownWidth) -
+      clamp(this.worktreeDropdownWidth)
     const minimumPushPullToolBarWidth =
-      defaultPushPullButtonWidth > available / numButtons
-        ? available / numButtons - 10
+      defaultPushPullButtonWidth > available / 3
+        ? available / 3
         : defaultPushPullButtonWidth
     this.pushPullButtonWidth = constrain(
       this.pushPullButtonWidth,
@@ -3448,20 +3419,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
             r.id === selectedRepository.id
         ) || null
 
-      if (r !== null) {
-        newSelectedRepository = r
-      } else if (
-        selectedRepository instanceof Repository &&
-        selectedRepository.id < 0
-      ) {
-        // Synthetic sidebar-only worktree rows are transient selections and
-        // won't exist in the saved repositories list. Preserve the current
-        // selection across repository store updates instead of falling back to
-        // the previously selected saved repository.
-        newSelectedRepository = selectedRepository
-      } else {
-        newSelectedRepository = null
-      }
+      newSelectedRepository = r
     }
 
     if (newSelectedRepository === null && this.repositories.length > 0) {
@@ -4518,16 +4476,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     const state = this.repositoryStateCache.get(repository)
     const gitStore = this.gitStoreCache.get(repository)
-    const sidebarRepository = findSidebarWorktreeStateRepository(
-      this.repositories,
-      repository
-    )
 
     // if we cannot get a valid status it's a good indicator that the repository
     // is in a bad state - let's mark it as missing here and give up on the
     // further work
     const status = await this._loadStatus(repository)
-    this.updateSidebarIndicator(repository, status)
+    await this.updateSidebarIndicator(repository, status)
 
     if (status === null) {
       await this._updateRepositoryMissing(repository, true)
@@ -4538,35 +4492,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     await gitStore.loadRemotes()
     await gitStore.loadBranches()
     await gitStore.loadWorktrees()
-    this.repositoryStateCache.updateWorktreesState(repository, () => ({
-      allWorktrees: gitStore.allWorktrees,
-      currentWorktree: gitStore.currentWorktree,
-    }))
-    if (sidebarRepository !== repository) {
-      this.repositoryStateCache.updateWorktreesState(sidebarRepository, () => ({
-        allWorktrees: gitStore.allWorktrees,
-        currentWorktree: getCurrentWorktreeEntryForRepository(
-          gitStore.allWorktrees,
-          sidebarRepository
-        ),
-      }))
-    }
-
-    if (this.showWorktreesInSidebar) {
-      this.lastSidebarWorktreeRefreshAt.set(repository.hash, Date.now())
-      this.lastSidebarWorktreeRefreshAt.set(sidebarRepository.hash, Date.now())
-      this.updateSidebarIndicator(repository, status)
-      const refreshed = this.localRepositoryStateLookup.get(
-        sidebarRepository.id
-      )
-      if (refreshed !== undefined) {
-        this.localRepositoryStateLookup.set(
-          sidebarRepository.id,
-          withSidebarWorktrees(refreshed, gitStore.allWorktrees)
-        )
-      }
-    }
-    this.emitUpdate()
 
     const section = state.selectedSection
     let refreshSectionPromise: Promise<void>
@@ -4589,6 +4514,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       gitStore.updateLastFetched(),
       gitStore.loadStashEntries(),
       this._refreshAuthor(repository),
+      this._refreshWorktrees(repository),
       refreshSectionPromise,
     ])
 
@@ -4616,63 +4542,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
         gitStore.defaultBranch.name
       )
     }
-  }
-
-  private async preloadSidebarWorktrees() {
-    const limit = pLimit(MaxConcurrentSidebarWorktreePreloads)
-
-    await Promise.all(
-      this.repositories.map(repository =>
-        limit(async () => {
-          const exists = await pathExists(repository.path)
-          if (!exists) {
-            const existing = this.localRepositoryStateLookup.get(repository.id)
-            if (existing !== undefined) {
-              this.localRepositoryStateLookup.set(
-                repository.id,
-                withSidebarWorktrees(existing, [])
-              )
-            }
-            return
-          }
-
-          try {
-            const gitStore = this.gitStoreCache.get(repository)
-            await gitStore.loadWorktrees()
-            this.repositoryStateCache.updateWorktreesState(repository, () => ({
-              allWorktrees: gitStore.allWorktrees,
-              currentWorktree: gitStore.currentWorktree,
-            }))
-
-            const existing = this.localRepositoryStateLookup.get(repository.id)
-            if (existing !== undefined) {
-              this.localRepositoryStateLookup.set(
-                repository.id,
-                withSidebarWorktrees(existing, gitStore.allWorktrees)
-              )
-            }
-            this.lastSidebarWorktreeRefreshAt.set(repository.hash, Date.now())
-            this.emitUpdate()
-          } catch (error) {
-            log.warn(
-              `[AppStore] Failed to preload sidebar worktrees for '${nameOf(
-                repository
-              )}'`,
-              error
-            )
-            const existing = this.localRepositoryStateLookup.get(repository.id)
-            if (existing !== undefined) {
-              this.localRepositoryStateLookup.set(
-                repository.id,
-                withSidebarWorktrees(existing, [])
-              )
-            }
-          }
-        })
-      )
-    )
-
-    this.emitUpdate()
   }
 
   private async updateStashEntryCountMetric(
@@ -4714,26 +4583,34 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
-    lookup.set(
-      repository.id,
-      createSidebarStateFromStatus(
-        repository,
-        status,
-        lookup.get(repository.id),
-        this.repositoryStateCache.get(repository).worktreesState.allWorktrees,
-        this.showWorktreesInSidebar
-      )
-    )
+    lookup.set(repository.id, {
+      aheadBehind: status.branchAheadBehind || null,
+      changedFilesCount: status.workingDirectory.files.length,
+      branchName: status.currentBranch || null,
+      defaultBranchName: repository.defaultBranch,
+      worktrees: await this.loadWorktreesForRepoList(repository),
+    })
+  }
+
+  private async loadWorktreesForRepoList(
+    repository: Repository
+  ): Promise<ReadonlyArray<WorktreeEntry>> {
+    if (!enableWorktreeSupport() || !this.showWorktreesInRepoList) {
+      return []
+    }
+
+    try {
+      return await listWorktrees(repository)
+    } catch (e) {
+      log.error('Failed to load worktrees for repository list', e)
+      return []
+    }
   }
   /**
    * Refresh indicator in repository list for a specific repository
    */
   private refreshIndicatorForRepository = async (repository: Repository) => {
     const lookup = this.localRepositoryStateLookup
-    const sidebarRepository = findSidebarWorktreeStateRepository(
-      this.repositories,
-      repository
-    )
 
     if (repository.missing) {
       lookup.delete(repository.id)
@@ -4753,29 +4630,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
-    if (
-      this.showWorktreesInSidebar &&
-      shouldRefreshSidebarWorktrees(
-        this.lastSidebarWorktreeRefreshAt.get(sidebarRepository.hash)
-      )
-    ) {
-      const sidebarGitStore = this.gitStoreCache.get(sidebarRepository)
-      await sidebarGitStore.loadWorktrees()
-      this.repositoryStateCache.updateWorktreesState(sidebarRepository, () => ({
-        allWorktrees: sidebarGitStore.allWorktrees,
-        currentWorktree: sidebarGitStore.currentWorktree,
-      }))
-      const refreshed = lookup.get(sidebarRepository.id)
-      if (refreshed !== undefined) {
-        lookup.set(
-          sidebarRepository.id,
-          withSidebarWorktrees(refreshed, sidebarGitStore.allWorktrees)
-        )
-      }
-      this.lastSidebarWorktreeRefreshAt.set(sidebarRepository.hash, Date.now())
-    }
-
-    this.updateSidebarIndicator(repository, status)
+    await this.updateSidebarIndicator(repository, status)
     this.emitUpdate()
 
     const lastPush = await inferLastPushForRepository(
@@ -4796,7 +4651,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         changedFilesCount: existing?.changedFilesCount ?? 0,
         branchName: existing?.branchName ?? null,
         defaultBranchName: existing?.defaultBranchName ?? null,
-        allWorktrees: existing?.allWorktrees ?? [],
+        worktrees: existing?.worktrees ?? [],
       })
       this.emitUpdate()
     }
@@ -4875,17 +4730,39 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
   }
 
-  public _setShowWorktreesInSidebar(showWorktreesInSidebar: boolean) {
-    if (this.showWorktreesInSidebar === showWorktreesInSidebar) {
+  public _setShowWorktreesInRepoList(showWorktreesInRepoList: boolean) {
+    if (this.showWorktreesInRepoList === showWorktreesInRepoList) {
       return
     }
+    setBoolean(showWorktreesInRepoListKey, showWorktreesInRepoList)
+    this.showWorktreesInRepoList = showWorktreesInRepoList
+    this.emitUpdate()
 
-    setBoolean(showWorktreesInSidebarKey, showWorktreesInSidebar)
-    this.showWorktreesInSidebar = showWorktreesInSidebar
-    this.lastSidebarWorktreeRefreshAt.clear()
-    if (showWorktreesInSidebar) {
-      void this.preloadSidebarWorktrees()
+    if (showWorktreesInRepoList) {
+      // Eagerly populate worktrees for all repositories without waiting for the next periodic indicator refresh
+      this.refreshAllWorktreesForRepoList()
     }
+  }
+
+  private async refreshAllWorktreesForRepoList(): Promise<void> {
+    const lookup = this.localRepositoryStateLookup
+
+    for (const repository of this.repositories) {
+      if (repository.missing) {
+        continue
+      }
+
+      const worktrees = await this.loadWorktreesForRepoList(repository)
+      const existing = lookup.get(repository.id)
+      lookup.set(repository.id, {
+        aheadBehind: existing?.aheadBehind ?? null,
+        changedFilesCount: existing?.changedFilesCount ?? 0,
+        branchName: existing?.branchName ?? null,
+        defaultBranchName: existing?.defaultBranchName ?? null,
+        worktrees,
+      })
+    }
+
     this.emitUpdate()
   }
 
@@ -5027,6 +4904,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
       commitAuthorEmailOrigin,
     }))
     this.emitUpdate()
+  }
+
+  private async _refreshWorktrees(repository: Repository): Promise<void> {
+    try {
+      const worktrees = await listWorktrees(repository)
+      this.repositoryStateCache.update(repository, () => ({ worktrees }))
+      this.statsStore.recordWorktreeCount(worktrees.length)
+      this.emitUpdate()
+    } catch (e) {
+      log.error('Failed to refresh worktrees', e)
+    }
   }
 
   public _updateCommitOptions(
@@ -5217,6 +5105,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return repository
     }
 
+    // If the branch is checked out in another worktree, switch to that worktree
+    // instead of checking out the branch in the current worktree.
+    const wt = repositoryState.worktrees.find(wt => wt.branch === branch.ref)
+
+    if (wt) {
+      return this._switchWorktree(repository, wt)
+    }
+
     let strategy = explicitStrategy ?? this.uncommittedChangesStrategy
 
     // Always move changes to new branch if we're on a detached head, unborn
@@ -5247,7 +5143,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       // up-to-date information to the user.
       return this.checkoutImplementation(repository, branch, strategy)
         .then(() => this.onSuccessfulCheckout(repository, branch))
-        .catch(e => this.emitError(new CheckoutError(e, repository, branch)))
+        .catch(async e => {
+          this.emitError(new CheckoutError(e, repository, branch))
+        })
         .then(() => this.refreshAfterCheckout(repository, branch.name))
         .finally(() => this.updateCheckoutProgress(repository, null))
     })
@@ -5810,18 +5708,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     newGroupName: string | null
   ): Promise<void> {
-    const mainPath = normalizePath(
-      repository.isLinkedWorktree
-        ? repository.mainWorktreePath
-        : repository.path
-    )
-    const reposToUpdate = this.repositories.filter(
-      r =>
-        normalizePath(r.path) === mainPath ||
-        (r.isLinkedWorktree && normalizePath(r.mainWorktreePath) === mainPath)
-    )
     return this.repositoriesStore.updateRepositoryGroupName(
-      reposToUpdate,
+      [repository],
       newGroupName
     )
   }
@@ -5873,6 +5761,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     pushPullFetchProgress: Progress | null
   ) {
+    if (pushPullFetchProgress && this.overrideProgressTitle) {
+      pushPullFetchProgress = {
+        ...pushPullFetchProgress,
+        title: this.overrideProgressTitle,
+      }
+    }
+
     this.repositoryStateCache.update(repository, () => ({
       pushPullFetchProgress,
     }))
@@ -6723,6 +6618,31 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /**
+   * Attempts to fast-forward a branch to its upstream.
+   *
+   * @returns true if it was successful
+   */
+  public async _fastForwardBranch(
+    repository: Repository,
+    branch: Branch
+  ): Promise<void> {
+    if (branch.upstream === null || branch.isGone) {
+      throw new Error(`The branch '${branch.name}' has not been published yet.`)
+    }
+    this.overrideProgressTitle = `Fetching ${branch.name}`
+    await this._fetch(repository, FetchType.UserInitiatedTask)
+    const stillDifferingBranches = await getBranchesDifferingFromUpstream(
+      repository
+    )
+    const stillDiffers = stillDifferingBranches.some(b => b.ref === branch.ref)
+    if (stillDiffers) {
+      throw new Error(
+        `The branch '${branch.name}' cannot be fast-forwarded. Switch to it and pull it manually.`
+      )
+    }
+  }
+
+  /**
    * Fetch a particular remote in a repository.
    *
    * Note that this method will not perform the fetch of the specified remote
@@ -6800,6 +6720,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
         await this._refreshRepository(repository)
       } finally {
+        this.overrideProgressTitle = null
         this.updatePushPullFetchProgress(repository, null)
 
         if (fetchType === FetchType.UserInitiatedTask) {
@@ -6866,6 +6787,130 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
 
     return Promise.resolve()
+  }
+
+  /**
+   * Switch the repository to a different worktree. This shouldn't be called
+   * directly. See `Dispatcher`.
+   *
+   * If the target worktree path is already registered as a separate repository,
+   * that repository is selected instead of modifying the current one.
+   */
+  public async _switchWorktree(
+    repository: Repository,
+    worktree: WorktreeEntry
+  ): Promise<Repository> {
+    const { kind } = await getRepositoryType(worktree.path).catch(e => {
+      log.error('Could not determine repository type', e)
+      return { kind: 'missing' } as RepositoryType
+    })
+
+    if (kind !== 'regular' && kind !== 'unsafe') {
+      throw new Error(
+        `The worktree path '${worktree.path}' does not appear to be a valid Git repository.`
+      )
+    }
+
+    // If the repository path isn't trusted we'll mark the repository as
+    // missing. The missing repository view knows how to add a path to the
+    // allow list.
+    const missing = kind === 'unsafe'
+
+    const result = await this.repositoriesStore.switchWorktree(
+      repository,
+      worktree.path,
+      missing
+    )
+
+    this.repositoryStateCache.seedFromWorktree(
+      result.repository,
+      repository,
+      worktree
+    )
+
+    await this._selectRepository(result.repository)
+
+    this.statsStore.increment('worktreeSwitchCount')
+
+    return result.repository
+  }
+
+  public async _switchWorktreeByPath(
+    repository: Repository,
+    worktreePath: string
+  ): Promise<Repository> {
+    const worktrees = await listWorktrees(repository)
+    const worktree = worktrees.find(w => w.path === worktreePath)
+
+    if (worktree === undefined) {
+      throw new Error(
+        `Could not find a worktree at '${worktreePath}' for repository '${repository.name}'.`
+      )
+    }
+
+    return this._switchWorktree(repository, worktree)
+  }
+
+  /** This shouldn't be called directly. See 'Dispatcher'. */
+  public _requestDeleteWorktree(
+    repository: Repository,
+    worktreePath: string
+  ): void {
+    if (this.confirmWorktreeRemoval) {
+      this._showPopup({
+        type: PopupType.DeleteWorktree,
+        repository,
+        worktreePath,
+      })
+    } else {
+      this._deleteWorktree(repository, worktreePath).catch(e =>
+        this.emitError(e)
+      )
+    }
+  }
+
+  /** This shouldn't be called directly. See 'Dispatcher'. */
+  public async _deleteWorktree(
+    repository: Repository,
+    worktreePath: string,
+    force?: boolean
+  ): Promise<void> {
+    const isDeletingCurrentWorktree = repository.path === worktreePath
+    let path = repository.path
+    let originalWorktree: WorktreeEntry | null = null
+
+    if (isDeletingCurrentWorktree) {
+      const worktrees = await listWorktrees(repository)
+      const main = worktrees.find(wt => wt.type === 'main')
+      originalWorktree =
+        worktrees.find(wt => wt.path === repository.path) ?? null
+
+      if (main === undefined) {
+        throw new Error('Could not find main worktree')
+      }
+
+      await this._switchWorktree(repository, main)
+      // Run the delete worktree action with the main worktree path since the current
+      // worktree path will be deleted after the switch.
+      path = main.path
+    }
+
+    try {
+      await removeWorktree(path, worktreePath, force)
+    } catch (e) {
+      this._closePopup(PopupType.DeleteWorktree)
+      this._closePopup(PopupType.DeleteWorktreeFailed)
+      this._showPopup({
+        type: PopupType.DeleteWorktreeFailed,
+        repository,
+        worktreePath,
+        error: e,
+        originalWorktree,
+      })
+    }
+
+    await this._refreshWorktrees(repository)
+    this.statsStore.increment('worktreeDeletedCount')
   }
 
   public _setWorktreeDropdownWidth(width: number): Promise<void> {
@@ -6996,6 +7041,23 @@ export class AppStore extends TypedBaseStore<IAppState> {
     if (!this.commitMessageGenerationButtonClicked) {
       this.commitMessageGenerationButtonClicked = true
       setBoolean(commitMessageGenerationButtonClickedKey, true)
+      this.emitUpdate()
+    }
+  }
+
+  public _updateCopilotConflictResolutionDisclaimerLastSeen(): void {
+    this.copilotConflictResolutionDisclaimerLastSeen = Date.now()
+    setNumber(
+      copilotConflictResolutionDisclaimerLastSeenKey,
+      this.copilotConflictResolutionDisclaimerLastSeen
+    )
+    this.emitUpdate()
+  }
+
+  public _setCopilotConflictResolutionButtonClicked(): void {
+    if (!this.copilotConflictResolutionButtonClicked) {
+      this.copilotConflictResolutionButtonClicked = true
+      setBoolean(copilotConflictResolutionButtonClickedKey, true)
       this.emitUpdate()
     }
   }
@@ -7138,11 +7200,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /** This shouldn't be called directly. See 'Dispatcher'. */
   public async _resolveConflictsWithCopilot(
     repository: Repository,
-    onProgress?: (progress: IConflictResolutionProgress) => void
-  ): Promise<ICopilotConflictResolutionResponse | null> {
+    onProgress?: (progress: IConflictResolutionProgress) => void,
+    signal?: AbortSignal
+  ): Promise<{
+    readonly resolutions: ReadonlyArray<IFileResolution>
+    readonly summary: ICopilotResolutionSummary
+  } | null> {
     if (!enableCopilotConflictResolution()) {
       return null
     }
+
+    const totalTimer = startTimer('resolve conflicts with Copilot', repository)
 
     try {
       const state = this.repositoryStateCache.get(repository)
@@ -7155,11 +7223,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
         return null
       }
 
+      const labelsTimer = startTimer('gather conflict labels', repository)
       const labels = await this.getConflictLabelsAndRefs(
         repository,
         conflictState,
         state.multiCommitOperationState
       )
+      labelsTimer.done()
 
       const conflictedFiles = getConflictedFiles(
         state.changesState.workingDirectory,
@@ -7173,38 +7243,314 @@ export class AppStore extends TypedBaseStore<IAppState> {
         return null
       }
 
-      const context = await buildConflictContext(
-        labels.ourLabel,
-        labels.theirLabel,
-        repository.path,
-        conflictedFiles
+      log.info(
+        `[Timing] resolving ${conflictedFiles.length} conflicted file(s)`
       )
 
-      // Best-effort enrichment — never block resolution on these
-      const commitContext =
-        labels.ourRef && labels.theirRef
-          ? await gatherCommitContext(
-              repository,
-              labels.ourRef,
-              labels.theirRef
-            ).catch(() => null)
-          : null
-
-      const currentPullRequest = state.branchesState.currentPullRequest ?? null
-
-      const result = await this.copilotStore.resolveConflicts(
-        context,
-        commitContext,
-        currentPullRequest,
-        repository.path,
-        onProgress
+      const context = await this.gatherConflictResolutionContext(
+        repository,
+        labels,
+        conflictedFiles,
+        state
       )
 
-      return result
+      const resolveTimer = startTimer(
+        'copilotStore.resolveConflicts',
+        repository
+      )
+      const modelRequest = await this.resolveCopilotModelRequest(
+        this.selectedCopilotModels['conflict-resolution'] ?? null
+      )
+      try {
+        const result = await this.copilotStore.resolveConflicts(
+          context,
+          repository.path,
+          modelRequest,
+          onProgress,
+          signal
+        )
+
+        // The model can only cite data we placed in the prompt, so resolving
+        // its references is a simple lookup against the gathered context —
+        // no re-fetching or re-hydration required. When the model cites
+        // nothing, fall back to the most informative item we gathered so the
+        // "Context" list always traces the conflict to at least one source.
+        const cited = selectReferencedContext(result.references, context)
+        const references =
+          cited.length > 0 ? cited : fallbackReferencedContext(context)
+
+        return {
+          resolutions: result.resolutions,
+          summary: {
+            markdown: result.summary,
+            ourLabel: labels.ourLabel,
+            theirLabel: labels.theirLabel,
+            references,
+          },
+        }
+      } finally {
+        resolveTimer.done()
+      }
     } catch (e) {
+      // A user-initiated cancellation isn't a failure — don't log it as one.
+      if (signal?.aborted) {
+        log.info('AppStore: Copilot conflict resolution aborted by user')
+        return null
+      }
       log.warn('AppStore: Copilot conflict resolution failed', e)
       return null
+    } finally {
+      totalTimer.done()
     }
+  }
+
+  /**
+   * Gather the full, display-ready context for a Copilot conflict
+   * resolution in a single pass: the conflicted file hunks, the recent
+   * commits from both sides (with remote-reachability and github.com
+   * links), and the pull requests we can associate with each side.
+   *
+   * This is the one place context is collected. The same object feeds the
+   * Copilot prompt *and* the dialog's summary card, so there's no second
+   * pass to re-hydrate the model's cited references.
+   *
+   * Pull requests are resolved local-cache-first; only numbers we can't
+   * find locally are fetched from the API (capped, best-effort) so a
+   * merged PR's title and body still reach the prompt.
+   */
+  private async gatherConflictResolutionContext(
+    repository: Repository,
+    labels: {
+      readonly ourLabel: string
+      readonly theirLabel: string
+      readonly ourRef: string | undefined
+      readonly theirRef: string | undefined
+    },
+    conflictedFiles: ReadonlyArray<{ readonly path: string }>,
+    state: IRepositoryState
+  ): Promise<IConflictResolutionContext> {
+    const contextTimer = startTimer('build conflict context', repository)
+    const fileContext = await buildConflictContext(
+      labels.ourLabel,
+      labels.theirLabel,
+      repository.path,
+      conflictedFiles
+    )
+    contextTimer.done()
+
+    // Best-effort enrichment — never block resolution on these.
+    const commitContextTimer = startTimer('gather commit context', repository)
+    const commitContext =
+      labels.ourRef && labels.theirRef
+        ? await gatherCommitContext(
+            repository,
+            labels.ourRef,
+            labels.theirRef
+          ).catch(() => null)
+        : null
+    commitContextTimer.done()
+
+    const ghRepo = isRepositoryWithGitHubRepository(repository)
+      ? repository.gitHubRepository
+      : null
+
+    // Treat a commit as "on the remote" when it isn't in the git store's
+    // local-only set. localCommitSHAs tracks current-branch commits that
+    // haven't been pushed yet, so anything else (most notably theirs-side
+    // commits that arrived via fetch) is safe to link to github.com.
+    const localShas = new Set(
+      this.gitStoreCache.get(repository).localCommitSHAs
+    )
+    const toContextCommit = (commit: Commit): IConflictContextCommit => ({
+      sha: commit.sha,
+      shortSha: commit.shortSha,
+      summary: commit.summary,
+      isOnRemote: !localShas.has(commit.sha),
+    })
+
+    const currentPullRequest = state.branchesState.currentPullRequest
+    const seededPullRequests = new Map<number, IConflictContextPullRequest>()
+    if (currentPullRequest !== null) {
+      // The current branch's own PR is authoritative from app state and may
+      // be merged/closed (and thus absent from the open-PR cache), so seed
+      // it directly rather than looking it up.
+      seededPullRequests.set(currentPullRequest.pullRequestNumber, {
+        number: currentPullRequest.pullRequestNumber,
+        title: currentPullRequest.title,
+        body: currentPullRequest.body,
+      })
+    }
+
+    // Mine PR references from *both* sides' commits. Ours-vs-theirs is not a
+    // reliable proxy for "which side carries the PRs" — a rebase, for
+    // instance, makes ours the branch you're landing onto — so we gather
+    // symmetrically and let the model decide what's material.
+    const allPrNumbers = new Set<number>([
+      ...seededPullRequests.keys(),
+      ...extractPullRequestNumbersFromCommits(commitContext?.ourCommits ?? []),
+      ...extractPullRequestNumbersFromCommits(
+        commitContext?.theirCommits ?? []
+      ),
+    ])
+
+    const resolved = await this.resolvePullRequestContexts(
+      repository,
+      ghRepo,
+      [...allPrNumbers],
+      seededPullRequests
+    )
+
+    // Build a deterministic flat list from the input number order.
+    const pullRequests = [...allPrNumbers]
+      .map(n => resolved.get(n))
+      .filter((pr): pr is IConflictContextPullRequest => pr !== undefined)
+
+    return {
+      ...fileContext,
+      pullRequests,
+      ourCommits: (commitContext?.ourCommits ?? []).map(toContextCommit),
+      theirCommits: (commitContext?.theirCommits ?? []).map(toContextCommit),
+    }
+  }
+
+  /**
+   * Resolve a set of pull-request numbers into display-ready context,
+   * preferring the local cache and falling back to the API for any missing
+   * (e.g. merged PRs no longer in the open-PR cache). Capped and
+   * best-effort: failures are logged or skipped. `seeded` entries are
+   * treated as already resolved and never re-fetched.
+   */
+  private async resolvePullRequestContexts(
+    repository: Repository,
+    ghRepo: GitHubRepository | null,
+    numbers: ReadonlyArray<number>,
+    seeded: ReadonlyMap<number, IConflictContextPullRequest>
+  ): Promise<Map<number, IConflictContextPullRequest>> {
+    const byNumber = new Map<number, IConflictContextPullRequest>(seeded)
+
+    const lookups = numbers
+      .filter(n => !byNumber.has(n))
+      .slice(0, MaxPullRequestLookups)
+    if (lookups.length === 0 || !isRepositoryWithGitHubRepository(repository)) {
+      return byNumber
+    }
+
+    try {
+      const allPRs = await this.pullRequestCoordinator.getAllPullRequests(
+        repository
+      )
+      for (const pr of findPullRequestsByNumbers(lookups, allPRs)) {
+        byNumber.set(pr.pullRequestNumber, {
+          number: pr.pullRequestNumber,
+          title: pr.title,
+          body: pr.body,
+        })
+      }
+    } catch (e) {
+      log.warn('AppStore: failed to read conflict-side PRs from local cache', e)
+    }
+
+    // Fetch anything still missing from the API so merged PRs (no longer in
+    // the open-PR cache) still contribute their title and body.
+    const missing = lookups.filter(n => !byNumber.has(n))
+    if (missing.length > 0 && ghRepo) {
+      const account = getAccountForRepository(this.accounts, repository)
+      if (account !== null) {
+        const api = API.fromAccount(account)
+        await Promise.all(
+          missing.map(async prNumber => {
+            try {
+              const apiPr = await api.fetchPullRequest(
+                ghRepo.owner.login,
+                ghRepo.name,
+                String(prNumber)
+              )
+              if (apiPr) {
+                byNumber.set(prNumber, {
+                  number: prNumber,
+                  title: apiPr.title,
+                  body: apiPr.body,
+                })
+              }
+            } catch {
+              // Best-effort — skip PRs we can't fetch.
+            }
+          })
+        )
+      }
+    }
+
+    return byNumber
+  }
+
+  /**
+   * Pre-flight entry point for Copilot conflict resolution invoked from
+   * the manual conflicts dialog's "Resolve with Copilot" button.
+   *
+   * Verifies a Copilot-enabled account exists, sets the first-click flag,
+   * and gates on the AI-tool disclaimer (shown on first use and again
+   * every 30 days). On clean pass, transitions the multi-commit-operation
+   * step to the loading interstitial and kicks off
+   * `_startCopilotConflictResolution`.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public async _attemptCopilotConflictResolution(
+    repository: Repository
+  ): Promise<void> {
+    const state = this.repositoryStateCache.get(repository)
+    const { multiCommitOperationState } = state
+    if (multiCommitOperationState === null) {
+      return
+    }
+
+    const { step } = multiCommitOperationState
+    if (step.kind !== MultiCommitOperationStepKind.ShowConflicts) {
+      return
+    }
+
+    const account = getAccountForCopilotConflictResolution(
+      this.accounts,
+      repository
+    )
+
+    if (!account) {
+      return
+    }
+
+    // Track that the user has clicked the entry point so we can hide the
+    // "New" call-to-action bubble.
+    this._setCopilotConflictResolutionButtonClicked()
+
+    // First-use disclaimer + periodic re-confirmation. Mirrors the
+    // commit-message-generation pattern.
+    if (
+      !this.copilotConflictResolutionDisclaimerLastSeen ||
+      offsetFromNow(-30, 'days') >
+        this.copilotConflictResolutionDisclaimerLastSeen
+    ) {
+      await this._showPopup({
+        type: PopupType.CopilotConflictResolutionDisclaimer,
+        repository,
+      })
+      return
+    }
+
+    // Transition to the loading interstitial and start the resolution.
+    const { conflictState } = step
+    this.repositoryStateCache.updateMultiCommitOperationState(
+      repository,
+      () => ({
+        step: {
+          kind: MultiCommitOperationStepKind.ShowCopilotConflictsLoading,
+          conflictState,
+        },
+        useCopilotConflictResolution: true,
+      })
+    )
+    this.emitUpdate()
+
+    return this._startCopilotConflictResolution(repository)
   }
 
   /**
@@ -7232,41 +7578,128 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     const { conflictState } = step
 
+    // Controller used to actually cancel the in-flight SDK turn when the user
+    // clicks "Stop" (see _abortCopilotConflictResolution).
+    const abortController = new AbortController()
+    this.repositoryStateCache.updateMultiCommitOperationState(
+      repository,
+      () => ({ copilotResolutionAbortController: abortController })
+    )
+
+    // Only the run that owns this controller may mutate Copilot resolution
+    // state. Guards against a stale run (still unwinding after the user
+    // cancelled and restarted) clobbering the controller, progress, or result
+    // of the newer run.
+    const ownsCurrentRun = () =>
+      this.repositoryStateCache.get(repository).multiCommitOperationState
+        ?.copilotResolutionAbortController === abortController
+
+    this.statsStore.increment('initiateResolveConflictsWithCopilotCount')
+    const resolveStartTime = performance.now()
+
     try {
       const result = await this._resolveConflictsWithCopilot(
         repository,
         progress => {
-          // Bail if user cancelled while the request was in-flight
+          // Bail if user cancelled while the request was in-flight, or if a
+          // newer run has taken over.
           const current = this.repositoryStateCache.get(repository)
           const mcoState = current.multiCommitOperationState
           if (
             mcoState === null ||
             mcoState.step.kind !==
-              MultiCommitOperationStepKind.ShowCopilotConflictsLoading
+              MultiCommitOperationStepKind.ShowCopilotConflictsLoading ||
+            !ownsCurrentRun()
           ) {
             return
+          }
+          if (__DEV__ && progress.reasoningSnippet !== undefined) {
+            log.info(
+              `[Copilot SDK] app-store progress snippet: ${progress.reasoningSnippet}`
+            )
           }
           this.repositoryStateCache.updateMultiCommitOperationState(
             repository,
             () => ({ copilotResolutionProgress: progress })
           )
           this.emitUpdate()
-        }
+        },
+        abortController.signal
       )
+
+      // The user stopped the resolution. The loading dialog has already
+      // navigated back to the conflicts list, so just clear the in-flight
+      // state without surfacing an error.
+      if (abortController.signal.aborted) {
+        if (ownsCurrentRun()) {
+          this.repositoryStateCache.updateMultiCommitOperationState(
+            repository,
+            () => ({
+              copilotResolutionProgress: null,
+              copilotResolutionAbortController: null,
+            })
+          )
+          this.emitUpdate()
+        }
+        return
+      }
+
+      // A newer run took over while we were awaiting — let it own the outcome.
+      if (!ownsCurrentRun()) {
+        return
+      }
 
       // Re-check state: user may have cancelled during the await
       const currentState = this.repositoryStateCache.get(repository)
       const currentMco = currentState.multiCommitOperationState
-      if (
-        currentMco === null ||
-        currentMco.step.kind !==
+      if (currentMco === null) {
+        return
+      }
+
+      // The user can navigate to ConfirmAbort while we're awaiting the
+      // resolution. If they came from the loading step, we still want
+      // the resolution to be available when they click "Return to
+      // conflicts" — store the result and rewrite the return target
+      // so they land on the result dialog rather than an empty
+      // ShowCopilotConflicts step.
+      const currentStep = currentMco.step
+      const isStillLoading =
+        currentStep.kind ===
+        MultiCommitOperationStepKind.ShowCopilotConflictsLoading
+      const isConfirmAbortFromLoading =
+        currentStep.kind === MultiCommitOperationStepKind.ConfirmAbort &&
+        currentStep.returnToStepKind ===
           MultiCommitOperationStepKind.ShowCopilotConflictsLoading
-      ) {
+
+      if (!isStillLoading && !isConfirmAbortFromLoading) {
         return
       }
 
       if (result === null) {
         throw new Error('Copilot conflict resolution returned no results')
+      }
+
+      if (isConfirmAbortFromLoading) {
+        // Stash the result and update the return target so the user
+        // lands on the result dialog if they cancel the abort.
+        this.repositoryStateCache.updateMultiCommitOperationState(
+          repository,
+          () => ({
+            step: {
+              kind: MultiCommitOperationStepKind.ConfirmAbort,
+              conflictState,
+              returnToStepKind:
+                MultiCommitOperationStepKind.ShowCopilotConflicts,
+            },
+            copilotResolutions: result.resolutions,
+            copilotResolutionSummary: result.summary,
+            copilotResolutionProgress: null,
+            copilotResolutionAbortController: null,
+          })
+        )
+
+        this.emitUpdate()
+        return
       }
 
       // Store resolutions and transition to the result dialog.
@@ -7280,13 +7713,42 @@ export class AppStore extends TypedBaseStore<IAppState> {
             conflictState,
           },
           copilotResolutions: result.resolutions,
+          copilotResolutionSummary: result.summary,
           copilotResolutionProgress: null,
+          copilotResolutionAbortController: null,
         })
       )
 
       this.emitUpdate()
+
+      // Record resolution timing buckets
+      const elapsedSeconds = (performance.now() - resolveStartTime) / 1000
+      if (elapsedSeconds > 15) {
+        this.statsStore.increment('copilotConflictResolutionOver15sCount')
+      }
+      if (elapsedSeconds > 30) {
+        this.statsStore.increment('copilotConflictResolutionOver30sCount')
+      }
+      if (elapsedSeconds > 60) {
+        this.statsStore.increment('copilotConflictResolutionOver60sCount')
+      }
+      if (elapsedSeconds > 120) {
+        this.statsStore.increment('copilotConflictResolutionOver120sCount')
+      }
     } catch (e) {
       log.warn('AppStore: Copilot conflict resolution flow failed', e)
+
+      // A stale run shouldn't surface errors or reset a newer run's state.
+      if (!ownsCurrentRun()) {
+        return
+      }
+
+      this.statsStore.increment('copilotConflictResolutionErrorCount')
+
+      // Surface the error to the user so they understand why they were
+      // routed back to manual conflict resolution. Mirrors the pattern
+      // used by `_generateCommitMessage`.
+      this.emitError(new ErrorWithMetadata(e, { repository }))
 
       // Transition back to manual conflict resolution
       this.repositoryStateCache.updateMultiCommitOperationState(
@@ -7298,11 +7760,32 @@ export class AppStore extends TypedBaseStore<IAppState> {
           },
           useCopilotConflictResolution: false,
           copilotResolutions: null,
+          copilotResolutionSummary: null,
           copilotResolutionProgress: null,
+          copilotResolutionAbortController: null,
         })
       )
 
       this.emitUpdate()
+    }
+  }
+
+  /**
+   * Cancel the in-flight Copilot conflict resolution for the given repository,
+   * if one is running. Fires the stored AbortController so the underlying SDK
+   * turn is torn down immediately rather than running to completion in the
+   * background.
+   *
+   * This shouldn't be called directly. See `Dispatcher`.
+   */
+  public _abortCopilotConflictResolution(repository: Repository): void {
+    const state = this.repositoryStateCache.get(repository)
+    const controller =
+      state.multiCommitOperationState?.copilotResolutionAbortController ?? null
+
+    if (controller !== null) {
+      controller.abort()
+      this.statsStore.increment('copilotConflictResolutionStoppedCount')
     }
   }
 
@@ -7332,6 +7815,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
       step.kind === MultiCommitOperationStepKind.ShowCopilotConflicts
         ? step.conflictState.manualResolutions
         : new Map<string, ManualConflictResolution>()
+
+    this.statsStore.increment('copilotConflictResolutionAcceptedCount')
+    if (manualResolutions.size > 0) {
+      this.statsStore.increment('copilotConflictResolutionWithOverridesCount')
+    }
 
     const pathsToStage: string[] = []
 
@@ -7957,6 +8445,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return Promise.resolve()
   }
 
+  public _setConfirmWorktreeRemovalSetting(value: boolean): Promise<void> {
+    this.confirmWorktreeRemoval = value
+    setBoolean(confirmWorktreeRemovalKey, value)
+
+    this.emitUpdate()
+
+    return Promise.resolve()
+  }
+
   public _setUncommittedChangesStrategySetting(
     value: UncommittedChangesStrategy
   ): Promise<void> {
@@ -8338,26 +8835,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
           continue
         }
 
-        let addedRepo = await this.repositoriesStore.addRepository(
+        const addedRepo = await this.repositoriesStore.addRepository(
           validatedPath,
           repositoryType.gitDir,
           login
         )
-
-        // When a linked worktree is added as a standalone repository and the
-        // main worktree is already known to Desktop, inherit that GitHub
-        // association up front so the saved row lands in the same top-level
-        // group after restart.
-        const mainWorktreeRepo = addedRepo.isLinkedWorktree
-          ? matchExistingRepository(repositories, addedRepo.mainWorktreePath)
-          : undefined
-
-        if (mainWorktreeRepo !== undefined) {
-          addedRepo = await this.repositoriesStore.inheritConfiguration(
-            addedRepo,
-            mainWorktreeRepo
-          )
-        }
 
         // initialize the remotes for this new repository to ensure it can fetch
         // it's GitHub-related details using the GitHub API (if applicable)
@@ -8473,23 +8955,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     } catch (err) {
       this.emitError(err)
       return
-    }
-
-    if (repository instanceof Repository) {
-      if (repository.isLinkedWorktree) {
-        const repoPath = normalizePath(repository.path)
-        const mainRepo = this.repositories.find(
-          r =>
-            r instanceof Repository &&
-            !r.isLinkedWorktree &&
-            getPreferredWorktreePath(normalizePath(r.path)) === repoPath
-        )
-        if (mainRepo instanceof Repository) {
-          clearPreferredWorktreePath(normalizePath(mainRepo.path))
-        }
-      } else {
-        clearPreferredWorktreePath(normalizePath(repository.path))
-      }
     }
 
     const allRepositories = await this.repositoriesStore.getAll()
@@ -9590,11 +10055,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return repository
     }
 
-    const mainWorktree = worktrees.find(worktree => worktree.type === 'main')
-    if (mainWorktree !== undefined) {
-      setPreferredWorktreePath(mainWorktree.path, targetWorktree.path)
-    }
-
     const selectedRepository =
       (await this._selectRepository(targetRepository, true)) ?? targetRepository
     await this._refreshRepository(selectedRepository)
@@ -10115,6 +10575,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     step: MultiCommitOperationStep,
     useCopilotConflictResolution: boolean
   ): void {
+    if (!useCopilotConflictResolution) {
+      this.statsStore.increment('copilotConflictResolutionSwitchToManualCount')
+    }
+
     this.repositoryStateCache.updateMultiCommitOperationState(
       repository,
       () => ({
@@ -10168,7 +10632,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       userHasResolvedConflicts: false,
       useCopilotConflictResolution: false,
       copilotResolutions: null,
+      copilotResolutionSummary: null,
       copilotResolutionProgress: null,
+      copilotResolutionAbortController: null,
       originalBranchTip,
       targetBranch,
     })
@@ -10915,6 +11381,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const copilotModels = this.copilotModels
     for (const [feature, raw] of Object.entries(this.selectedCopilotModels)) {
       if (raw === undefined) {
+        continue
+      }
+      // The sentinel that disables a feature isn't a real model, so it would
+      // otherwise be scrubbed as "missing". Preserve it verbatim.
+      if (raw === DisabledCopilotModel) {
+        updated[feature as CopilotFeature] = raw
         continue
       }
       const key = parseModelKey(raw)

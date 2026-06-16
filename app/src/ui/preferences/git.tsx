@@ -83,6 +83,20 @@ export class Git extends React.Component<IGitProps> {
   private renderHooksSettings() {
     return (
       <>
+        {__FLATPAK__ && (
+          <div className="git-hooks-flatpak-warning">
+            <span className="warning-icon">⚠️</span>
+            You're running the Flatpak version. Git hooks run inside the Flatpak
+            sandbox and cannot access programs installed on your system (such as
+            version managers, linters, or other tools your hooks rely on). If
+            your hooks depend on such programs, install a native package
+            instead. See the{' '}
+            <LinkButton uri="https://github.com/pol-rivero/github-desktop-plus#download-and-installation-">
+              installation instructions
+            </LinkButton>
+            .
+          </div>
+        )}
         <Checkbox
           label="Load Git hook environment variables from shell"
           ariaDescribedBy="git-hooks-env-description"

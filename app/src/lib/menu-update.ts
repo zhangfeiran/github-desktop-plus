@@ -12,6 +12,7 @@ import { AppMenu, MenuItem } from '../models/app-menu'
 import { hasConflictedFiles } from './status'
 import { findContributionTargetDefaultBranch } from './branch'
 import { hasDefaultRemoteUrl } from '../models/repository'
+import { enableWorktreeSupport } from './feature-flag'
 
 export interface IMenuItemState {
   readonly enabled?: boolean
@@ -144,6 +145,8 @@ const allMenuIds: ReadonlyArray<MenuIDs> = [
   'preview-pull-request',
   'squash-and-merge-branch',
   'toggle-stashed-changes',
+  'create-worktree',
+  'show-worktrees-list',
 ]
 
 function getAllMenusDisabledBuilder(): MenuStateBuilder {
@@ -254,10 +257,12 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
     'show-history',
     'show-compare',
     'show-branches-list',
+    'show-worktrees-list',
     'open-external-editor',
     'open-with-external-editor',
     'compare-to-branch',
     'toggle-changes-filter',
+    'create-worktree',
   ]
 
   const menuStateBuilder = new MenuStateBuilder()
@@ -269,6 +274,11 @@ function getRepositoryMenuBuilder(state: IAppState): MenuStateBuilder {
   if (repositoryActive) {
     for (const id of repositoryScopedIDs) {
       menuStateBuilder.enable(id)
+    }
+
+    if (!enableWorktreeSupport()) {
+      menuStateBuilder.disable('show-worktrees-list')
+      menuStateBuilder.disable('create-worktree')
     }
 
     menuStateBuilder.setEnabled(
