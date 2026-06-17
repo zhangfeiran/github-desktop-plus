@@ -169,7 +169,8 @@ export class RepositoriesList extends React.Component<
       repositories: ReadonlyArray<Repositoryish> | null,
       localRepositoryStateLookup: ReadonlyMap<number, ILocalRepositoryState>,
       recentRepositories: ReadonlyArray<number>,
-      showWorktreesInRepoList: boolean
+      showWorktreesInRepoList: boolean,
+      selectedRepository: Repositoryish | null
     ) =>
       repositories === null
         ? []
@@ -177,7 +178,10 @@ export class RepositoriesList extends React.Component<
             repositories,
             localRepositoryStateLookup,
             recentRepositories,
-            { showWorktreesInSidebar: showWorktreesInRepoList }
+            {
+              showWorktreesInSidebar: showWorktreesInRepoList,
+              selectedRepository,
+            }
           )
   )
 
@@ -481,7 +485,8 @@ export class RepositoriesList extends React.Component<
       this.props.repositories,
       this.props.localRepositoryStateLookup,
       this.props.recentRepositories,
-      this.props.showWorktreesInRepoList
+      this.props.showWorktreesInRepoList,
+      this.props.selectedRepository
     )
 
     if (!this.props.showRecentRepositories) {

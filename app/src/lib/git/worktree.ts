@@ -3,39 +3,12 @@ import * as Fs from 'fs'
 import type { Repository } from '../../models/repository'
 import type { WorktreeEntry, WorktreeType } from '../../models/worktree'
 import { git } from './core'
-import { getBranches } from './for-each-ref'
 import { normalizePath } from '../helpers/path'
-import { translateWslPathValue } from './source'
-
-/**
- * Get the set of canonical branch refs (e.g. `refs/heads/feature`)
- * checked out in any worktree (main or linked).
- */
-export async function getWorktreeCheckedOutBranches(
-  repository: Repository
-): Promise<ReadonlySet<string>> {
-  const result = await git(
-    ['worktree', 'list', '--porcelain', '-z'],
-    repository.path,
-    'getWorktreeCheckedOutBranches'
-  )
-
-  const branches = new Set<string>()
-
-  // With -z, lines are NUL-terminated and blocks are separated by
-  // double NUL (i.e. an empty string between two NUL terminators).
-  const blocks = result.stdout.split('\0\0')
-
-  for (const block of blocks) {
-    for (const line of block.split('\0')) {
-      if (line.startsWith('branch ')) {
-        branches.add(line.substring('branch '.length))
-      }
-    }
-  }
-
-  return branches
-}
+import {
+  fromWslPath,
+  isWslRepositoryPath,
+  translateWslPathValue,
+} from './source'
 
 function getDotGitPath(repositoryPath: string): string {
   return Path.join(repositoryPath, '.git')
@@ -51,6 +24,27 @@ function resolveGitPath(basePath: string, path: string): string {
 export interface IWorktreePathInfo {
   readonly isLinkedWorktree: boolean
   readonly mainWorktreePath: string | null
+}
+
+export function translateWorktreePathForRepository(
+  repository: Repository,
+  worktreePath: string
+): string {
+  const translatedPath = translateWslPathValue(worktreePath)
+  if (translatedPath !== worktreePath) {
+    return translatedPath ?? worktreePath
+  }
+
+  if (
+    process.platform === 'win32' &&
+    isWslRepositoryPath(repository.path) &&
+    worktreePath.startsWith('\\') &&
+    !worktreePath.startsWith('\\\\')
+  ) {
+    return fromWslPath(worktreePath.replace(/\\/g, '/'))
+  }
+
+  return worktreePath
 }
 
 export function parseWorktreePorcelainOutput(
@@ -113,7 +107,7 @@ export async function listWorktrees(
 
   return parseWorktreePorcelainOutput(result.stdout).map(worktree => ({
     ...worktree,
-    path: translateWslPathValue(worktree.path) ?? worktree.path,
+    path: translateWorktreePathForRepository(repository, worktree.path),
   }))
 }
 
@@ -138,21 +132,13 @@ export async function addWorktree(
   repository: Repository,
   path: string,
   options: {
-    /** Existing branch name to check out */
-    readonly branch?: string
     /** Branch name used with -b (create new branch) */
     readonly createBranch?: string
-    /** Add the worktree detached at commit-ish */
-    readonly detach?: boolean
     /** Commit-ish to check out (branch name, ref, or SHA) */
     readonly commitish?: string
   } = {}
 ): Promise<void> {
   const args = ['worktree', 'add']
-
-  if (options.detach) {
-    args.push('--detach')
-  }
 
   if (options.createBranch) {
     args.push('-b', options.createBranch)
@@ -160,33 +146,11 @@ export async function addWorktree(
 
   args.push(path)
 
-  if (options.branch) {
-    args.push(options.branch)
-  } else if (options.commitish) {
+  if (options.commitish) {
     args.push(options.commitish)
   }
 
   await git(args, repository.path, 'addWorktree')
-}
-
-export async function addWorktreeForBranchName(
-  repository: Repository,
-  path: string,
-  branchName: string
-): Promise<void> {
-  if (branchName.length === 0) {
-    await addWorktree(repository, path)
-    return
-  }
-
-  const localRef = `refs/heads/${branchName}`
-  const localBranches = await getBranches(repository, localRef)
-  const hasLocalBranch = localBranches.some(branch => branch.ref === localRef)
-
-  await addWorktree(repository, path, {
-    branch: hasLocalBranch ? branchName : undefined,
-    createBranch: hasLocalBranch ? undefined : branchName,
-  })
 }
 
 export async function removeWorktree(
@@ -203,10 +167,6 @@ export async function removeWorktree(
   await git(args, repositoryPath, 'removeWorktree')
 }
 
-export async function pruneWorktrees(repository: Repository): Promise<void> {
-  await git(['worktree', 'prune'], repository.path, 'pruneWorktrees')
-}
-
 export async function moveWorktree(
   repository: Repository,
   oldPath: string,
@@ -217,25 +177,6 @@ export async function moveWorktree(
     repository.path,
     'moveWorktree'
   )
-}
-
-export async function isLinkedWorktree(
-  repository: Repository
-): Promise<boolean> {
-  const worktrees = await listWorktrees(repository)
-  const repoPath = normalizePath(repository.path)
-
-  return worktrees.some(
-    wt => wt.type === 'linked' && normalizePath(wt.path) === repoPath
-  )
-}
-
-export async function getMainWorktreePath(
-  repository: Repository
-): Promise<string | null> {
-  const worktrees = await listWorktrees(repository)
-  const main = worktrees.find(wt => wt.type === 'main')
-  return main?.path ?? null
 }
 
 export function getWorktreePathInfoSync(

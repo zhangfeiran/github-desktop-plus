@@ -93,9 +93,6 @@ export class WorktreeList extends React.Component<IWorktreeListProps> {
     return <div className="filter-list-group-header">{label}</div>
   }
 
-  private renderRowFocusTooltip = (item: IWorktreeListItem) =>
-    item.worktree.path
-
   private onRenderNewButton = () => {
     if (!this.props.canCreateNewWorktree || !this.props.onCreateNewWorktree) {
       return null
@@ -140,7 +137,6 @@ export class WorktreeList extends React.Component<IWorktreeListProps> {
         onFilterTextChanged={this.props.onFilterTextChanged}
         selectedItem={null}
         renderItem={this.renderItem}
-        renderRowFocusTooltip={this.renderRowFocusTooltip}
         renderGroupHeader={this.renderGroupHeader}
         onItemClick={this.onItemClick}
         groups={groups}

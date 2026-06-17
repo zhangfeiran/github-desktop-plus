@@ -255,6 +255,192 @@ describe('repository list grouping', () => {
     }
   })
 
+  it('uses the selected linked worktree as the hidden worktree representative', async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), 'github-desktop-plus-worktree-hidden-selected-')
+    )
+    try {
+      const mainRepoPath = path.join(tempRoot, 'repo')
+      const linkedRepoPath = path.join(tempRoot, 'repo-feature-worktree')
+
+      await mkdir(path.join(mainRepoPath, '.git'), { recursive: true })
+      await mkdir(path.join(mainRepoPath, '.git', 'worktrees', 'fix-node'), {
+        recursive: true,
+      })
+      await mkdir(linkedRepoPath, { recursive: true })
+      await writeFile(
+        path.join(linkedRepoPath, '.git'),
+        'gitdir: ../repo/.git/worktrees/fix-node\n'
+      )
+      await writeFile(
+        path.join(mainRepoPath, '.git', 'worktrees', 'fix-node', 'commondir'),
+        '../..\n'
+      )
+
+      const mainRepo = new Repository(
+        mainRepoPath,
+        53,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+      const linkedRepo = new Repository(
+        linkedRepoPath,
+        54,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+
+      const grouped = groupRepositories([linkedRepo, mainRepo], cache, [], {
+        selectedRepository: linkedRepo,
+      })
+
+      assert.equal(grouped.length, 1)
+      assert.equal(grouped[0].items.length, 1)
+      assert.equal(grouped[0].items[0].repository.path, linkedRepoPath)
+      assert.equal(grouped[0].items[0].title, 'repo')
+      assert.equal(grouped[0].items[0].isNestedWorktree, false)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('uses the most recent linked worktree as the hidden representative after switching away', async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), 'github-desktop-plus-worktree-hidden-recent-')
+    )
+    try {
+      const mainRepoPath = path.join(tempRoot, 'repo')
+      const linkedRepoPath = path.join(tempRoot, 'repo-feature-worktree')
+
+      await mkdir(path.join(mainRepoPath, '.git'), { recursive: true })
+      await mkdir(path.join(mainRepoPath, '.git', 'worktrees', 'fix-node'), {
+        recursive: true,
+      })
+      await mkdir(linkedRepoPath, { recursive: true })
+      await writeFile(
+        path.join(linkedRepoPath, '.git'),
+        'gitdir: ../repo/.git/worktrees/fix-node\n'
+      )
+      await writeFile(
+        path.join(mainRepoPath, '.git', 'worktrees', 'fix-node', 'commondir'),
+        '../..\n'
+      )
+
+      const mainRepo = new Repository(
+        mainRepoPath,
+        56,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+      const linkedRepo = new Repository(
+        linkedRepoPath,
+        57,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+      const otherRepo = new Repository(
+        path.join(tempRoot, 'other'),
+        58,
+        gitHubRepoFixture({ owner: 'example', name: 'other' }),
+        false
+      )
+
+      const grouped = groupRepositories(
+        [linkedRepo, mainRepo, otherRepo],
+        cache,
+        [linkedRepo.id],
+        { selectedRepository: otherRepo }
+      )
+      const item = grouped
+        .flatMap(group => group.items)
+        .find(item => item.repository.id === linkedRepo.id)
+
+      assert.notEqual(item, undefined)
+      assert.equal(item?.repository.path, linkedRepoPath)
+      assert.equal(item?.title, 'repo')
+      assert.equal(
+        grouped
+          .flatMap(group => group.items)
+          .some(item => item.repository.id === mainRepo.id),
+        false
+      )
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps a linked repository row bound to the linked worktree when rows are disabled', async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), 'github-desktop-plus-worktree-hidden-current-')
+    )
+    try {
+      const mainRepoPath = path.join(tempRoot, 'repo')
+      const linkedRepoPath = path.join(tempRoot, 'repo-feature-worktree')
+      const worktrees: ReadonlyArray<WorktreeEntry> = [
+        {
+          path: mainRepoPath,
+          head: 'abc123',
+          branch: 'refs/heads/main',
+          isDetached: false,
+          type: 'main',
+          isLocked: false,
+          isPrunable: false,
+        },
+        {
+          path: linkedRepoPath,
+          head: 'def456',
+          branch: 'refs/heads/fix-node',
+          isDetached: false,
+          type: 'linked',
+          isLocked: false,
+          isPrunable: false,
+        },
+      ]
+
+      await mkdir(path.join(mainRepoPath, '.git'), { recursive: true })
+      await mkdir(path.join(mainRepoPath, '.git', 'worktrees', 'fix-node'), {
+        recursive: true,
+      })
+      await mkdir(linkedRepoPath, { recursive: true })
+      await writeFile(
+        path.join(linkedRepoPath, '.git'),
+        'gitdir: ../repo/.git/worktrees/fix-node\n'
+      )
+      await writeFile(
+        path.join(mainRepoPath, '.git', 'worktrees', 'fix-node', 'commondir'),
+        '../..\n'
+      )
+
+      const linkedRepo = new Repository(
+        linkedRepoPath,
+        55,
+        gitHubRepoFixture({ owner: 'example', name: 'repo' }),
+        false
+      )
+      const localState = new Map<number, ILocalRepositoryState>([
+        [
+          linkedRepo.id,
+          {
+            aheadBehind: null,
+            changedFilesCount: 0,
+            branchName: 'fix-node',
+            defaultBranchName: 'main',
+            worktrees,
+          },
+        ],
+      ])
+
+      const grouped = groupRepositories([linkedRepo], localState, [])
+
+      assert.equal(grouped.length, 1)
+      assert.equal(grouped[0].items.length, 1)
+      assert.equal(grouped[0].items[0].repository.path, linkedRepoPath)
+      assert.equal(grouped[0].items[0].worktree?.path, linkedRepoPath)
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
   it('keeps orphan linked worktrees visible when worktree rows are disabled', async () => {
     const tempRoot = await mkdtemp(
       path.join(os.tmpdir(), 'github-desktop-plus-worktree-orphan-visible-')

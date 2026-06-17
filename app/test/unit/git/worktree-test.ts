@@ -1,8 +1,8 @@
 import {
   findWorktreeEntryForBranchRef,
-  getWorktreeCheckedOutBranches,
   listWorktrees,
   parseWorktreePorcelainOutput,
+  translateWorktreePathForRepository,
 } from '../../../src/lib/git'
 import assert from 'node:assert'
 import * as Path from 'path'
@@ -10,6 +10,7 @@ import { describe, it } from 'node:test'
 import { exec } from 'dugite'
 import { setupEmptyRepository } from '../../helpers/repositories'
 import { makeCommit } from '../../helpers/repository-scaffolding'
+import { Repository } from '../../../src/models/repository'
 
 describe('git/worktree', () => {
   describe('parseWorktreePorcelainOutput', () => {
@@ -296,22 +297,26 @@ describe('git/worktree', () => {
     })
   })
 
-  describe('getWorktreeCheckedOutBranches', () => {
-    it('returns branches checked out in linked worktrees', async t => {
-      const repo = await setupEmptyRepository(t, 'main')
-      await makeCommit(repo, {
-        entries: [{ path: 'README', contents: 'hello' }],
-      })
-      await exec(['branch', 'feature-a'], repo.path)
-      await exec(
-        ['worktree', 'add', repo.path + '-wt-a', 'feature-a'],
-        repo.path
+  describe('translateWorktreePathForRepository', () => {
+    it('translates WSL absolute paths normalized by Windows path handling', () => {
+      const repository = new Repository(
+        '\\\\wsl.localhost\\Ubuntu\\home\\frz\\mscli',
+        -1,
+        null,
+        false
+      )
+      const worktreePath = '\\home\\frz\\mscli.worktrees\\v0.1-tool'
+      const translatedPath = translateWorktreePathForRepository(
+        repository,
+        worktreePath
       )
 
-      const branches = await getWorktreeCheckedOutBranches(repo)
-      assert(branches.has('refs/heads/feature-a'))
-      assert(branches.has('refs/heads/main'))
-      assert.strictEqual(branches.size, 2)
+      assert.equal(
+        translatedPath,
+        process.platform === 'win32'
+          ? '\\\\wsl.localhost\\Ubuntu\\home\\frz\\mscli.worktrees\\v0.1-tool'
+          : worktreePath
+      )
     })
   })
 
