@@ -1040,6 +1040,17 @@ export class Dispatcher {
   }
 
   /**
+   * Delete several local branches in one operation. None of the branches may be
+   * currently checked out (in this or any other worktree).
+   */
+  public deleteLocalBranches(
+    repository: Repository,
+    branches: ReadonlyArray<Branch>
+  ): Promise<void> {
+    return this.appStore._deleteLocalBranches(repository, branches)
+  }
+
+  /**
    * Delete the remote branch.
    */
   public deleteRemoteBranch(
@@ -1205,6 +1216,16 @@ export class Dispatcher {
   ): Promise<void> {
     await this.appStore
       ._deleteWorktree(repository, worktreePath, force)
+      .catch(e => this.postError(e))
+  }
+
+  public async moveWorktree(
+    repository: Repository,
+    worktreePath: string,
+    newPath: string
+  ): Promise<void> {
+    await this.appStore
+      ._moveWorktree(repository, worktreePath, newPath)
       .catch(e => this.postError(e))
   }
 
@@ -2047,14 +2068,6 @@ export class Dispatcher {
    */
   public relocateRepository(repository: Repository): Promise<void> {
     return this.appStore._relocateRepository(repository)
-  }
-
-  /** Update the repository's path. */
-  public async updateRepositoryPath(
-    repository: Repository,
-    path: string
-  ): Promise<void> {
-    await this.appStore._updateRepositoryPath(repository, path)
   }
 
   /**

@@ -412,7 +412,11 @@ function copyDependencies() {
     // Removing unnecessary prebuild binaries from the copilot package to reduce
     // bundle size and prevent signing failures on Windows (signtool can't sign
     // non-PE binaries from other platforms).
+    // This also prunes the @github/copilot-<platform>-<arch>. We never
+    // bundle them (only the @github/copilot directory is copied above), but their
+    // non-permissive license trips up the license dump check
     const prebuildsDirs = [
+      path.join(projectRoot, 'app', 'node_modules', '@github'),
       path.join(copilotDestination, 'prebuilds'),
       path.join(copilotDestination, 'ripgrep', 'bin'),
       path.join(copilotDestination, 'clipboard', 'node_modules', '@teddyzhu'),

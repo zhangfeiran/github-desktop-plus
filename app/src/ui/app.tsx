@@ -51,6 +51,7 @@ import {
   CantDeleteCurrentBranch,
   CantDeleteCurrentBranchUncommittedChanges,
   DeleteBranch,
+  DeleteAllLocalBranches,
   DeleteRemoteBranch,
 } from './delete-branch'
 import { CantDeleteMainBranch } from './delete-branch/cant-delete-main-branch'
@@ -1748,6 +1749,17 @@ export class App extends React.Component<IAppProps, IAppState> {
             repository={popup.repository}
             branch={popup.branch}
             existsOnRemote={popup.existsOnRemote}
+            onDismissed={onPopupDismissedFn}
+            onDeleted={this.onBranchDeleted}
+          />
+        )
+      case PopupType.DeleteAllLocalBranches:
+        return (
+          <DeleteAllLocalBranches
+            key="delete-all-local-branches"
+            dispatcher={this.props.dispatcher}
+            repository={popup.repository}
+            branches={popup.branches}
             onDismissed={onPopupDismissedFn}
             onDeleted={this.onBranchDeleted}
           />
@@ -3646,6 +3658,9 @@ export class App extends React.Component<IAppProps, IAppState> {
       return ''
     }
     const worktreeName = Path.basename(repository.path)
+    if (worktreeName === repository.name) {
+      return ''
+    }
     return ` (${worktreeName})`
   }
 

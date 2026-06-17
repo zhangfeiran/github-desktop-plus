@@ -258,6 +258,7 @@ import {
   IConfigValueOrigin,
   unstageAll,
   git,
+  moveWorktree,
 } from '../git'
 import {
   installGlobalLFSFilters,
@@ -4911,6 +4912,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
       const worktrees = await listWorktrees(repository)
       this.repositoryStateCache.update(repository, () => ({ worktrees }))
       this.statsStore.recordWorktreeCount(worktrees.length)
+
+      // Keep the repository list's local state in sync as well
+      const existing = this.localRepositoryStateLookup.get(repository.id)
+      if (existing && this.showWorktreesInRepoList) {
+        this.localRepositoryStateLookup.set(repository.id, {
+          ...existing,
+          worktrees,
+        })
+      }
+
       this.emitUpdate()
     } catch (e) {
       log.error('Failed to refresh worktrees', e)
@@ -5636,6 +5647,24 @@ export class AppStore extends TypedBaseStore<IAppState> {
           includeUpstream
         )
       })
+
+      return this._refreshRepository(repository)
+    })
+  }
+
+  public async _deleteLocalBranches(
+    repository: Repository,
+    branches: ReadonlyArray<Branch>
+  ): Promise<void> {
+    return this.withRefreshedGitHubRepository(repository, async repository => {
+      const gitStore = this.gitStoreCache.get(repository)
+
+      // Deleting a local branch is fast, so we can do it sequentially
+      for (const branch of branches) {
+        await gitStore.performFailableOperation(() =>
+          deleteLocalBranch(repository, branch.name)
+        )
+      }
 
       return this._refreshRepository(repository)
     })
@@ -6876,7 +6905,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     force?: boolean
   ): Promise<void> {
     const isDeletingCurrentWorktree = repository.path === worktreePath
-    let path = repository.path
     let originalWorktree: WorktreeEntry | null = null
 
     if (isDeletingCurrentWorktree) {
@@ -6889,14 +6917,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
         throw new Error('Could not find main worktree')
       }
 
-      await this._switchWorktree(repository, main)
-      // Run the delete worktree action with the main worktree path since the current
-      // worktree path will be deleted after the switch.
-      path = main.path
+      repository = await this._switchWorktree(repository, main)
     }
 
     try {
-      await removeWorktree(path, worktreePath, force)
+      await removeWorktree(repository.path, worktreePath, force)
     } catch (e) {
       this._closePopup(PopupType.DeleteWorktree)
       this._closePopup(PopupType.DeleteWorktreeFailed)
@@ -6911,6 +6936,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     await this._refreshWorktrees(repository)
     this.statsStore.increment('worktreeDeletedCount')
+  }
+
+  public async _moveWorktree(
+    repository: Repository,
+    worktreePath: string,
+    newPath: string
+  ): Promise<void> {
+    await moveWorktree(repository, worktreePath, newPath)
+    await this._refreshWorktrees(repository)
   }
 
   public _setWorktreeDropdownWidth(width: number): Promise<void> {
@@ -8883,30 +8917,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
-    const rt = await getRepositoryType(path)
-
-    if (rt.kind === 'regular') {
-      await this.repositoriesStore.updateRepositoryPath(
-        repository,
-        rt.topLevelWorkingDirectory,
-        rt.gitDir
-      )
-    } else if (rt.kind === 'unsafe') {
-      await this.repositoriesStore.updateRepositoryPath(
-        repository,
-        path,
-        undefined,
-        true
-      )
-    } else {
-      this.emitError(new Error(this.getInvalidRepoPathsMessage([path])))
-    }
-  }
-
-  public async _updateRepositoryPath(
-    repository: Repository,
-    path: string
-  ): Promise<void> {
     const rt = await getRepositoryType(path)
 
     if (rt.kind === 'regular') {
