@@ -26,6 +26,11 @@ import { EditorOverride } from '../../models/editor-override'
 import { stageResolvedConflictFiles } from '../git/stage'
 import { normalizePath } from '../helpers/path'
 import {
+  canReuseCommitSearchResults,
+  createCommitSearchMatcher,
+  ICommitSearchMatcher,
+} from '../commit-search'
+import {
   AccountsStore,
   CloningRepositoriesStore,
   CopilotStore,
@@ -1873,10 +1878,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
         return
       }
 
-      const queryLowercase = compareState.commitSearchQuery.toLowerCase()
-      const filteredCommits = commits.filter(sha =>
-        this.commitIsIncluded(gitStore.commitLookup.get(sha), queryLowercase)
+      const commitSearch = createCommitSearchMatcher(
+        compareState.commitSearchQuery
       )
+      const filteredCommits = commitSearch.isActive
+        ? commits.filter(sha =>
+            commitSearch.matches(gitStore.commitLookup.get(sha))
+          )
+        : commits
 
       const historyState: IDisplayHistory = {
         kind: HistoryTabMode.History,
@@ -1901,7 +1910,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         return this._loadNextCommitBatch(
           repository,
           filteredCommits.length,
-          queryLowercase
+          commitSearch
         )
       }
       return
@@ -2036,16 +2045,18 @@ export class AppStore extends TypedBaseStore<IAppState> {
   public async _loadNextCommitBatch(
     repository: Repository,
     alreadyFiltered: number,
-    queryTextLowercase?: string
+    commitSearch?: ICommitSearchMatcher
   ): Promise<void> {
     const gitStore = this.gitStoreCache.get(repository)
 
     const state = this.repositoryStateCache.get(repository)
     const commits = state.compareState.allHistoryCommitSHAs
-    if (queryTextLowercase === undefined) {
-      queryTextLowercase = state.compareState.commitSearchQuery.toLowerCase()
+    if (commitSearch === undefined) {
+      commitSearch = createCommitSearchMatcher(
+        state.compareState.commitSearchQuery
+      )
     }
-    const isSearching = !!queryTextLowercase
+    const isSearching = commitSearch.isActive
 
     const tip = state.branchesState.tip
 
@@ -2072,9 +2083,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
-    const newFilteredCommits = newCommits.filter(sha =>
-      this.commitIsIncluded(gitStore.commitLookup.get(sha), queryTextLowercase)
-    )
+    const newFilteredCommits = commitSearch.isActive
+      ? newCommits.filter(sha =>
+          commitSearch.matches(gitStore.commitLookup.get(sha))
+        )
+      : newCommits
 
     this.repositoryStateCache.updateCompareState(repository, () => ({
       allHistoryCommitSHAs: commits.concat(newCommits),
@@ -2090,7 +2103,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return this._loadNextCommitBatch(
         repository,
         numFilteredCommits,
-        queryTextLowercase
+        commitSearch
       )
     }
     return
@@ -2238,17 +2251,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
-    const queryTextLowercase =
-      state.compareState.commitSearchQuery.toLowerCase()
+    const commitSearch = createCommitSearchMatcher(
+      state.compareState.commitSearchQuery
+    )
 
-    if (queryTextLowercase.length > 0) {
+    if (commitSearch.isActive) {
       // Graph search filters in memory, so continue paging until the loaded
       // graph has enough matches or Git reports no more commits.
       const commitGraphFilteredCommitCount = commitGraphCommitSHAs.filter(sha =>
-        this.commitIsIncluded(
-          gitStore.commitLookup.get(sha),
-          queryTextLowercase
-        )
+        commitSearch.matches(gitStore.commitLookup.get(sha))
       ).length
 
       if (commitGraphFilteredCommitCount >= MinimumFilteredCommitsToLoad) {
@@ -2259,7 +2270,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const newCommits = await gitStore.commitGraph_loadCommitBatch(
       commitGraphRefs,
       commitGraphCommitSHAs.length,
-      !!queryTextLowercase
+      commitSearch.isActive
     )
 
     if (!newCommits || newCommits.length === 0) {
@@ -2282,16 +2293,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.emitUpdate()
 
     const latestState = this.repositoryStateCache.get(repository)
-    const latestQueryTextLowercase =
-      latestState.compareState.commitSearchQuery.toLowerCase()
+    const latestCommitSearch = createCommitSearchMatcher(
+      latestState.compareState.commitSearchQuery
+    )
 
-    if (latestQueryTextLowercase.length > 0) {
+    if (latestCommitSearch.isActive) {
       const commitGraphFilteredCommitCount =
         latestState.compareState.commitGraphCommitSHAs.filter(sha =>
-          this.commitIsIncluded(
-            gitStore.commitLookup.get(sha),
-            latestQueryTextLowercase
-          )
+          latestCommitSearch.matches(gitStore.commitLookup.get(sha))
         ).length
 
       if (commitGraphFilteredCommitCount < MinimumFilteredCommitsToLoad) {
@@ -2300,31 +2309,18 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
-  private commitIsIncluded(
-    commit: Commit | undefined,
-    filterTextLowerCase: string
-  ): boolean {
-    if (!commit) {
-      return false
-    }
-    return (
-      !filterTextLowerCase ||
-      commit.summary.toLowerCase().includes(filterTextLowerCase) ||
-      commit.body.toLowerCase().includes(filterTextLowerCase) ||
-      commit.tags.some(tag =>
-        tag.toLowerCase().startsWith(filterTextLowerCase)
-      ) ||
-      commit.sha.toLowerCase().startsWith(filterTextLowerCase)
-    )
-  }
-
   public async _updateCommitSearchQuery(
     repository: Repository,
     query: string
   ): Promise<void> {
     const state = this.repositoryStateCache.get(repository)
     const compareState = state.compareState
-    const isIncrementalSearch = query.startsWith(compareState.commitSearchQuery)
+    const previousQuery = compareState.commitSearchQuery
+    const canReusePreviousResults = canReuseCommitSearchResults(
+      previousQuery,
+      query
+    )
+    const commitSearch = createCommitSearchMatcher(query)
 
     this.repositoryStateCache.updateCompareState(repository, () => ({
       commitSearchQuery: query,
@@ -2334,15 +2330,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
       await this.currentCommitFilterPromise
     }
 
-    const candidateCommitSHAs = isIncrementalSearch
-      ? compareState.filteredHistoryCommitSHAs
-      : compareState.allHistoryCommitSHAs
-    const queryTextLowercase = query.toLowerCase()
-    const filteredCommitSHAs = queryTextLowercase
+    const latestState = this.repositoryStateCache.get(repository)
+    const latestCompareState = latestState.compareState
+    const candidateCommitSHAs = canReusePreviousResults
+      ? latestCompareState.filteredHistoryCommitSHAs
+      : latestCompareState.allHistoryCommitSHAs
+    const filteredCommitSHAs = commitSearch.isActive
       ? candidateCommitSHAs.filter(sha =>
-          this.commitIsIncluded(state.commitLookup.get(sha), queryTextLowercase)
+          commitSearch.matches(latestState.commitLookup.get(sha))
         )
-      : candidateCommitSHAs
+      : latestCompareState.allHistoryCommitSHAs
     this.repositoryStateCache.updateCompareState(repository, () => ({
       filteredHistoryCommitSHAs: filteredCommitSHAs,
     }))
@@ -2351,7 +2348,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.currentCommitFilterPromise = this._loadNextCommitBatch(
         repository,
         filteredCommitSHAs.length,
-        queryTextLowercase
+        commitSearch
       )
       await this.currentCommitFilterPromise
       this.currentCommitFilterPromise = null

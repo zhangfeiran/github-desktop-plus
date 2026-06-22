@@ -87,6 +87,31 @@ diff mode toggle:
 If remerge diff loading fails, the app falls back to first-parent mode. Image
 diff rendering is disabled for remerge diffs.
 
+## History author and committer search
+
+History search supports advanced text syntax for matching commit identity
+metadata without changing the existing plain-text search behavior.
+
+Supported identity fields are:
+
+- `author:<text>` for commit author name or email.
+- `committer:<text>` for commit committer name or email.
+
+Queries can combine identity filters and plain text with `AND`, `OR`, `NOT`,
+parentheses, and quoted values. Adjacent advanced terms are treated as `AND`.
+Examples:
+
+- `author:alice`
+- `committer:ci@example.com`
+- `author:"Jane Doe" AND NOT committer:bot`
+- `(author:alice OR author:bob) AND committer:desktop`
+
+Malformed advanced syntax falls back to the legacy plain-text search while the
+user is typing. List and graph History views share the same matcher, and
+advanced searches re-filter from the loaded history instead of relying on the
+legacy incremental narrowing shortcut so `OR` and `NOT` expressions do not miss
+matches.
+
 ## Smaller diff presentation changes
 
 The branch adjusts commit detail styling and diff-related parsing to handle
@@ -102,5 +127,5 @@ Focused unit coverage was added or updated for:
 - Git checkout, pull, reset, worktree, log, and diff behavior.
 - Gitee and GitCode endpoint mapping and remote parsing.
 - Repository matching and linked worktree grouping.
+- History author/committer search parsing and matching.
 - Progress parsing and model type guards.
-

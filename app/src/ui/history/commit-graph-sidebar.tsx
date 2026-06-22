@@ -30,6 +30,7 @@ import classNames from 'classnames'
 import memoizeOne from 'memoize-one'
 import { ThrottledScheduler } from '../lib/throttled-scheduler'
 import { startTimer } from '../lib/timing'
+import { createCommitSearchMatcher } from '../../lib/commit-search'
 import {
   commitGraph_buildRows,
   commitGraph_getColor,
@@ -348,14 +349,14 @@ export class CommitGraphSidebar extends React.Component<
       commitSearchQuery: string,
       commitLookup: Map<string, Commit>
     ): ReadonlyArray<string> => {
-      const query = commitSearchQuery.toLowerCase()
+      const commitSearch = createCommitSearchMatcher(commitSearchQuery)
 
-      if (!query) {
+      if (!commitSearch.isActive) {
         return commitSHAs
       }
 
       return commitSHAs.filter(sha =>
-        this.commitIsIncluded(commitLookup.get(sha), query)
+        commitSearch.matches(commitLookup.get(sha))
       )
     }
   )
@@ -919,25 +920,6 @@ export class CommitGraphSidebar extends React.Component<
       this.commitGraph_lookupCommits(this.commitGraph_getFilteredCommitSHAs()),
       this.commitGraph_getRefColors(),
       this.commitGraph_getPrimaryLaneSha()
-    )
-  }
-
-  private commitIsIncluded(
-    commit: Commit | undefined,
-    filterTextLowerCase: string
-  ) {
-    if (commit === undefined) {
-      return false
-    }
-
-    return (
-      !filterTextLowerCase ||
-      commit.summary.toLowerCase().includes(filterTextLowerCase) ||
-      commit.body.toLowerCase().includes(filterTextLowerCase) ||
-      commit.tags.some(tag =>
-        tag.toLowerCase().startsWith(filterTextLowerCase)
-      ) ||
-      commit.sha.toLowerCase().startsWith(filterTextLowerCase)
     )
   }
 
