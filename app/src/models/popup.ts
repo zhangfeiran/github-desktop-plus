@@ -32,7 +32,7 @@ import { WorktreeEntry } from './worktree'
 export enum PopupType {
   RenameBranch = 'RenameBranch',
   DeleteBranch = 'DeleteBranch',
-  DeleteAllLocalBranches = 'DeleteAllLocalBranches',
+  DeleteUnusedLocalBranches = 'DeleteUnusedLocalBranches',
   DeleteRemoteBranch = 'DeleteRemoteBranch',
   ConfirmDiscardChanges = 'ConfirmDiscardChanges',
   Preferences = 'Preferences',
@@ -123,6 +123,7 @@ export enum PopupType {
   EditCopilotBYOKProvider = 'EditCopilotBYOKProvider',
   EditCopilotBYOKModel = 'EditCopilotBYOKModel',
   ConfirmDeleteCopilotBYOKProvider = 'ConfirmDeleteCopilotBYOKProvider',
+  CopilotConflictResolutionAlwaysNudge = 'CopilotConflictResolutionAlwaysNudge',
   ManageRemotes = 'ManageRemotes',
   AddRemote = 'AddRemote',
   DeleteWorktreeFailed = 'DeleteWorktreeFailed',
@@ -160,7 +161,7 @@ export type PopupDetail =
       existsOnRemote: boolean
     }
   | {
-      type: PopupType.DeleteAllLocalBranches
+      type: PopupType.DeleteUnusedLocalBranches
       repository: Repository
       branches: ReadonlyArray<Branch>
     }
@@ -533,6 +534,10 @@ export type PopupDetail =
     }
   | {
       type: PopupType.CopilotConflictResolutionDisclaimer
+      repository: Repository
+    }
+  | {
+      type: PopupType.CopilotConflictResolutionAlwaysNudge
       repository: Repository
     }
   | {

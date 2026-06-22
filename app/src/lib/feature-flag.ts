@@ -27,6 +27,9 @@ function enableDevelopmentFeatures(): boolean {
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 //@ts-ignore: this will be used again in the future
 function enableBetaFeatures(): boolean {
+  if (process.env.TEST_ENV === '1') {
+    return enableDevelopmentFeatures() || __RELEASE_CHANNEL__ === 'beta'
+  }
   return true
 }
 

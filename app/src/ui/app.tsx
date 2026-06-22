@@ -51,7 +51,7 @@ import {
   CantDeleteCurrentBranch,
   CantDeleteCurrentBranchUncommittedChanges,
   DeleteBranch,
-  DeleteAllLocalBranches,
+  DeleteUnusedLocalBranches,
   DeleteRemoteBranch,
 } from './delete-branch'
 import { CantDeleteMainBranch } from './delete-branch/cant-delete-main-branch'
@@ -218,6 +218,7 @@ import {
 } from './secret-scanning/push-protection-error-dialog'
 import { GenerateCommitMessageOverrideWarning } from './generate-commit-message/generate-commit-message-override-warning'
 import { CopilotDisclaimer } from './copilot/copilot-disclaimer'
+import { CopilotConflictResolutionAlwaysNudge } from './multi-commit-operation/dialog/copilot-conflict-resolution-always-nudge'
 import { IAPICreatePushProtectionBypassResponse } from '../lib/api'
 import {
   BypassPushProtectionDialog,
@@ -1753,10 +1754,10 @@ export class App extends React.Component<IAppProps, IAppState> {
             onDeleted={this.onBranchDeleted}
           />
         )
-      case PopupType.DeleteAllLocalBranches:
+      case PopupType.DeleteUnusedLocalBranches:
         return (
-          <DeleteAllLocalBranches
-            key="delete-all-local-branches"
+          <DeleteUnusedLocalBranches
+            key="delete-unused-local-branches"
             dispatcher={this.props.dispatcher}
             repository={popup.repository}
             branches={popup.branches}
@@ -1876,6 +1877,9 @@ export class App extends React.Component<IAppProps, IAppState> {
             showWorktrees={this.state.showWorktrees}
             showWorktreesInRepoList={this.state.showWorktreesInRepoList}
             showCompareTab={this.state.showCompareTab}
+            showConventionalCommitBadges={
+              this.state.showConventionalCommitBadges
+            }
             repositoryIndicatorsEnabled={this.state.repositoryIndicatorsEnabled}
             hideWindowOnQuit={this.state.hideWindowOnQuit}
             onEditGlobalGitConfig={this.editGlobalGitConfig}
@@ -1886,8 +1890,10 @@ export class App extends React.Component<IAppProps, IAppState> {
             copyPathNormalization={this.state.copyPathNormalization}
             selectedCopilotModels={this.state.selectedCopilotModels}
             copilotModels={this.state.copilotModels}
-            copilotAvailable={this.state.copilotAvailable}
             byokProviders={this.state.byokProviders}
+            alwaysUseCopilotForConflictResolution={
+              this.state.alwaysUseCopilotForConflictResolution
+            }
           />
         )
       case PopupType.RepositorySettings: {
@@ -2541,13 +2547,17 @@ export class App extends React.Component<IAppProps, IAppState> {
             accounts={this.state.accounts}
             cachedRepoRulesets={this.state.cachedRepoRulesets}
             shouldShowCopilotConflictResolutionCallOut={
-              !this.state.copilotConflictResolutionButtonClicked
+              this.state.copilotConflictResolutionClickCount === 0
             }
             copilotConflictResolutionModel={getConflictResolutionModelDisplay(
               this.state.selectedCopilotModels['conflict-resolution'] ?? null,
               this.state.copilotModels,
               this.state.byokProviders
             )}
+            conflictResolutionDisabled={
+              this.state.selectedCopilotModels['conflict-resolution'] ===
+              DisabledCopilotModel
+            }
             openFileInExternalEditor={this.getOpenFileInExternalEditorHandler(
               popup.repository
             )}
@@ -2964,6 +2974,33 @@ export class App extends React.Component<IAppProps, IAppState> {
             Review the suggested resolutions carefully before applying them to
             your files.
           </CopilotDisclaimer>
+        )
+      }
+      case PopupType.CopilotConflictResolutionAlwaysNudge: {
+        const { repository } = popup
+        const onAlwaysUseCopilot = () => {
+          this.props.dispatcher.setAlwaysUseCopilotForConflictResolution(true)
+          this.props.dispatcher.closePopup(
+            PopupType.CopilotConflictResolutionAlwaysNudge
+          )
+          this.props.dispatcher.attemptCopilotConflictResolution(repository)
+        }
+        const onDecline = () => {
+          this.props.dispatcher.closePopup(
+            PopupType.CopilotConflictResolutionAlwaysNudge
+          )
+          this.props.dispatcher.attemptCopilotConflictResolution(repository)
+        }
+        return (
+          <CopilotConflictResolutionAlwaysNudge
+            key="copilot-conflict-resolution-always-nudge"
+            // eslint-disable-next-line react/jsx-no-bind
+            onAlwaysUseCopilot={onAlwaysUseCopilot}
+            // eslint-disable-next-line react/jsx-no-bind
+            onDecline={onDecline}
+            // eslint-disable-next-line react/jsx-no-bind
+            onDismissed={onDecline}
+          />
         )
       }
       case PopupType.HookFailed: {
@@ -3579,7 +3616,9 @@ export class App extends React.Component<IAppProps, IAppState> {
       icon = iconForRepository(repository)
       title =
         this.getCurrentRepositoryTitle(repository) +
-        this.getWorktreeSuffix(repository)
+        (selection?.type === SelectionType.Repository
+          ? this.getWorktreeSuffix(repository, selection.state.worktrees)
+          : '')
     } else if (this.state.repositories.length > 0) {
       icon = octicons.repo
       title = __DARWIN__ ? 'Select a Repository' : 'Select a repository'
@@ -3651,17 +3690,22 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private getWorktreeSuffix(
-    repository: Repository | CloningRepository
+    repository: Repository | CloningRepository,
+    worktrees: readonly WorktreeEntry[]
   ): string {
     // If the worktrees dropdown is enabled, there is no need to add a suffix to the repository name
     if (this.state.showWorktrees || !(repository instanceof Repository)) {
       return ''
     }
-    const worktreeName = Path.basename(repository.path)
-    if (worktreeName === repository.name) {
+    const isMainWorktree = worktrees.some(
+      worktree => worktree.path === repository.path && worktree.type === 'main'
+    )
+    if (isMainWorktree) {
       return ''
+    } else {
+      const worktreeName = Path.basename(repository.path)
+      return ` (${worktreeName})`
     }
-    return ` (${worktreeName})`
   }
 
   private onRepositoryToolbarButtonContextMenu = () => {
@@ -4143,6 +4187,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           hideWhitespaceInHistoryDiff={state.hideWhitespaceInHistoryDiff}
           showDiffCheckMarks={state.showDiffCheckMarks}
           preferAbsoluteDates={state.preferAbsoluteDates}
+          showConventionalCommitBadges={state.showConventionalCommitBadges}
           showSideBySideDiff={state.showSideBySideDiff}
           showDiffMinimap={state.showDiffMinimap}
           focusCommitMessage={state.focusCommitMessage}

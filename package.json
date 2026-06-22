@@ -62,13 +62,14 @@
   },
   "resolutions": {
     "@types/react-css-transition-replace/@types/react": "^16.14.62",
+    "yauzl": "3.3.1",
     "wrap-ansi": "7.0.0"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.25.0",
     "@babel/core": "^7.25.2",
     "@babel/plugin-transform-modules-commonjs": "^7.24.8",
-    "@primer/octicons": "^19.0.0",
+    "@primer/octicons": "^19.28.1",
     "@types/which": "^3.0.4",
     "@typescript-eslint/eslint-plugin": "^6.13.2",
     "@typescript-eslint/experimental-utils": "^5.62.0",
@@ -112,7 +113,7 @@
   },
   "devDependencies": {
     "@github/markdownlint-github": "^0.1.0",
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.60.0",
     "@types/byline": "^4.2.31",
     "@types/classnames": "^2.2.2",
     "@types/codemirror": "^5.60.15",
@@ -167,7 +168,7 @@
     "node-test-github-reporter": "^1.2.0",
     "patch-package": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
-    "playwright": "^1.58.2",
+    "playwright": "^1.60.0",
     "reserved-words": "^0.1.2",
     "tsconfig-paths": "^3.9.0",
     "tsx": "^4.19.3",

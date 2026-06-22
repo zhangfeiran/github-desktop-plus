@@ -118,10 +118,12 @@ Download and execute the installer from the [releases page](https://github.com/p
 | | **64-bit x86** | **64-bit ARM** |
 | --- | --- | --- |
 | **.EXE Installer** | `-win-x64.exe` | `-win-arm64.exe` |
-| **.MSI Installer** | `-win-x64.msi` | `-win-arm64.msi` |
+| **.MSI Installer ⚠️** | `-win-x64.msi` | `-win-arm64.msi` |
 
 Please note that the app doesn't autoupdate like the official GitHub Desktop, so you will need to manually download and install it every time you want to update.  
-For this reason, I recommend using Winget instead of the manual download.
+For this reason, **I recommend using Winget instead of the manual download**.
+
+⚠️ The MSI installer is meant for enterprise deployments and is not recommended for regular users. If you want to use it, keep in mind that that you will need to reboot your computer to finish the installation. The MSI installer only registers a hook that will install the app on login.
 
 ---
 

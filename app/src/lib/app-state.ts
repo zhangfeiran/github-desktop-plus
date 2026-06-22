@@ -1,6 +1,9 @@
-import type { ModelInfo } from '@github/copilot-sdk'
-import type { CopilotModelSelections } from './stores/copilot-store'
+import type {
+  CopilotModel,
+  CopilotModelSelections,
+} from './stores/copilot-store'
 import type { IBYOKProvider } from './copilot/byok'
+import type { IConflictResolutionModelDisplay } from './copilot/conflict-resolution-model'
 import type {
   IFileResolution,
   IConflictResolutionProgress,
@@ -352,6 +355,12 @@ export interface IAppState {
   readonly showCompareTab: boolean
 
   /**
+   * Whether commit summaries that follow the Conventional Commits format should
+   * render their type prefix as a colored badge in the commit list.
+   */
+  readonly showConventionalCommitBadges: boolean
+
+  /**
    * A map keyed on a user account (GitHub.com or GitHub Enterprise)
    * containing an object with repositories that the authenticated
    * user has explicit permission (:read, :write, or :admin) to access
@@ -458,7 +467,9 @@ export interface IAppState {
 
   readonly copilotConflictResolutionDisclaimerLastSeen: number | null
 
-  readonly copilotConflictResolutionButtonClicked: boolean
+  readonly copilotConflictResolutionClickCount: number
+
+  readonly alwaysUseCopilotForConflictResolution: boolean
 
   /** Whether the changes filter is shown */
   readonly showChangesFilter: boolean
@@ -473,10 +484,7 @@ export interface IAppState {
    * The list of available Copilot models fetched from the SDK.
    * Null when the list has not been fetched yet.
    */
-  readonly copilotModels: ReadonlyArray<ModelInfo> | null
-
-  /** Whether Copilot is available (i.e. a GitHub.com account is signed in). */
-  readonly copilotAvailable: boolean
+  readonly copilotModels: ReadonlyArray<CopilotModel> | null
 
   /**
    * The list of user-configured Copilot model providers (BYOK). Empty when
@@ -650,6 +658,9 @@ export interface IRepositoryState {
 
   /** Is generating a commit message? */
   readonly isGeneratingCommitMessage: boolean
+
+  /** Controller used to cancel an in-flight commit message generation. */
+  readonly commitMessageGenerationAbortController: AbortController | null
 
   /** Commit being amended, or null if none. */
   readonly commitToAmend: Commit | null
@@ -1198,6 +1209,13 @@ export interface IMultiCommitOperationState {
    * UI away). Null when no resolution is in progress.
    */
   readonly copilotResolutionAbortController: AbortController | null
+
+  /**
+   * The model display captured at the time Copilot conflict resolution was
+   * started. Shown in the result dialog header so that changing the model
+   * setting mid-operation doesn't confuse the user.
+   */
+  readonly copilotResolutionModel: IConflictResolutionModelDisplay | null
 
   /**
    * The commit id of the tip of the branch user is modifying in the operation.

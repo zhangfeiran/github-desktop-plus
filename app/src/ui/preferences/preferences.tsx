@@ -51,10 +51,10 @@ import {
   CopyPathNormalization,
   defaultCopyPathNormalization,
 } from '../../models/copy-path-normalization'
-import type { ModelInfo } from '@github/copilot-sdk'
 import { CopilotPreferences } from './copilot'
 import type {
   CopilotFeature,
+  CopilotModel,
   CopilotModelSelections,
 } from '../../lib/stores/copilot-store'
 import type { IBYOKProvider } from '../../lib/copilot/byok'
@@ -128,6 +128,7 @@ interface IPreferencesProps {
   readonly showWorktrees: boolean
   readonly showWorktreesInRepoList: boolean
   readonly showCompareTab: boolean
+  readonly showConventionalCommitBadges: boolean
   readonly repositoryIndicatorsEnabled: boolean
   readonly showBranchNameInRepoList: ShowBranchNameInRepoListSetting
   readonly branchSortOrder: BranchSortOrder
@@ -137,9 +138,9 @@ interface IPreferencesProps {
   readonly showDiffCheckMarks: boolean
   readonly copyPathNormalization: CopyPathNormalization
   readonly selectedCopilotModels: CopilotModelSelections
-  readonly copilotModels: ReadonlyArray<ModelInfo> | null
-  readonly copilotAvailable: boolean
+  readonly copilotModels: ReadonlyArray<CopilotModel> | null
   readonly byokProviders: ReadonlyArray<IBYOKProvider>
+  readonly alwaysUseCopilotForConflictResolution: boolean
 }
 
 interface IPreferencesState {
@@ -183,6 +184,7 @@ interface IPreferencesState {
   readonly showWorktrees: boolean
   readonly showWorktreesInRepoList: boolean
   readonly showCompareTab: boolean
+  readonly showConventionalCommitBadges: boolean
   /**
    * If unable to save Git configuration values (name, email)
    * due to an existing configuration lock file this property
@@ -216,6 +218,7 @@ interface IPreferencesState {
   readonly copyPathNormalization: CopyPathNormalization
 
   readonly selectedCopilotModels: CopilotModelSelections
+  readonly alwaysUseCopilotForConflictResolution: boolean
   readonly selectedDateFormat?: DateFormat
   readonly selectedTimeFormat?: TimeFormat
   readonly selectedNumberFormat?: INumberFormat
@@ -282,6 +285,7 @@ export class Preferences extends React.Component<
       showWorktrees: this.props.showWorktrees,
       showWorktreesInRepoList: this.props.showWorktreesInRepoList,
       showCompareTab: this.props.showCompareTab,
+      showConventionalCommitBadges: this.props.showConventionalCommitBadges,
       repositoryIndicatorsEnabled: this.props.repositoryIndicatorsEnabled,
       showBranchNameInRepoList: this.props.showBranchNameInRepoList,
       branchSortOrder: this.props.branchSortOrder,
@@ -300,6 +304,8 @@ export class Preferences extends React.Component<
       copyPathNormalization:
         this.props.copyPathNormalization ?? defaultCopyPathNormalization,
       selectedCopilotModels: this.props.selectedCopilotModels,
+      alwaysUseCopilotForConflictResolution:
+        this.props.alwaysUseCopilotForConflictResolution,
       selectedDateFormat: getDateFormatPreference(),
       selectedTimeFormat: getTimeFormatPreference(),
       selectedNumberFormat: getNumberFormatPreference(),
@@ -531,6 +537,22 @@ export class Preferences extends React.Component<
     this.props.dispatcher.showGitLabSignInDialog()
   }
 
+  private onCopilotSignIn = () => {
+    this.setState({ selectedIndex: PreferencesTab.Accounts })
+  }
+
+  private onOpenCopilotPlans = () => {
+    this.props.dispatcher.openInBrowser(
+      'https://github.com/features/copilot/plans'
+    )
+  }
+
+  private onOpenCopilotFeatureSettings = () => {
+    this.props.dispatcher.openInBrowser(
+      'https://github.com/settings/copilot/features'
+    )
+  }
+
   private onLogout = (account: Account) => {
     this.props.dispatcher.removeAccount(account)
   }
@@ -609,10 +631,19 @@ export class Preferences extends React.Component<
           <CopilotPreferences
             selectedCopilotModels={this.state.selectedCopilotModels}
             copilotModels={this.props.copilotModels}
-            copilotAvailable={this.props.copilotAvailable}
+            accounts={this.props.accounts}
             byokProviders={this.props.byokProviders}
             showBYOKSettings={this.shouldShowBYOKSettings()}
+            onSignIn={this.onCopilotSignIn}
+            onOpenCopilotPlans={this.onOpenCopilotPlans}
+            onOpenCopilotFeatureSettings={this.onOpenCopilotFeatureSettings}
+            alwaysUseCopilotForConflictResolution={
+              this.state.alwaysUseCopilotForConflictResolution
+            }
             onSelectedCopilotModelChanged={this.onSelectedCopilotModelChanged}
+            onAlwaysUseCopilotForConflictResolutionChanged={
+              this.onAlwaysUseCopilotForConflictResolutionChanged
+            }
             onAddBYOKProvider={this.onAddBYOKProvider}
             onEditBYOKProvider={this.onEditBYOKProvider}
             onDeleteBYOKProvider={this.onDeleteBYOKProvider}
@@ -697,6 +728,12 @@ export class Preferences extends React.Component<
             }
             showCompareTab={this.state.showCompareTab}
             onShowCompareTabChanged={this.onShowCompareTabChanged}
+            showConventionalCommitBadges={
+              this.state.showConventionalCommitBadges
+            }
+            onShowConventionalCommitBadgesChanged={
+              this.onShowConventionalCommitBadgesChanged
+            }
             showBranchNameInRepoList={this.state.showBranchNameInRepoList}
             onShowBranchNameInRepoListChanged={
               this.onShowBranchNameInRepoListChanged
@@ -1029,9 +1066,14 @@ export class Preferences extends React.Component<
     })
   }
 
+  private onAlwaysUseCopilotForConflictResolutionChanged = (
+    checked: boolean
+  ) => {
+    this.setState({ alwaysUseCopilotForConflictResolution: checked })
+  }
+
   private shouldShowBYOKSettings(): boolean {
-    const account = this.props.accounts.find(isDotComAccount)
-    return account ? enableCopilotSdkCommitMessageGeneration(account) : false
+    return this.props.accounts.some(enableCopilotSdkCommitMessageGeneration)
   }
 
   private onAddBYOKProvider = () => {
@@ -1091,6 +1133,12 @@ export class Preferences extends React.Component<
 
   private onShowCompareTabChanged = (showCompareTab: boolean) => {
     this.setState({ showCompareTab })
+  }
+
+  private onShowConventionalCommitBadgesChanged = (
+    showConventionalCommitBadges: boolean
+  ) => {
+    this.setState({ showConventionalCommitBadges })
   }
 
   private renderFooter() {
@@ -1185,6 +1233,15 @@ export class Preferences extends React.Component<
 
       if (this.state.showCompareTab !== this.props.showCompareTab) {
         dispatcher.setShowCompareTab(this.state.showCompareTab)
+      }
+
+      if (
+        this.state.showConventionalCommitBadges !==
+        this.props.showConventionalCommitBadges
+      ) {
+        dispatcher.setShowConventionalCommitBadges(
+          this.state.showConventionalCommitBadges
+        )
       }
 
       if (this.state.hideWindowOnQuit !== this.props.hideWindowOnQuit) {
@@ -1317,6 +1374,10 @@ export class Preferences extends React.Component<
 
     dispatcher.setSelectedCopilotModels(this.state.selectedCopilotModels)
 
+    dispatcher.setAlwaysUseCopilotForConflictResolution(
+      this.state.alwaysUseCopilotForConflictResolution
+    )
+
     if (enableFormattingPreferences()) {
       if (this.state.selectedDateFormat !== undefined) {
         setDateFormatPreference(this.state.selectedDateFormat)
@@ -1343,9 +1404,7 @@ export class Preferences extends React.Component<
   }
 
   private get isCopilotSdkEnabled(): boolean {
-    return this.props.accounts
-      .filter(isDotComAccount)
-      .some(enableCopilotSdkCommitMessageGeneration)
+    return this.props.accounts.some(enableCopilotSdkCommitMessageGeneration)
   }
 
   private tabToVisualIndex(tab: PreferencesTab): number {
