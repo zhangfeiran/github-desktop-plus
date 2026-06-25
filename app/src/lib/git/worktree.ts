@@ -1,32 +1,14 @@
 import * as Path from 'path'
-import * as Fs from 'fs'
 import { readFile } from 'fs/promises'
 import type { Repository } from '../../models/repository'
 import type { WorktreeEntry, WorktreeType } from '../../models/worktree'
 import { git } from './core'
 import { directoryExists } from '../directory-exists'
-import { normalizePath } from '../helpers/path'
 import {
   fromWslPath,
   isWslRepositoryPath,
   translateWslPathValue,
 } from './source'
-
-function getDotGitPath(repositoryPath: string): string {
-  return Path.join(repositoryPath, '.git')
-}
-
-function resolveGitPath(basePath: string, path: string): string {
-  const translatedPath =
-    process.platform === 'win32' ? translateWslPathValue(path) ?? path : path
-
-  return Path.resolve(basePath, translatedPath)
-}
-
-export interface IWorktreePathInfo {
-  readonly isLinkedWorktree: boolean
-  readonly mainWorktreePath: string | null
-}
 
 export function translateWorktreePathForRepository(
   repository: Repository,
@@ -111,23 +93,6 @@ export async function listWorktrees(
     ...worktree,
     path: translateWorktreePathForRepository(repository, worktree.path),
   }))
-}
-
-export function findWorktreeEntryForBranchRef(
-  worktrees: ReadonlyArray<WorktreeEntry>,
-  branchRef: string,
-  currentPath: string
-): WorktreeEntry | null {
-  const normalizedCurrentPath = normalizePath(currentPath)
-
-  return (
-    worktrees.find(
-      worktree =>
-        worktree.branch === branchRef &&
-        !worktree.isPrunable &&
-        normalizePath(worktree.path) !== normalizedCurrentPath
-    ) ?? null
-  )
 }
 
 /**
@@ -218,50 +183,4 @@ export async function moveWorktree(
     repository.path,
     'moveWorktree'
   )
-}
-
-export function getWorktreePathInfoSync(
-  repositoryPath: string
-): IWorktreePathInfo | null {
-  try {
-    const dotGit = getDotGitPath(repositoryPath)
-    // eslint-disable-next-line no-sync
-    const stats = Fs.statSync(dotGit)
-
-    if (stats.isDirectory()) {
-      return { isLinkedWorktree: false, mainWorktreePath: repositoryPath }
-    }
-
-    if (!stats.isFile()) {
-      return null
-    }
-
-    // eslint-disable-next-line no-sync
-    const contents = Fs.readFileSync(dotGit, 'utf8').trim()
-    if (!contents.startsWith('gitdir: ')) {
-      return null
-    }
-
-    const gitDirPath = resolveGitPath(
-      repositoryPath,
-      contents.substring('gitdir: '.length)
-    )
-
-    // eslint-disable-next-line no-sync
-    const commondir = Fs.readFileSync(
-      Path.join(gitDirPath, 'commondir'),
-      'utf8'
-    ).trim()
-    if (commondir.length === 0) {
-      return null
-    }
-
-    const commonGitDir = resolveGitPath(gitDirPath, commondir)
-    return {
-      isLinkedWorktree: true,
-      mainWorktreePath: Path.dirname(commonGitDir),
-    }
-  } catch {
-    return null
-  }
 }

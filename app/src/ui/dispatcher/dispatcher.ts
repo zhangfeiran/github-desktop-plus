@@ -146,7 +146,7 @@ import { IBranchNamePreset } from '../../models/branch-preset'
 import { BypassReasonType } from '../secret-scanning/bypass-push-protection-dialog'
 import { EditorOverride } from '../../models/editor-override'
 import { RepositoryGitSource } from '../../models/repository-git-source'
-import { convertToCopyPath, normalizePath } from '../../lib/helpers/path'
+import { convertToCopyPath } from '../../lib/helpers/path'
 import { EOL } from 'os'
 import {
   IConflictResolutionProgress,
@@ -3312,19 +3312,6 @@ export class Dispatcher {
     commits: ReadonlyArray<CommitOneLine>,
     sourceBranch: Branch | null
   ): Promise<void> {
-    const targetRepository =
-      await this.appStore._switchToWorktreeForBranchIfNeeded(
-        repository,
-        targetBranch
-      )
-    const switchedToTargetWorktree =
-      normalizePath(targetRepository.path) !== normalizePath(repository.path)
-
-    if (switchedToTargetWorktree) {
-      this.endMultiCommitOperation(repository)
-      repository = targetRepository
-    }
-
     // If uncommitted changes are stashed, we had to clear the multi commit
     // operation in case user hit cancel. (This method only sets it, if it null)
     this.initializeMultiCommitOperationStateCherryPick(
@@ -3333,13 +3320,6 @@ export class Dispatcher {
       commits,
       sourceBranch
     )
-
-    if (switchedToTargetWorktree) {
-      this.showPopup({
-        type: PopupType.MultiCommitOperation,
-        repository,
-      })
-    }
 
     this.appStore._initializeCherryPickProgress(repository, commits)
     this.switchMultiCommitOperationToShowProgress(repository)

@@ -1,5 +1,4 @@
 import * as Path from 'path'
-
 import {
   Repository,
   ILocalRepositoryState,
@@ -10,13 +9,12 @@ import {
 import { CloningRepository } from '../../models/cloning-repository'
 import { getHTMLURL } from '../../lib/api'
 import { caseInsensitiveCompare, compare } from '../../lib/compare'
-import type { IFilterListGroup, IFilterListItem } from '../lib/filter-list'
+import { IFilterListGroup, IFilterListItem } from '../lib/filter-list'
 import { IAheadBehind } from '../../models/branch'
 import { WorktreeEntry } from '../../models/worktree'
 import { assertNever } from '../../lib/fatal-error'
 import { isGHE, isGHES } from '../../lib/endpoint-capabilities'
 import { Owner } from '../../models/owner'
-import { normalizePath } from '../../lib/helpers/path'
 
 export type RepositoryListGroup = (
   | {
@@ -69,13 +67,6 @@ export interface IRepositoryListItem extends IFilterListItem {
   readonly changedFilesCount: number
   readonly branchName: string | null
   readonly defaultBranchName: string | null
-  readonly title: string
-  readonly isNestedWorktree: boolean
-  readonly mainWorktreeName: string | null
-  readonly isVirtualLinkedWorktree: boolean
-  readonly isPrunableWorktree: boolean
-  readonly worktreePath: string | null
-  readonly sourceRepository: Repository | null
   /**
    * The worktree this row represents, when worktrees are shown in the list.
    *
@@ -85,11 +76,6 @@ export interface IRepositoryListItem extends IFilterListItem {
    * loaded), in which case the row is a plain repository row.
    */
   readonly worktree: WorktreeEntry | null
-}
-
-interface IGroupRepositoriesOptions {
-  readonly showWorktreesInSidebar?: boolean
-  readonly selectedRepository?: Repositoryish | null
 }
 
 const recentRepositoriesThreshold = 7
@@ -121,160 +107,14 @@ const getGroupForRepository = (repo: Repositoryish): RepositoryListGroup => {
 
 type RepoGroupItem = { group: RepositoryListGroup; repos: Repositoryish[] }
 
-let nextVirtualRepositoryId = -1
-const virtualRepositoryIdsByPath = new Map<string, number>()
-
-// Returns the display title for a repository, which is either the alias
-// (if available) or the name.
-const getDisplayTitle = (repository: Repositoryish) =>
-  repository instanceof Repository && repository.alias != null
-    ? repository.alias
-    : repository.name
-
-const getLinkedWorktreeDisplayTitle = (
-  repository: Repositoryish,
-  worktreePath?: string
-) =>
-  repository instanceof Repository && repository.alias != null
-    ? repository.alias
-    : Path.basename(worktreePath ?? repository.path)
-
-const getRepositoryListTitle = (
-  repository: Repositoryish,
-  showWorktreesInSidebar: boolean
-) =>
-  showWorktreesInSidebar &&
-  repository instanceof Repository &&
-  repository.isLinkedWorktree
-    ? getLinkedWorktreeDisplayTitle(repository)
-    : getDisplayTitle(repository)
-
-const getVirtualRepositoryId = (worktreePath: string) => {
-  const normalizedPath = normalizePath(worktreePath)
-  const existingId = virtualRepositoryIdsByPath.get(normalizedPath)
-  if (existingId !== undefined) {
-    return existingId
-  }
-
-  const id = nextVirtualRepositoryId--
-  virtualRepositoryIdsByPath.set(normalizedPath, id)
-  return id
-}
-
-const pruneVirtualRepositoryIds = (
-  storedRepositoryPaths: ReadonlySet<string>,
-  localRepositoryStateLookup: ReadonlyMap<number, ILocalRepositoryState>
-) => {
-  const knownWorktreePaths = new Set<string>(storedRepositoryPaths)
-
-  for (const state of localRepositoryStateLookup.values()) {
-    for (const worktree of state.worktrees) {
-      knownWorktreePaths.add(normalizePath(worktree.path))
-    }
-  }
-
-  for (const worktreePath of virtualRepositoryIdsByPath.keys()) {
-    if (!knownWorktreePaths.has(worktreePath)) {
-      virtualRepositoryIdsByPath.delete(worktreePath)
-    }
-  }
-}
-
-const shortBranchName = (branch: string | null): string | null =>
-  branch ? branch.replace(/^refs\/heads\//, '') : null
-
-const getBranchNameForWorktree = (worktree: WorktreeEntry) =>
-  shortBranchName(worktree.branch)
-
-const getWorktreeEntryForPath = (
-  allWorktrees: ReadonlyArray<WorktreeEntry>,
-  worktreePath: string
-) =>
-  allWorktrees.find(
-    worktree => normalizePath(worktree.path) === normalizePath(worktreePath)
-  ) ?? null
-
 export function groupRepositories(
   repositories: ReadonlyArray<Repositoryish>,
   localRepositoryStateLookup: ReadonlyMap<number, ILocalRepositoryState>,
-  recentRepositories: ReadonlyArray<number>,
-  options: IGroupRepositoriesOptions = {}
+  recentRepositories: ReadonlyArray<number>
 ): ReadonlyArray<IFilterListGroup<IRepositoryListItem, RepositoryListGroup>> {
-  const showWorktreesInSidebar = options.showWorktreesInSidebar ?? false
-  const selectedRepository = options.selectedRepository ?? null
-  const groups = new Map<string, RepoGroupItem>()
-  const repositoryById = new Map<number, Repository>()
-  const repositoryByPath = new Map<string, Repository>()
-  const storedRepositoryPaths = new Set<string>()
-
-  for (const repository of repositories) {
-    if (!(repository instanceof Repository)) {
-      continue
-    }
-
-    const normalizedPath = normalizePath(repository.path)
-    repositoryById.set(repository.id, repository)
-    repositoryByPath.set(normalizedPath, repository)
-    storedRepositoryPaths.add(normalizedPath)
-  }
-
-  const preferredLinkedWorktreeByMainPath = new Map<string, string>()
-  const setPreferredLinkedWorktree = (repository: Repository) => {
-    if (!repository.isLinkedWorktree) {
-      return
-    }
-
-    const repositoryPath = normalizePath(repository.path)
-    const mainPath = normalizePath(repository.mainWorktreePath)
-    if (
-      !repositoryByPath.has(repositoryPath) ||
-      !repositoryByPath.has(mainPath)
-    ) {
-      return
-    }
-
-    if (!preferredLinkedWorktreeByMainPath.has(mainPath)) {
-      preferredLinkedWorktreeByMainPath.set(mainPath, repositoryPath)
-    }
-  }
-
-  if (selectedRepository instanceof Repository) {
-    setPreferredLinkedWorktree(selectedRepository)
-  }
-
-  for (const id of recentRepositories) {
-    const repository = repositoryById.get(id)
-    if (repository !== undefined) {
-      setPreferredLinkedWorktree(repository)
-    }
-  }
-
-  const shouldShowRepository = (repository: Repositoryish) => {
-    if (showWorktreesInSidebar || !(repository instanceof Repository)) {
-      return true
-    }
-
-    if (!repository.isLinkedWorktree) {
-      return !preferredLinkedWorktreeByMainPath.has(
-        normalizePath(repository.path)
-      )
-    }
-
-    const parentPath = normalizePath(repository.mainWorktreePath)
-    if (!repositoryByPath.has(parentPath)) {
-      return true
-    }
-
-    return (
-      preferredLinkedWorktreeByMainPath.get(parentPath) ===
-      normalizePath(repository.path)
-    )
-  }
-
-  const visibleRepositories = repositories.filter(shouldShowRepository)
-  const includeRecentGroup =
-    visibleRepositories.length > recentRepositoriesThreshold
+  const includeRecentGroup = repositories.length > recentRepositoriesThreshold
   const recentSet = includeRecentGroup ? new Set(recentRepositories) : undefined
+  const groups = new Map<string, RepoGroupItem>()
 
   const addToGroup = (group: RepositoryListGroup, repo: Repositoryish) => {
     const key = getGroupKey(group)
@@ -287,22 +127,12 @@ export function groupRepositories(
     rg.repos.push(repo)
   }
 
-  for (const repo of visibleRepositories) {
+  for (const repo of repositories) {
     if (recentSet?.has(repo.id) && repo instanceof Repository) {
       addToGroup({ kind: 'recent', displayName: repo.groupName }, repo)
     }
 
-    const parentRepo =
-      repo instanceof Repository &&
-      repo.isLinkedWorktree &&
-      (showWorktreesInSidebar ||
-        preferredLinkedWorktreeByMainPath.get(
-          normalizePath(repo.mainWorktreePath)
-        ) === normalizePath(repo.path))
-        ? repositoryByPath.get(normalizePath(repo.mainWorktreePath))
-        : undefined
-
-    addToGroup(getGroupForRepository(parentRepo ?? repo), repo)
+    addToGroup(getGroupForRepository(repo), repo)
   }
 
   return Array.from(groups)
@@ -313,24 +143,22 @@ export function groupRepositories(
         group,
         repos,
         localRepositoryStateLookup,
-        groups,
-        repositoryByPath,
-        storedRepositoryPaths,
-        options
+        groups
       ),
     }))
 }
+
+// Returns the display title for a repository, which is either the alias
+// (if available) or the name.
+const getDisplayTitle = (r: Repositoryish) =>
+  r instanceof Repository && r.alias != null ? r.alias : r.name
 
 const toSortedListItems = (
   group: RepositoryListGroup,
   repositories: ReadonlyArray<Repositoryish>,
   localRepositoryStateLookup: ReadonlyMap<number, ILocalRepositoryState>,
-  groups: Map<string, RepoGroupItem>,
-  repositoryByPath: ReadonlyMap<string, Repository>,
-  storedRepositoryPaths: ReadonlySet<string>,
-  options: IGroupRepositoriesOptions
+  groups: Map<string, RepoGroupItem>
 ): IRepositoryListItem[] => {
-  const showWorktreesInSidebar = options.showWorktreesInSidebar ?? false
   const groupNames = new Map<string, number>()
   const allNames = new Map<string, number>()
 
@@ -341,9 +169,7 @@ const toSortedListItems = (
       continue
     }
 
-    for (const title of groupItem.repos.map(repo =>
-      getRepositoryListTitle(repo, showWorktreesInSidebar)
-    )) {
+    for (const title of groupItem.repos.map(getDisplayTitle)) {
       allNames.set(title, (allNames.get(title) ?? 0) + 1)
       if (groupItem.group === group) {
         groupNames.set(title, (groupNames.get(title) ?? 0) + 1)
@@ -351,308 +177,90 @@ const toSortedListItems = (
     }
   }
 
-  pruneVirtualRepositoryIds(storedRepositoryPaths, localRepositoryStateLookup)
+  return repositories
+    .map(r => {
+      const repoState = localRepositoryStateLookup.get(r.id)
+      const title = getDisplayTitle(r)
 
-  const sortedRepositories = [...repositories].sort((x, y) =>
-    caseInsensitiveCompare(
-      getRepositoryListTitle(x, showWorktreesInSidebar),
-      getRepositoryListTitle(y, showWorktreesInSidebar)
-    )
-  )
+      const needsDisambiguation =
+        // If the repository is in the enterprise group and has a duplicate
+        // name in the group, we need to disambiguate it. We don't have to
+        // disambiguate repositories in the 'dotcom' group because they are
+        // already grouped by owner. If the repository is in the 'recent'
+        // group and has a duplicate name in any group, we need to
+        // disambiguate it.
+        ((groupNames.get(title) ?? 0) > 1 && group.kind === 'enterprise') ||
+        ((allNames.get(title) ?? 0) > 1 && group.kind === 'recent')
 
-  if (!showWorktreesInSidebar || group.kind === 'recent') {
-    return sortedRepositories.map(repository =>
-      buildRepositoryRow(
-        group,
-        repository,
-        false,
-        showWorktreesInSidebar,
-        localRepositoryStateLookup,
-        groupNames,
-        allNames,
-        repositoryByPath
-      )
-    )
-  }
-
-  const mainRepos: Repositoryish[] = []
-  const orphanLinkedRepos: Repository[] = []
-  const linkedReposByParentPath = new Map<string, Repository[]>()
-
-  for (const repository of sortedRepositories) {
-    if (!(repository instanceof Repository) || !repository.isLinkedWorktree) {
-      mainRepos.push(repository)
-      continue
-    }
-
-    const parentPath = normalizePath(repository.mainWorktreePath)
-    const linkedRepos = linkedReposByParentPath.get(parentPath)
-    if (linkedRepos !== undefined) {
-      linkedRepos.push(repository)
-    } else {
-      linkedReposByParentPath.set(parentPath, [repository])
-    }
-  }
-
-  const items: IRepositoryListItem[] = []
-  const seenLinkedRepoIds = new Set<number>()
-  const emittedVirtualPaths = new Set<string>()
-
-  for (const repository of mainRepos) {
-    items.push(
-      buildRepositoryRow(
-        group,
-        repository,
-        false,
-        showWorktreesInSidebar,
-        localRepositoryStateLookup,
-        groupNames,
-        allNames,
-        repositoryByPath
-      )
-    )
-
-    if (!(repository instanceof Repository)) {
-      continue
-    }
-
-    const linkedRepos = linkedReposByParentPath.get(
-      normalizePath(repository.path)
-    )
-    if (linkedRepos !== undefined) {
-      for (const linkedRepo of linkedRepos) {
-        seenLinkedRepoIds.add(linkedRepo.id)
-        items.push(
-          buildRepositoryRow(
-            group,
-            linkedRepo,
-            true,
-            showWorktreesInSidebar,
-            localRepositoryStateLookup,
-            groupNames,
-            allNames,
-            repositoryByPath
-          )
-        )
-      }
-    }
-
-    appendVirtualWorktreeRows(
-      items,
-      group,
-      repository,
-      repository,
-      localRepositoryStateLookup,
-      groupNames,
-      allNames,
-      repositoryByPath,
-      storedRepositoryPaths,
-      emittedVirtualPaths
-    )
-  }
-
-  for (const repository of sortedRepositories) {
-    if (
-      repository instanceof Repository &&
-      repository.isLinkedWorktree &&
-      !seenLinkedRepoIds.has(repository.id)
-    ) {
-      orphanLinkedRepos.push(repository)
-    }
-  }
-
-  for (const repository of orphanLinkedRepos) {
-    items.push(
-      buildRepositoryRow(
-        group,
-        repository,
-        false,
-        showWorktreesInSidebar,
-        localRepositoryStateLookup,
-        groupNames,
-        allNames,
-        repositoryByPath
-      )
-    )
-  }
-
-  return items
-}
-
-interface IBuildRepositoryRowOptions {
-  readonly isVirtualLinkedWorktree?: boolean
-  readonly worktreePath?: string
-  readonly sourceRepository?: Repository | null
-  readonly branchName?: string | null
-  readonly changedFilesCount?: number
-  readonly aheadBehind?: IAheadBehind | null
-}
-
-function buildRepositoryRow(
-  group: RepositoryListGroup,
-  repository: Repositoryish,
-  isNestedWorktree: boolean,
-  showWorktreesInSidebar: boolean,
-  localRepositoryStateLookup: ReadonlyMap<number, ILocalRepositoryState>,
-  groupNames: ReadonlyMap<string, number>,
-  allNames: ReadonlyMap<string, number>,
-  repositoryByPath: ReadonlyMap<string, Repository>,
-  options?: IBuildRepositoryRowOptions
-): IRepositoryListItem {
-  const repoState = localRepositoryStateLookup.get(repository.id)
-  const isVirtualLinkedWorktree = options?.isVirtualLinkedWorktree ?? false
-  const isLinkedWorktree =
-    !isVirtualLinkedWorktree &&
-    repository instanceof Repository &&
-    repository.isLinkedWorktree
-  const worktreePath = options?.worktreePath ?? repository.path
-  const parentRepository =
-    options?.sourceRepository ??
-    (repository instanceof Repository && isLinkedWorktree
-      ? repositoryByPath.get(normalizePath(repository.mainWorktreePath)) ?? null
-      : null)
-  const parentRepoState =
-    parentRepository !== null
-      ? localRepositoryStateLookup.get(parentRepository.id)
-      : null
-  const mainWorktreeEntry =
-    repoState?.worktrees.find(worktree => worktree.type === 'main') ?? null
-  const currentWorktreeEntry =
-    repoState !== undefined
-      ? getWorktreeEntryForPath(repoState.worktrees, worktreePath)
-      : null
-  const startupWorktreeEntry =
-    (isLinkedWorktree || isVirtualLinkedWorktree) && parentRepoState != null
-      ? getWorktreeEntryForPath(parentRepoState.worktrees, worktreePath)
-      : null
-  const rowWorktree = showWorktreesInSidebar
-    ? startupWorktreeEntry ?? mainWorktreeEntry
-    : startupWorktreeEntry ?? currentWorktreeEntry
-  const shouldUseWorktreeTitle =
-    showWorktreesInSidebar && (isLinkedWorktree || isVirtualLinkedWorktree)
-  const title = shouldUseWorktreeTitle
-    ? getLinkedWorktreeDisplayTitle(repository, worktreePath)
-    : getDisplayTitle(repository)
-  const defaultBranchName =
-    repoState?.defaultBranchName ??
-    options?.sourceRepository?.defaultBranch ??
-    (repository instanceof Repository ? repository.defaultBranch : null)
-  const mainWorktreePath =
-    isVirtualLinkedWorktree && options?.sourceRepository != null
-      ? options.sourceRepository.mainWorktreePath
-      : repository instanceof Repository
-      ? repository.mainWorktreePath
-      : options?.sourceRepository?.mainWorktreePath ?? repository.path
-  const mainWorktreeName =
-    showWorktreesInSidebar &&
-    (isLinkedWorktree || isVirtualLinkedWorktree) &&
-    isNestedWorktree
-      ? Path.basename(mainWorktreePath)
-      : null
-
-  return {
-    text:
-      repository instanceof Repository
-        ? shouldUseWorktreeTitle
-          ? [title, nameOf(repository), Path.basename(mainWorktreePath)]
-          : [title, nameOf(repository)]
-        : [title],
-    title,
-    id: options?.worktreePath
-      ? `worktree:${normalizePath(options.worktreePath)}`
-      : repository.id.toString(),
-    repository,
-    needsDisambiguation:
-      ((groupNames.get(title) ?? 0) > 1 && group.kind === 'enterprise') ||
-      ((allNames.get(title) ?? 0) > 1 && group.kind === 'recent'),
-    aheadBehind: options?.aheadBehind ?? repoState?.aheadBehind ?? null,
-    changedFilesCount:
-      options?.changedFilesCount ?? repoState?.changedFilesCount ?? 0,
-    branchName:
-      options?.branchName ??
-      repoState?.branchName ??
-      (startupWorktreeEntry
-        ? getBranchNameForWorktree(startupWorktreeEntry)
-        : null),
-    defaultBranchName,
-    isNestedWorktree,
-    mainWorktreeName,
-    isVirtualLinkedWorktree,
-    isPrunableWorktree: rowWorktree?.isPrunable ?? false,
-    worktreePath: options?.worktreePath ?? null,
-    sourceRepository: options?.sourceRepository ?? parentRepository,
-    worktree: rowWorktree,
-  }
-}
-
-function appendVirtualWorktreeRows(
-  items: IRepositoryListItem[],
-  group: RepositoryListGroup,
-  repository: Repository,
-  sourceRepository: Repository,
-  localRepositoryStateLookup: ReadonlyMap<number, ILocalRepositoryState>,
-  groupNames: ReadonlyMap<string, number>,
-  allNames: ReadonlyMap<string, number>,
-  repositoryByPath: ReadonlyMap<string, Repository>,
-  storedRepositoryPaths: ReadonlySet<string>,
-  emittedVirtualPaths: Set<string>
-): void {
-  const repoState = localRepositoryStateLookup.get(repository.id)
-  const allWorktrees = repoState?.worktrees ?? []
-  const excludedPaths = new Set<string>([
-    ...storedRepositoryPaths,
-    ...emittedVirtualPaths,
-    normalizePath(repository.path),
-  ])
-  const virtualWorktrees = allWorktrees
-    .filter(
-      worktree =>
-        worktree.type === 'linked' &&
-        !excludedPaths.has(normalizePath(worktree.path))
-    )
+      return buildRepositoryRows(r, repoState, needsDisambiguation)
+    })
     .sort((x, y) =>
-      caseInsensitiveCompare(Path.basename(x.path), Path.basename(y.path))
-    )
-
-  for (const worktree of virtualWorktrees) {
-    const virtualRepositoryPath = normalizePath(worktree.path)
-    const virtualRepository = new Repository(
-      worktree.path,
-      getVirtualRepositoryId(virtualRepositoryPath),
-      sourceRepository.gitHubRepository,
-      false,
-      null,
-      sourceRepository.groupName,
-      sourceRepository.defaultBranch,
-      sourceRepository.workflowPreferences,
-      sourceRepository.customEditorOverride,
-      sourceRepository.gitSourceOverride,
-      sourceRepository.isTutorialRepository,
-      sourceRepository.overrideLogin
-    )
-
-    items.push(
-      buildRepositoryRow(
-        group,
-        virtualRepository,
-        true,
-        true,
-        localRepositoryStateLookup,
-        groupNames,
-        allNames,
-        repositoryByPath,
-        {
-          isVirtualLinkedWorktree: true,
-          worktreePath: worktree.path,
-          sourceRepository,
-          branchName: getBranchNameForWorktree(worktree),
-          changedFilesCount: 0,
-          aheadBehind: null,
-        }
+      caseInsensitiveCompare(
+        getDisplayTitle(x[0].repository),
+        getDisplayTitle(y[0].repository)
       )
     )
-    emittedVirtualPaths.add(virtualRepositoryPath)
+    .flat()
+}
+
+const shortBranchName = (branch: string | null): string | null =>
+  branch ? branch.replace(/^refs\/heads\//, '') : null
+
+/**
+ * Builds the list rows for a single repository: the repository row itself
+ * (representing the main worktree) followed by one row per linked worktree.
+ */
+function buildRepositoryRows(
+  r: Repositoryish,
+  repoState: ILocalRepositoryState | undefined,
+  needsDisambiguation: boolean
+): IRepositoryListItem[] {
+  const title = getDisplayTitle(r)
+  const defaultBranchName = repoState?.defaultBranchName ?? null
+
+  const worktrees = r instanceof Repository ? repoState?.worktrees ?? [] : []
+  const mainWorktree = worktrees.find(wt => wt.type === 'main') ?? null
+
+  const aheadBehind = repoState?.aheadBehind ?? null
+  const changedFilesCount = repoState?.changedFilesCount ?? 0
+  const isMainWorktreeActive =
+    mainWorktree === null || mainWorktree.path === r.path
+  const mainWorktreeText =
+    r instanceof Repository ? [title, nameOf(r)] : [title]
+
+  const mainWorktreeRow: IRepositoryListItem = {
+    text: mainWorktreeText,
+    id: r.id.toString(),
+    repository: r,
+    needsDisambiguation,
+    aheadBehind: isMainWorktreeActive ? aheadBehind : null,
+    changedFilesCount: isMainWorktreeActive ? changedFilesCount : 0,
+    branchName: mainWorktree
+      ? shortBranchName(mainWorktree.branch)
+      : repoState?.branchName ?? null,
+    defaultBranchName,
+    worktree: mainWorktree,
   }
+
+  // Linked worktree rows match the same filter text as their repository so they travel with it
+  const linkedWorktreeRows = worktrees
+    .filter(wt => wt.type === 'linked')
+    .map((wt): IRepositoryListItem => {
+      const isActiveWorktree = wt.path === r.path
+      return {
+        text: [Path.basename(wt.path)],
+        id: `${r.id}:${wt.path}`,
+        repository: r,
+        needsDisambiguation: false,
+        aheadBehind: isActiveWorktree ? aheadBehind : null,
+        changedFilesCount: isActiveWorktree ? changedFilesCount : 0,
+        branchName: shortBranchName(wt.branch),
+        defaultBranchName,
+        worktree: wt,
+      }
+    })
+
+  return [mainWorktreeRow, ...linkedWorktreeRows]
 }
 
 /**

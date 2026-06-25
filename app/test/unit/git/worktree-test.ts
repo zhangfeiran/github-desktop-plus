@@ -1,5 +1,4 @@
 import {
-  findWorktreeEntryForBranchRef,
   getMainWorktreePath,
   getRepositoryType,
   listWorktrees,
@@ -319,93 +318,6 @@ describe('git/worktree', () => {
         process.platform === 'win32'
           ? '\\\\wsl.localhost\\Ubuntu\\home\\frz\\mscli.worktrees\\v0.1-tool'
           : worktreePath
-      )
-    })
-  })
-
-  describe('findWorktreeEntryForBranchRef', () => {
-    it('finds the other worktree using the branch ref', () => {
-      const worktrees = parseWorktreePorcelainOutput(
-        [
-          [
-            'worktree /path/to/repo',
-            'HEAD abc1234abc1234abc1234abc1234abc1234abc123',
-            'branch refs/heads/main',
-          ].join('\0'),
-          [
-            'worktree /path/to/linked',
-            'HEAD def5678def5678def5678def5678def5678def567',
-            'branch refs/heads/feature',
-          ].join('\0'),
-        ].join('\0\0') + '\0'
-      )
-
-      const worktree = findWorktreeEntryForBranchRef(
-        worktrees,
-        'refs/heads/feature',
-        '/path/to/repo'
-      )
-
-      assert.strictEqual(worktree?.path, Path.normalize('/path/to/linked'))
-    })
-
-    it('finds the main worktree when the current path is linked', () => {
-      const worktrees = parseWorktreePorcelainOutput(
-        [
-          [
-            'worktree /path/to/repo',
-            'HEAD abc1234abc1234abc1234abc1234abc1234abc123',
-            'branch refs/heads/main',
-          ].join('\0'),
-          [
-            'worktree /path/to/linked',
-            'HEAD def5678def5678def5678def5678def5678def567',
-            'branch refs/heads/feature',
-          ].join('\0'),
-        ].join('\0\0') + '\0'
-      )
-
-      const worktree = findWorktreeEntryForBranchRef(
-        worktrees,
-        'refs/heads/main',
-        '/path/to/linked'
-      )
-
-      assert.strictEqual(worktree?.path, Path.normalize('/path/to/repo'))
-    })
-
-    it('ignores the current worktree and prunable worktrees', () => {
-      const worktrees = parseWorktreePorcelainOutput(
-        [
-          [
-            'worktree /path/to/repo',
-            'HEAD abc1234abc1234abc1234abc1234abc1234abc123',
-            'branch refs/heads/main',
-          ].join('\0'),
-          [
-            'worktree /path/to/stale',
-            'HEAD def5678def5678def5678def5678def5678def567',
-            'branch refs/heads/feature',
-            'prunable gitdir file points to non-existent location',
-          ].join('\0'),
-        ].join('\0\0') + '\0'
-      )
-
-      assert.strictEqual(
-        findWorktreeEntryForBranchRef(
-          worktrees,
-          'refs/heads/main',
-          '/path/to/repo'
-        ),
-        null
-      )
-      assert.strictEqual(
-        findWorktreeEntryForBranchRef(
-          worktrees,
-          'refs/heads/feature',
-          '/path/to/repo'
-        ),
-        null
       )
     })
   })

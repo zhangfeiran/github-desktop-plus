@@ -168,20 +168,14 @@ export class RepositoriesList extends React.Component<
     (
       repositories: ReadonlyArray<Repositoryish> | null,
       localRepositoryStateLookup: ReadonlyMap<number, ILocalRepositoryState>,
-      recentRepositories: ReadonlyArray<number>,
-      showWorktreesInRepoList: boolean,
-      selectedRepository: Repositoryish | null
+      recentRepositories: ReadonlyArray<number>
     ) =>
       repositories === null
         ? []
         : groupRepositories(
             repositories,
             localRepositoryStateLookup,
-            recentRepositories,
-            {
-              showWorktreesInSidebar: showWorktreesInRepoList,
-              selectedRepository,
-            }
+            recentRepositories
           )
   )
 
@@ -484,9 +478,7 @@ export class RepositoriesList extends React.Component<
     let groups = this.getRepositoryGroups(
       this.props.repositories,
       this.props.localRepositoryStateLookup,
-      this.props.recentRepositories,
-      this.props.showWorktreesInRepoList,
-      this.props.selectedRepository
+      this.props.recentRepositories
     )
 
     if (!this.props.showRecentRepositories) {

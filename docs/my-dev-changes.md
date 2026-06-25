@@ -41,26 +41,6 @@ When enabled, the preference is saved in the repository workflow preferences as
 Fetch and pull commands include `--no-recurse-submodules`. This keeps routine
 repository network updates from recursively touching submodules.
 
-## Worktree improvements
-
-The branch includes several worktree usability changes:
-
-- The repository sidebar can show linked worktrees nested under their main
-  repository.
-- Linked worktrees that are not stored as repositories can appear as virtual
-  sidebar rows and can be selected from the sidebar.
-- Stale or prunable worktree entries are marked and can be pruned from the
-  context menu.
-- Repository context menus include an **Add new worktree** entry when sidebar
-  worktree display is enabled.
-- Linked worktree titles prefer the worktree folder name in the sidebar while
-  the current repository toolbar/window title can still use the main repository
-  name or alias plus the linked worktree suffix.
-- Worktree creation allows creating a worktree from a branch that already
-  exists, where Git permits the requested operation.
-- Cherry-pick and branch-switch flows account for branches checked out in other
-  worktrees.
-
 ## Gitee and GitCode remotes
 
 `my-dev` recognizes `gitee.com` and `gitcode.com` remotes as supported hosting
@@ -126,6 +106,6 @@ Focused unit coverage was added or updated for:
 - WSL trampoline environment behavior.
 - Git checkout, pull, reset, worktree, log, and diff behavior.
 - Gitee and GitCode endpoint mapping and remote parsing.
-- Repository matching and linked worktree grouping.
+- WSL-aware worktree path translation and operations.
 - History author/committer search parsing and matching.
 - Progress parsing and model type guards.

@@ -238,7 +238,6 @@ import {
   getPinnedRepositories,
   removePinnedRepository,
 } from '../lib/stores/repository-pinning'
-import { normalizePath } from '../lib/helpers/path'
 import { WorktreeEntry } from '../models/worktree'
 
 const MinuteInMilliseconds = 1000 * 60
@@ -1168,7 +1167,10 @@ export class App extends React.Component<IAppProps, IAppState> {
   private getWindowTitle(state: IAppState = this.state): string {
     const repository = state.selectedState?.repository
     if (repository) {
-      const repositoryTitle = this.getCurrentRepositoryTitle(repository, state)
+      const repositoryTitle =
+        repository instanceof Repository
+          ? repository.alias ?? repository.name
+          : repository.name
       return `${repositoryTitle} - Desktop Plus`
     }
 
@@ -3595,12 +3597,12 @@ export class App extends React.Component<IAppProps, IAppState> {
     let icon: OcticonSymbol
     let title: string
     if (repository) {
+      const alias = repository instanceof Repository ? repository.alias : null
       icon = iconForRepository(repository)
-      title =
-        this.getCurrentRepositoryTitle(repository) +
-        (selection?.type === SelectionType.Repository
-          ? this.getWorktreeSuffix(repository, selection.state.worktrees)
-          : '')
+      title = alias ?? repository.name
+      if (selection?.type === SelectionType.Repository) {
+        title += this.getWorktreeSuffix(repository, selection.state.worktrees)
+      }
     } else if (this.state.repositories.length > 0) {
       icon = octicons.repo
       title = __DARWIN__ ? 'Select a Repository' : 'Select a repository'
@@ -3647,28 +3649,6 @@ export class App extends React.Component<IAppProps, IAppState> {
         enableFocusTrap={enableFocusTrap}
       />
     )
-  }
-
-  private getCurrentRepositoryTitle(
-    repository: Repository | CloningRepository,
-    state: IAppState = this.state
-  ): string {
-    if (!(repository instanceof Repository)) {
-      return repository.name
-    }
-
-    if (!repository.isLinkedWorktree) {
-      return repository.alias ?? repository.name
-    }
-
-    const mainRepository = matchExistingRepository(
-      state.repositories,
-      repository.mainWorktreePath
-    )
-
-    return mainRepository instanceof Repository
-      ? mainRepository.alias ?? mainRepository.name
-      : repository.alias ?? repository.name
   }
 
   private getWorktreeSuffix(
@@ -3719,16 +3699,12 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
 
     const onPinRepository = (repository: Repository) => {
-      for (const r of this.getWorktreeFamily(repository)) {
-        addPinnedRepository(r)
-      }
+      addPinnedRepository(repository)
       this.forceUpdate()
     }
 
     const onUnpinRepository = (repository: Repository) => {
-      for (const r of this.getWorktreeFamily(repository)) {
-        removePinnedRepository(r)
-      }
+      removePinnedRepository(repository)
       this.forceUpdate()
     }
 
@@ -3776,21 +3752,6 @@ export class App extends React.Component<IAppProps, IAppState> {
     })
 
     showContextualMenu(items)
-  }
-
-  private getWorktreeFamily(repository: Repository): ReadonlyArray<Repository> {
-    const mainPath = normalizePath(
-      repository.isLinkedWorktree
-        ? repository.mainWorktreePath
-        : repository.path
-    )
-    return this.state.repositories.filter(
-      (r): r is Repository =>
-        r instanceof Repository &&
-        (normalizePath(r.path) === mainPath ||
-          (r.isLinkedWorktree &&
-            normalizePath(r.mainWorktreePath) === mainPath))
-    )
   }
 
   private renderPushPullToolbarButton() {
@@ -4018,6 +3979,13 @@ export class App extends React.Component<IAppProps, IAppState> {
 
     const isOpen =
       currentFoldout !== null && currentFoldout.type === FoldoutType.Worktree
+
+    // Only show the worktree dropdown when there are linked worktrees or if the
+    // foldout is open. This allows the user to create a worktree from the app
+    // menu even when there are no worktrees.
+    if (worktrees.length <= 1 && !isOpen) {
+      return null
+    }
 
     const repository = selection.repository
 
