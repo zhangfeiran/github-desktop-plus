@@ -139,6 +139,12 @@ interface ISectionFilterListProps<T extends IFilterListItem, GroupIdentifier> {
   /** Called when the filter text is changed by the user */
   readonly onFilterTextChanged?: (text: string) => void
 
+  /** A function to post-process the filtered items before rendering them. */
+  // eslint-disable-next-line react/no-unused-prop-types
+  readonly postProcessMatches?: (
+    items: readonly IMatch<T>[]
+  ) => ReadonlyArray<IMatch<T>>
+
   /**
    * Whether or not the filter list should allow selection
    * and filtering. Defaults to false.
@@ -676,11 +682,19 @@ export class SectionFilterList<
         return event.preventDefault()
       }
 
-      const row = findNextSelectableRow(
-        rowCount,
-        { direction: 'down', row: InvalidRowIndexPath },
-        this.canSelectRow
-      )
+      // Honoring the selection matters when postProcessMatches injects a non-matched row above it (e.g. a synthetic
+      // worktree header), which would otherwise be picked as the first row.
+      const selectedRow = this.state.selectedRow
+      const useSelectedRow =
+        !rowIndexPathEquals(selectedRow, InvalidRowIndexPath) &&
+        this.canSelectRow(selectedRow)
+      const row = useSelectedRow
+        ? selectedRow
+        : findNextSelectableRow(
+            rowCount,
+            { direction: 'down', row: InvalidRowIndexPath },
+            this.canSelectRow
+          )
 
       if (row != null) {
         this.onRowClick(row, { kind: 'keyboard', event })
@@ -709,6 +723,31 @@ function getFirstVisibleRow<T extends IFilterListItem, GroupIdentifier>(
   }
 
   return InvalidRowIndexPath
+}
+
+/** Whether a row's match carries any highlights, i.e. it matched the filter. */
+function hasMatchHighlights(matches: IMatches): boolean {
+  return matches.title.length > 0 || matches.subtitle.length > 0
+}
+
+/**
+ * Returns the first row that actually matched the filter, i.e. the first item
+ * row carrying match highlights.
+ */
+function getFirstMatchingRow<T extends IFilterListItem, GroupIdentifier>(
+  rows: ReadonlyArray<ReadonlyArray<IFilterListRow<T, GroupIdentifier>>>
+): RowIndexPath {
+  for (let i = 0; i < rows.length; i++) {
+    const groupRows = rows[i]
+    for (let j = 0; j < groupRows.length; j++) {
+      const row = groupRows[j]
+      if (row.kind === 'item' && hasMatchHighlights(row.matches)) {
+        return { section: i, row: j }
+      }
+    }
+  }
+
+  return getFirstVisibleRow(rows)
 }
 
 function createStateUpdate<T extends IFilterListItem, GroupIdentifier>(
@@ -742,7 +781,10 @@ function createStateUpdate<T extends IFilterListItem, GroupIdentifier>(
       groupRows.push({ kind: 'group', identifier: group.identifier })
     }
 
-    for (const { item, matches } of items) {
+    const postProcessedItems = props.postProcessMatches
+      ? props.postProcessMatches(items)
+      : items
+    for (const { item, matches } of postProcessedItems) {
       if (selectedItem && item.id === selectedItem.id) {
         selectedRow = {
           section,
@@ -757,10 +799,19 @@ function createStateUpdate<T extends IFilterListItem, GroupIdentifier>(
     section++
   }
 
-  if (selectedRow.row < 0 && filter.length) {
+  if (filter.length) {
+    // While filtering, the selection must land on a row that actually matched.
     // If the selected item isn't in the list (e.g., filtered out), then
     // select the first visible item.
-    selectedRow = getFirstVisibleRow(rows)
+    const selected =
+      selectedRow.row >= 0 ? rows[selectedRow.section][selectedRow.row] : null
+    if (
+      selected === null ||
+      selected.kind !== 'item' ||
+      !hasMatchHighlights(selected.matches)
+    ) {
+      selectedRow = getFirstMatchingRow(rows)
+    }
   }
 
   // Stay true if already set, otherwise become true if the filter has content

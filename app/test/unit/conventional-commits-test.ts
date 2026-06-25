@@ -9,7 +9,8 @@ describe('parseConventionalCommit', () => {
       rawType: 'feat',
       label: 'Feat',
       scope: null,
-      rest: 'add a new button',
+      leftSideText: '',
+      rightSideText: 'add a new button',
     })
   })
 
@@ -19,7 +20,8 @@ describe('parseConventionalCommit', () => {
       rawType: 'fix',
       label: 'Fix',
       scope: 'parser',
-      rest: 'handle empty input',
+      leftSideText: '',
+      rightSideText: 'handle empty input',
     })
   })
 
@@ -73,21 +75,19 @@ describe('parseConventionalCommit', () => {
 
   it('tolerates extra whitespace after the colon', () => {
     assert.strictEqual(
-      parseConventionalCommit('docs:    update readme')?.rest,
+      parseConventionalCommit('docs:    update readme')?.rightSideText,
       'update readme'
     )
   })
 
   it('tolerates leading whitespace before the type', () => {
-    assert.deepStrictEqual(
-      parseConventionalCommit(' fix: LC-9677 - cache languages'),
-      {
-        rawType: 'fix',
-        label: 'Fix',
-        scope: null,
-        rest: 'LC-9677 - cache languages',
-      }
-    )
+    assert.deepStrictEqual(parseConventionalCommit(' fix: cache languages'), {
+      rawType: 'fix',
+      label: 'Fix',
+      scope: null,
+      leftSideText: '',
+      rightSideText: 'cache languages',
+    })
     assert.strictEqual(
       parseConventionalCommit('\tfeat: add thing')?.label,
       'Feat'
@@ -99,13 +99,15 @@ describe('parseConventionalCommit', () => {
       rawType: 'note',
       label: 'note',
       scope: null,
-      rest: 'heads up',
+      leftSideText: '',
+      rightSideText: 'heads up',
     })
-    assert.deepStrictEqual(parseConventionalCommit('merge: a branch'), {
-      rawType: 'merge',
-      label: 'merge',
+    assert.deepStrictEqual(parseConventionalCommit('abcde: a thing'), {
+      rawType: 'abcde',
+      label: 'abcde',
       scope: null,
-      rest: 'a branch',
+      leftSideText: '',
+      rightSideText: 'a thing',
     })
   })
 
@@ -114,14 +116,62 @@ describe('parseConventionalCommit', () => {
       rawType: 'feat',
       label: 'Feat',
       scope: null,
-      rest: 'capitalized',
+      leftSideText: '',
+      rightSideText: 'capitalized',
     })
     assert.deepStrictEqual(parseConventionalCommit('FIX(API)!: shouting'), {
       rawType: 'fix',
       label: 'Fix!',
       scope: 'API',
-      rest: 'shouting',
+      leftSideText: '',
+      rightSideText: 'shouting',
     })
+  })
+
+  it('badges the conventional commit nested after a Merge prefix', () => {
+    assert.deepStrictEqual(
+      parseConventionalCommit('Merge test(abc): isolate the verification flow'),
+      {
+        rawType: 'test',
+        label: 'Test',
+        scope: 'abc',
+        leftSideText: 'Merge ',
+        rightSideText: 'isolate the verification flow',
+      }
+    )
+  })
+
+  it('keeps the Revert prefix and opening quote as left side text', () => {
+    assert.deepStrictEqual(parseConventionalCommit('Revert "feat: a thing"'), {
+      rawType: 'feat',
+      label: 'Feat',
+      scope: null,
+      leftSideText: 'Revert "',
+      rightSideText: 'a thing"',
+    })
+  })
+
+  it('badges the conventional commit nested after a quoted Reapply prefix', () => {
+    assert.deepStrictEqual(
+      parseConventionalCommit(
+        'Reapply " fix: don\'t cache empty commerce languages"'
+      ),
+      {
+        rawType: 'fix',
+        label: 'Fix',
+        scope: null,
+        leftSideText: 'Reapply "',
+        rightSideText: 'don\'t cache empty commerce languages"',
+      }
+    )
+  })
+
+  it('does not badge Merge/Revert/Reapply commits without a nested type', () => {
+    assert.strictEqual(parseConventionalCommit("Merge branch 'main'"), null)
+    assert.strictEqual(
+      parseConventionalCommit('Revert "an unconventional commit"'),
+      null
+    )
   })
 
   it('returns null for non-conventional summaries', () => {

@@ -137,7 +137,12 @@ export class RepositoryListItem extends React.Component<
           symbol={octicons.fileDirectory}
         />
 
-        <div className="name">{Path.basename(worktree.path)}</div>
+        <div className="name">
+          <HighlightText
+            text={Path.basename(worktree.path)}
+            highlight={this.props.matches.title}
+          />
+        </div>
 
         {renderBranchNameBadge(this.props.branchName)}
 

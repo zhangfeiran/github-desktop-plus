@@ -193,7 +193,7 @@ export class CommitListItem extends React.PureComponent<
       <RichText
         className={summaryClassNames}
         emoji={this.props.emoji}
-        text={parsed === null ? commitSummary : parsed.rest}
+        text={parsed === null ? commitSummary : parsed.rightSideText}
         renderUrlsAsLinks={false}
       />
     )
@@ -204,6 +204,11 @@ export class CommitListItem extends React.PureComponent<
 
     return (
       <div className="summary-with-badge">
+        {parsed.leftSideText !== '' && (
+          <span className="conventional-commit-prefix">
+            {parsed.leftSideText}
+          </span>
+        )}
         <ConventionalCommitBadge parsed={parsed} />
         {richText}
       </div>

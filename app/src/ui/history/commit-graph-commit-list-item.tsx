@@ -69,10 +69,15 @@ class CommitGraphSummary extends React.PureComponent<ICommitGraphSummaryProps> {
         tooltip={text}
         onlyWhenOverflowed={true}
       >
-        {parsed !== null && <ConventionalCommitBadge parsed={parsed} />}
+        {parsed?.leftSideText && (
+          <span className="conventional-commit-prefix">
+            {parsed.leftSideText}
+          </span>
+        )}
+        {parsed && <ConventionalCommitBadge parsed={parsed} />}
         {commitGraph_renderSummaryTokens(
           emoji,
-          parsed === null ? text : parsed.rest
+          parsed ? parsed.rightSideText : text
         )}
       </TooltippedContent>
     )

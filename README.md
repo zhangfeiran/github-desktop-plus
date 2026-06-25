@@ -50,6 +50,8 @@ This is an **up-to-date** fork of [GitHub Desktop](https://desktop.github.com) w
 
 - Allow showing the effective **Git name and email** used for commits more prominently above the commit message input.
 
+- Fully disables all the GitHub/Microsoft telemetry from the app.
+
 ### Repositories list:
 
 - "**Pull all**" button to fetch and pull all your repositories at once.
