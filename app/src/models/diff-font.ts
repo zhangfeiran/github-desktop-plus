@@ -44,6 +44,10 @@ export async function getAvailableDiffFontFamilies(): Promise<
     return availableDiffFontFamiliesPromise
   }
 
+  // This is a slow, blocking operation.
+  // Yield to the event loop first so that the Appearance settings page can fully render.
+  await new Promise(resolve => setTimeout(resolve, 0))
+
   availableDiffFontFamiliesPromise = (async () => {
     const families = await getInstalledMonospaceFontFamilies()
     return [

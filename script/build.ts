@@ -57,10 +57,10 @@ import { verifyInjectedSassVariables } from './validate-sass/validate-all'
 // Always use ad-hoc code signing ('-'), even for published builds, to avoid "app is damaged" error.
 // This is the friendliest non-paid option.
 // https://wiki.freepascal.org/Code_Signing_for_macOS#Ad_hoc_signing
-const isGitHubDesktopPlus = true
+const isDesktopPlus = true
 const isPublishableBuild = isPublishable()
 const isDevelopmentBuild = getChannel() === 'development'
-const useAdHocSigning = isGitHubDesktopPlus || isDevelopmentBuild
+const useAdHocSigning = isDesktopPlus || isDevelopmentBuild
 const shouldSkipPackaging = process.env.DESKTOP_SKIP_PACKAGE === '1'
 
 const projectRoot = path.join(__dirname, '..')
@@ -479,7 +479,7 @@ function generateLicenseMetadata(outRoot: string) {
   )
 
   const licenseText = readFileSync(chooseALicenseLicense, 'utf8')
-  const licenseWithHeader = `GitHub Desktop uses licensing information provided by choosealicense.com.
+  const licenseWithHeader = `Desktop Plus uses licensing information provided by choosealicense.com.
 
 The bundle in available-licenses.json has been generated from a source list provided at https://github.com/github/choosealicense.com, which is made available under the below license:
 
@@ -506,16 +506,20 @@ function getNotarizationOptions(): OsxNotarizeOptions | undefined {
 }
 
 function copyCopilotDependency() {
+  const currentPlatform = process.platform
+  const currentArch = getDistArchitecture()
+
+  // The @github/copilot package now uses platform-specific optional
+  // dependencies (e.g. @github/copilot-darwin-arm64) that already contain only
+  // the binaries for the target platform, so we copy the appropriate one
+  // directly instead of the base @github/copilot package.
   const copilotPkgDir = path.resolve(
     projectRoot,
-    `app/node_modules/@github/copilot`
+    `app/node_modules/@github/copilot-${currentPlatform}-${currentArch}`
   )
 
   const copilotDestination = path.resolve(outRoot, 'copilot')
   removeAndCopy(copilotPkgDir, copilotDestination)
-
-  const currentPlatform = process.platform
-  const currentArch = getDistArchitecture()
 
   // Platforms and architectures to remove from prebuild directories. This is
   // an exhaustive list of all non-current platforms rather than an allowlist,
@@ -585,6 +589,10 @@ function copyCopilotDependency() {
   ]
 
   for (const prebuildsDir of prebuildsDirs) {
+    if (!existsSync(prebuildsDir)) {
+      continue
+    }
+
     const prebuilds = readdirSync(prebuildsDir)
     for (const prebuild of prebuilds) {
       const shouldRemove =
@@ -601,8 +609,11 @@ function copyCopilotDependency() {
     }
   }
 
-  // mxc cleanup
+  // mxc cleanup (only if the mxc-bin directory exists in this copilot version)
   const mxcDir = path.join(copilotDestination, 'mxc-bin')
+  if (!existsSync(mxcDir)) {
+    return
+  }
   // Read subdirs, delete the one that has a name that is not a valid architecture
   const mxcSubdirs = readdirSync(mxcDir)
   for (const subdir of mxcSubdirs) {
@@ -618,6 +629,9 @@ function copyCopilotDependency() {
   // - on macOS, delete exe and dll files and also linux-test-proxy and lxc-exec
   // - on Linux, delete exe and dll files and also mxc-exec-mac
   const mxcArchSubdirPath = path.join(mxcDir, currentArch)
+  if (!existsSync(mxcArchSubdirPath)) {
+    return
+  }
   const mxcFiles = readdirSync(mxcArchSubdirPath)
   const isWindowsBinary = (file: string) =>
     file.endsWith('.exe') || file.endsWith('.dll')

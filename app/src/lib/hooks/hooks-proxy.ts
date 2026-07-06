@@ -1,14 +1,19 @@
-import { basename, join, resolve } from 'path'
+import { execFile } from 'child_process'
+import { basename, join } from 'path'
 import { ProcessProxyConnection as Connection } from 'process-proxy'
 import type { HookCallbackOptions } from '../git'
-import { resolveGitExecPath } from 'dugite'
 import { ShellEnvResult } from './get-shell-env'
 import { shellFriendlyNames } from './config'
 import { Writable } from 'stream'
-import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { promisify } from 'util'
+import memoizeOne from 'memoize-one'
+import which from 'which'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { spawnGitProcess } from '../git/process'
 import { getRepositoryGitSource } from '../git/source'
+
+const execFileAsync = promisify(execFile)
 
 const ignoredOnFailureHooks = [
   'post-applypatch',
@@ -78,16 +83,86 @@ const readStdin = (stream: NodeJS.ReadableStream) =>
     stream.on('error', reject)
   })
 
-const createStdinFile = (content: Buffer) => {
-  const dir = mkdtempSync(join(tmpdir(), 'github-desktop-hooks-'))
+const createStdinFile = async (content: Buffer) => {
+  const dir = await mkdtemp(join(tmpdir(), 'desktop-plus-hooks-'))
   const filePath = join(dir, 'stdin.txt')
 
-  writeFileSync(filePath, content)
+  await writeFile(filePath, content)
 
   return {
     filePath,
-    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    cleanup: () => rm(dir, { recursive: true, force: true }),
   }
+}
+
+const memoizedGetExecPathFromGit = memoizeOne(
+  (systemGitPath: string, env: Record<string, string | undefined>) =>
+    execFileAsync(systemGitPath, ['--exec-path'], { env })
+      .then(({ stdout }) => stdout.replace(/\r?\n$/, ''))
+      .catch(err => {
+        debug(`Failed to get GIT_EXEC_PATH from Git`, err)
+        return undefined
+      }),
+  // memoize-one invokes this equality function once per argument as
+  // (newArg, lastArg), not with the full argument arrays. The first argument
+  // is the path to the Git binary (a string) and the second is the
+  // environment object.
+  //
+  // git --exec-path is only affected by the GIT_EXEC_PATH environment
+  // variable. If that's not set it'll only spit out compile time constants so
+  // we can memoize it based on just the path to the Git binary and the value
+  // of GIT_EXEC_PATH. Note that theoretically this could mean that Apple ships
+  // a new version of Git which has a different compile time GIT_EXEC_PATH but
+  // that should be rare enough that we can get away with not worrying about
+  // cache invalidation here.
+  (a, b) =>
+    typeof a === 'string' ? a === b : a?.GIT_EXEC_PATH === b?.GIT_EXEC_PATH
+)
+
+// We're invoking our own built-in Git binary here (git hook run) because we
+// can't be certain that the user's Git binary is new enough to support the
+// hook run command. Unfortunately this means that our own Git binary will
+// set GIT_EXEC_PATH before invoking the hook
+// (https://github.com/git/git/blob/26d8d94e94df5535eecd036f16627493506a0614/exec-cmd.c#L313)
+// and since our internal Git is built without a prefix this means it'll set
+// GIT_EXEC_PATH to //libexec/git-core which won't exist. So we'll need to
+// manually set GIT_EXEC_PATH to the system Git's exec path if it's not
+// already set in the shell environment.
+const ensureGitExecPathEnv = async (shellEnv: ShellEnvResult) => {
+  if (shellEnv.kind !== 'success' || shellEnv.env.GIT_EXEC_PATH) {
+    return shellEnv
+  }
+
+  // PATH is uppercase on most platforms but isn't guaranteed to be on Windows
+  // (e.g. cmd/PowerShell may store it as Path), and shellEnv.env is a plain,
+  // case-sensitive object so we look it up case-insensitively here.
+  const pathEnv =
+    shellEnv.env.PATH ??
+    Object.entries(shellEnv.env).find(
+      ([key]) => key.toUpperCase() === 'PATH'
+    )?.[1]
+
+  if (pathEnv) {
+    const systemGitPath = await which('git', { path: pathEnv }).catch(
+      () => undefined
+    )
+
+    if (!systemGitPath) {
+      debug('Failed to find system git in PATH')
+      return shellEnv
+    }
+    const execPath = await memoizedGetExecPathFromGit(
+      systemGitPath,
+      shellEnv.env
+    )
+
+    if (execPath) {
+      debug(`Setting GIT_EXEC_PATH from system git (${execPath})`)
+      return { ...shellEnv, env: { ...shellEnv.env, GIT_EXEC_PATH: execPath } }
+    }
+  }
+
+  return shellEnv
 }
 
 export const createHooksProxy = (
@@ -129,7 +204,7 @@ export const createHooksProxy = (
     }
 
     const stdinFile = hasStdin
-      ? createStdinFile(await readStdin(conn.stdin))
+      ? await createStdinFile(await readStdin(conn.stdin))
       : null
 
     const args = [
@@ -146,13 +221,15 @@ export const createHooksProxy = (
     ]
 
     const terminalOutput: Buffer[] = []
-    const gitDir = resolve(__dirname, 'git')
-    const gitExecPath = resolveGitExecPath(gitDir)
     const gitSource = getRepositoryGitSource(proxyCwd)
-    const shellEnv: ShellEnvResult =
+    const baseShellEnv: ShellEnvResult =
       gitSource.kind === 'wsl'
         ? { kind: 'success', env: {} }
         : await getShellEnv(proxyCwd)
+    const shellEnv =
+      gitSource.kind === 'bundled'
+        ? await ensureGitExecPathEnv(baseShellEnv)
+        : baseShellEnv
 
     if (shellEnv.kind === 'failure') {
       let errMsg = `Failed to load shell environment for hook ${hookName}.`
@@ -179,18 +256,9 @@ export const createHooksProxy = (
       conn.on('close', abort)
 
       const child = spawnGitProcess(args, proxyCwd, {
-        // GITHUB_DESKTOP lets hooks know they're run from GitHub Desktop.
-        // See https://github.com/desktop/desktop/issues/19001
         env: {
           ...shellEnv.env,
           ...safeEnv,
-          // The bundled Git can't resolve its own exec-path when spawned this
-          // way (it reports "//libexec/git-core"), so set it explicitly. Native
-          // Git prepends GIT_EXEC_PATH to the hook's PATH, which is what makes
-          // the bundled git-lfs (and git) findable from inside the hook. This
-          // matters most in sandboxed builds (e.g. Flatpak) where no system
-          // git-lfs exists on PATH to fall back on.
-          GIT_EXEC_PATH: gitExecPath,
           // GITHUB_DESKTOP lets hooks know they're run from GitHub Desktop.
           // See https://github.com/desktop/desktop/issues/19001
           GITHUB_DESKTOP: '1',

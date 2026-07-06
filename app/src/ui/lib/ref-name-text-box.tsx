@@ -172,6 +172,7 @@ export class RefNameTextBox extends React.Component<
         ariaLabelledBy={this.props.ariaLabelledBy}
         ariaDescribedBy={ariaDescribedBy}
         onValueChanged={this.onValueChange}
+        onKeyDown={this.props.onKeyDown}
         onBlur={this.onBlur}
       />
     )

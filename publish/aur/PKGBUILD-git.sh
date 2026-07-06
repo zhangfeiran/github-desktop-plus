@@ -5,16 +5,18 @@
 # Contributor: Igor Petrov
 # Contributor: Jiawen Geng
 
-_pkgname='github-desktop-plus'
+_pkgname='desktop-plus'
+_old_pkgname='github-desktop-plus'
 pkgname="${_pkgname}-git"
 pkgver=0
 pkgrel=1
-pkgdesc="Fork of GitHub Desktop with extra features and improvements (git version)."
+pkgdesc="GitHub Desktop fork with extra features and improvements (git version)."
 arch=('x86_64' 'aarch64')
-url="https://github.com/pol-rivero/github-desktop-plus"
+url="https://github.com/desktop-plus/desktop-plus"
 license=('MIT')
-provides=(${_pkgname})
-conflicts=(${_pkgname})
+provides=(${_pkgname} ${_old_pkgname})
+conflicts=(${_pkgname} ${_old_pkgname})
+replaces=("${_old_pkgname}-git")
 depends=(curl
          libcurl-gnutls
          git
@@ -33,7 +35,7 @@ makedepends=(python-setuptools
              util-linux
              xorg-server-xvfb
              yarn)
-source=("$pkgname::git+https://github.com/pol-rivero/github-desktop-plus.git"
+source=("$pkgname::git+https://github.com/desktop-plus/desktop-plus.git"
         'git+https://github.com/github/gemoji.git'
         'git+https://github.com/github/gitignore.git'
         'git+https://github.com/github/choosealicense.com.git'
@@ -94,17 +96,19 @@ package() {
         aarch64) suffix="arm64" ;;
         *) echo "Unsupported architecture: $CARCH"; exit 1 ;;
     esac
-    cp -r --preserve=mode "dist/github-desktop-plus-linux-$suffix/"* "$INSTALL_DIR/"
+    cp -r --preserve=mode "dist/desktop-plus-linux-$suffix/"* "$INSTALL_DIR/"
 
     cd "$INSTALL_DIR/resources/app/static/logos"
-    install -Dm0644 "1024x1024.png" "$pkgdir/usr/share/icons/hicolor/1024x1024/apps/${_pkgname}.png"
-    install -Dm0644 "512x512.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/${_pkgname}.png"
-    install -Dm0644 "256x256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/${_pkgname}.png"
+    # Icon is named "gh-desktop-plus" rather than "desktop-plus" to avoid the freedesktop dash-stripping fallback
+    # ('desktop' exists in many icon themes, so that icon would be used instead of ours).
+    install -Dm0644 "1024x1024.png" "$pkgdir/usr/share/icons/hicolor/1024x1024/apps/gh-desktop-plus.png"
+    install -Dm0644 "512x512.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/gh-desktop-plus.png"
+    install -Dm0644 "256x256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/gh-desktop-plus.png"
 
     install -Dm755 "$srcdir/launch-app.sh" "$pkgdir/usr/bin/${_pkgname}"
 
-    chmod +x "$INSTALL_DIR/resources/app/static/github"
-    ln -s "/opt/${_pkgname}/resources/app/static/github" "$pkgdir/usr/bin/github-desktop-plus-cli"
+    chmod +x "$INSTALL_DIR/resources/app/static/desktop-plus-cli"
+    ln -s "/opt/${_pkgname}/resources/app/static/desktop-plus-cli" "$pkgdir/usr/bin/desktop-plus-cli"
 
     install -Dm0644 "$srcdir/${_pkgname}.desktop" "$pkgdir/usr/share/applications/${_pkgname}.desktop"
 }

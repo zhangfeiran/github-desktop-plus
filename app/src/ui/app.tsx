@@ -170,6 +170,7 @@ import { MultiCommitOperation } from './multi-commit-operation/multi-commit-oper
 import { WarnLocalChangesBeforeUndo } from './undo/warn-local-changes-before-undo'
 import { WarnUndoPushedCommit } from './undo/warn-undo-pushed-commit'
 import { WarningBeforeReset } from './reset/warning-before-reset'
+import { WarnResetToPushedCommit } from './reset/warn-reset-to-pushed-commit'
 import { InvalidatedToken } from './invalidated-token/invalidated-token'
 import { MultiCommitOperationKind } from '../models/multi-commit-operation'
 import { AddSSHHost } from './ssh/add-ssh-host'
@@ -207,6 +208,7 @@ import { webUtils } from 'electron'
 import { showTestUI } from './lib/test-ui-components/test-ui-components'
 import { ConfirmCommitFilteredChanges } from './changes/confirm-commit-filtered-changes-dialog'
 import { AboutTestDialog } from './about/about-test-dialog'
+import { TestCLIActionDialog } from './cli-action/test-cli-action-dialog'
 import {
   enableCopilotSdkCommitMessageGeneration,
   enableWorktreeSupport,
@@ -2588,6 +2590,18 @@ export class App extends React.Component<IAppProps, IAppState> {
           />
         )
       }
+      case PopupType.WarnResetToPushedCommit: {
+        const { repository, commit } = popup
+        return (
+          <WarnResetToPushedCommit
+            key="warn-reset-to-pushed-commit"
+            dispatcher={this.props.dispatcher}
+            repository={repository}
+            commit={commit}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
       case PopupType.InvalidatedToken: {
         return (
           <InvalidatedToken
@@ -2878,6 +2892,14 @@ export class App extends React.Component<IAppProps, IAppState> {
             onDismissed={onPopupDismissedFn}
             onShowAcknowledgements={this.showAcknowledgements}
             onShowTermsAndConditions={this.showTermsAndConditions}
+          />
+        )
+      case PopupType.TestCLIAction:
+        return (
+          <TestCLIActionDialog
+            key="test-cli-action"
+            dispatcher={this.props.dispatcher}
+            onDismissed={onPopupDismissedFn}
           />
         )
       case PopupType.PushProtectionError:

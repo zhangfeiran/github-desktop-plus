@@ -214,7 +214,7 @@ export class CopilotPreferences extends React.Component<
         return <p>Checking Copilot access…</p>
       case 'no-license':
         return this.renderAccessCallToAction(
-          'Copilot features in GitHub Desktop require a GitHub Copilot license.',
+          'Copilot features in Desktop Plus require a GitHub Copilot license.',
           'View Copilot plans',
           this.props.onOpenCopilotPlans
         )
@@ -276,7 +276,8 @@ export class CopilotPreferences extends React.Component<
           __DARWIN__
             ? 'Commit Message Generation'
             : 'Commit message generation',
-          this.onCommitMessageModelChanged
+          this.onCommitMessageModelChanged,
+          350
         )}
         <p className="settings-description">
           <LinkButton uri="https://docs.github.com/en/desktop/making-changes-in-a-branch/committing-and-reviewing-changes-to-your-project-in-github-desktop#write-a-commit-message-and-push-your-changes">
@@ -289,7 +290,8 @@ export class CopilotPreferences extends React.Component<
               copilotModels,
               'conflict-resolution',
               __DARWIN__ ? 'Conflict Resolution' : 'Conflict resolution',
-              this.onConflictResolutionModelChanged
+              this.onConflictResolutionModelChanged,
+              280
             )}
             <p className="settings-description">
               Model changes apply to future conflict resolutions.
@@ -317,7 +319,8 @@ export class CopilotPreferences extends React.Component<
     copilotModels: ReadonlyArray<CopilotModel>,
     feature: CopilotFeature,
     label: string,
-    onChange: (model: string) => void
+    onChange: (model: string) => void,
+    maxHeight?: number
   ): JSX.Element {
     const { byokProviders, selectedCopilotModels } = this.props
 
@@ -340,6 +343,7 @@ export class CopilotPreferences extends React.Component<
           byokProviders={byokProviders}
           value={value}
           onChange={onChange}
+          maxHeight={maxHeight}
         />
         {selectionInfo === null ? null : (
           <CopilotModelSelectionInfo

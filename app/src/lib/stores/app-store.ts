@@ -153,6 +153,7 @@ import {
   quitApp,
   sendCancelQuittingSync,
   getMainProcessConfig,
+  getConfigMigrationResult,
   updateMainProcessConfig,
   showOpenDialog,
 } from '../../ui/main-process-proxy'
@@ -521,6 +522,7 @@ const confirmCommitFilteredChangesDefault: boolean = true
 const confirmCommitMessageOverrideDefault: boolean = true
 const confirmWorktreeRemovalDefault: boolean = true
 const askToMoveToApplicationsFolderKey: string = 'askToMoveToApplicationsFolder'
+const configDirMigratedBannerKey: string = 'config-dir-migrated-banner-shown'
 const confirmRepoRemovalKey: string = 'confirmRepoRemoval'
 const showCommitLengthWarningKey: string = 'showCommitLengthWarning'
 const confirmDiscardChangesKey: string = 'confirmDiscardChanges'
@@ -3137,6 +3139,19 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const mainProcessConfig = await getMainProcessConfig()
     this.titleBarStyle = mainProcessConfig.titleBarStyle
     this.hideWindowOnQuit = mainProcessConfig.hideWindowOnQuit
+
+    // If the main process migrated the config directory from a previous app
+    // name during this launch, let the user know with a banner (only once).
+    const migratedFromName = await getConfigMigrationResult()
+    if (migratedFromName !== null && !getBoolean(configDirMigratedBannerKey)) {
+      setBoolean(configDirMigratedBannerKey, true)
+      setTimeout(() => {
+        this._setBanner({
+          type: BannerType.ConfigDirMigrated,
+          migratedFromAppName: migratedFromName,
+        })
+      }, 2000)
+    }
 
     this.lastThankYou = getObject<ILastThankYou>(lastThankYouKey)
 
@@ -6821,9 +6836,19 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<void> {
     const gitStore = this.gitStoreCache.get(repository)
     const repositoryState = this.repositoryStateCache.get(repository)
-    const { changesState } = repositoryState
+    const { changesState, localCommitSHAs } = repositoryState
     const isWorkingDirectoryClean =
       changesState.workingDirectory.files.length === 0
+
+    // Warn the user if they're resetting to a pushed commit
+    const isPushedCommit = !localCommitSHAs.includes(commit.sha)
+    if (showConfirmationDialog && isPushedCommit) {
+      return this._showPopup({
+        type: PopupType.WarnResetToPushedCommit,
+        repository,
+        commit,
+      })
+    }
 
     // Warn the user if there are changes in the working directory
     if (showConfirmationDialog && !isWorkingDirectoryClean) {
@@ -7100,22 +7125,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.statsStore.increment('worktreeSwitchCount')
 
     return result.repository
-  }
-
-  public async _switchWorktreeByPath(
-    repository: Repository,
-    worktreePath: string
-  ): Promise<Repository> {
-    const worktrees = await listWorktrees(repository)
-    const worktree = worktrees.find(w => w.path === worktreePath)
-
-    if (worktree === undefined) {
-      throw new Error(
-        `Could not find a worktree at '${worktreePath}' for repository '${repository.name}'.`
-      )
-    }
-
-    return this._switchWorktree(repository, worktree)
   }
 
   /** This shouldn't be called directly. See 'Dispatcher'. */
@@ -8643,7 +8652,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         if (match === null) {
           this.emitError(
             new ExternalEditorError(
-              `No suitable editors installed for GitHub Desktop to launch. Install ${suggestedExternalEditor.name} for your platform and restart GitHub Desktop to try again.`,
+              `No suitable editors installed for Desktop Plus to launch. Install ${suggestedExternalEditor.name} for your platform and restart Desktop Plus to try again.`,
               { suggestDefaultEditor: true }
             )
           )
@@ -8677,7 +8686,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       if (match === null) {
         this.emitError(
           new ExternalEditorError(
-            `No suitable editors installed for GitHub Desktop to launch. Install ${suggestedExternalEditor.name} for your platform and restart GitHub Desktop to try again.`,
+            `No suitable editors installed for Desktop Plus to launch. Install ${suggestedExternalEditor.name} for your platform and restart Desktop Plus to try again.`,
             { suggestDefaultEditor: true }
           )
         )

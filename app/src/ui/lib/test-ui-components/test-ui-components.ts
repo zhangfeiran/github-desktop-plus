@@ -161,6 +161,8 @@ export function showTestUI(
       return showFakeUpstreamAlreadyExists()
     case 'test-about-dialog':
       return dispatcher.showPopup({ type: PopupType.TestAbout })
+    case 'test-cli-action':
+      return dispatcher.showPopup({ type: PopupType.TestCLIAction })
     default:
       return assertNever(name, `Unknown menu event name: ${name}`)
   }
@@ -337,7 +339,7 @@ export function showTestUI(
   function showTestNoExternalEditor() {
     dispatcher.postError(
       new ExternalEditorError(
-        `No suitable editors installed for GitHub Desktop to launch. Install ${suggestedExternalEditor.name} for your platform and restart GitHub Desktop to try again.`,
+        `No suitable editors installed for Desktop Plus to launch. Install ${suggestedExternalEditor.name} for your platform and restart Desktop Plus to try again.`,
         { suggestDefaultEditor: true }
       )
     )

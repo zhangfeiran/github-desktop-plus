@@ -37,6 +37,7 @@ import {
   getBranches,
   getRebaseSnapshot,
   getRepositoryType,
+  listWorktrees,
 } from '../../lib/git'
 import { isGitOnPath } from '../../lib/is-git-on-path'
 import {
@@ -2326,25 +2327,26 @@ export class Dispatcher {
           existingRepository,
           action.persistSelection ?? true
         )
-      } else {
-        await this.showPopup({ type: PopupType.AddRepository, path })
+        return
       }
-    } else if (action.kind === 'open-worktree') {
-      const { repositories } = this.appStore.getState()
-      const repository = repositories.find(
-        (r): r is Repository =>
-          r instanceof Repository && r.id === action.repositoryId
-      )
 
-      if (repository !== undefined) {
-        await this.appStore
-          ._switchWorktreeByPath(repository, action.worktreePath)
-          .catch(e => this.postError(e))
-      } else {
-        log.warn(
-          `Could not find repository with id ${action.repositoryId} to open worktree`
-        )
+      // Try to locate a repository that has a shared main worktree with the
+      // provided path so that we can switch to the worktree instead of adding
+      // a new repository.
+      const worktrees = await listWorktrees(path).catch(e => {
+        log.error('Could not list worktrees', e)
+        return []
+      })
+      const worktree = matchExistingRepository(worktrees, path)
+      const sharedCommonDirRepository = repositories.find(
+        r => matchExistingRepository(worktrees, r.path) !== undefined
+      )
+      if (worktree && sharedCommonDirRepository instanceof Repository) {
+        await this.switchWorktree(sharedCommonDirRepository, worktree)
+        return
       }
+
+      await this.showPopup({ type: PopupType.AddRepository, path })
     }
   }
 

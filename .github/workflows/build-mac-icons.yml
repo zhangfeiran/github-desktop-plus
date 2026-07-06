@@ -1,0 +1,61 @@
+name: Build macOS icons
+
+# Regenerates the macOS icon assets (icon-logo.icns + Assets.car) from the
+# Icon Composer bundles under app/static/logos/{prod,dev}/icon-logo.icon.
+#
+# These require Apple's `actool` (ships with Xcode), so they can only be built
+# on macOS. Run this workflow manually and download the "mac-icons-*" artifacts,
+# then commit the files into the matching folder.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-icons:
+    name: Compile ${{ matrix.folder }} icons
+    runs-on: macos-26
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        folder: [prod, dev]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode and verify actool
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+          xcrun --find actool
+
+      - name: Compile icon assets
+        working-directory: app/static/logos/${{ matrix.folder }}
+        run: |
+          set -euxo pipefail
+          rm -f Assets.car icon-logo.icns
+          OUTDIR="$(mktemp -d)"
+          xcrun actool "icon-logo.icon" --compile "$OUTDIR" \
+            --output-format human-readable-text \
+            --notices --warnings --errors \
+            --output-partial-info-plist "$OUTDIR/Info.plist" \
+            --app-icon icon-logo \
+            --include-all-app-icons \
+            --enable-on-demand-resources NO \
+            --development-region en \
+            --target-device mac \
+            --minimum-deployment-target 26.0 \
+            --platform macosx
+          mv "$OUTDIR/Assets.car" ./
+          mv "$OUTDIR/icon-logo.icns" ./
+          rm -rf "$OUTDIR"
+          ls -l Assets.car icon-logo.icns
+
+      - name: Upload icons
+        uses: actions/upload-artifact@v7
+        with:
+          name: mac-icons-${{ matrix.folder }}
+          path: |
+            app/static/logos/${{ matrix.folder }}/Assets.car
+            app/static/logos/${{ matrix.folder }}/icon-logo.icns
+          if-no-files-found: error

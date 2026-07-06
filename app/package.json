@@ -1,27 +1,27 @@
 {
   "$NOTE": "NOTE: Do not edit the 'version' field, as that will cause merge conflicts with upstream. The version is set using env.APP_VERSION.",
-  "name": "github-desktop-plus",
-  "desktopName": "github-desktop-plus",
-  "productName": "GitHub Desktop Plus",
-  "bundleID": "com.polrivero.GitHubDesktopPlus",
-  "companyName": "Pol Rivero",
-  "version": "3.5.13-beta4",
+  "name": "desktop-plus",
+  "desktopName": "desktop-plus.desktop",
+  "productName": "Desktop Plus",
+  "bundleID": "org.desktop-plus.DesktopPlus",
+  "companyName": "Desktop Plus",
+  "version": "3.6.3-beta1",
   "main": "./main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pol-rivero/github-desktop-plus.git"
+    "url": "https://github.com/desktop-plus/desktop-plus.git"
   },
   "description": "Simple collaboration from your desktop",
   "author": {
-    "name": "Pol Rivero",
-    "email": "github-desktop-plus@polrivero.com",
-    "url": "https://desktop.github.com/"
+    "name": "Desktop Plus",
+    "email": "admin@desktop-plus.org",
+    "url": "https://desktop-plus.org/"
   },
   "license": "MIT",
   "dependencies": {
     "@floating-ui/react-dom": "^2.1.2",
     "@github/alive-client": "^1.2.0",
-    "@github/copilot-sdk": "^1.0.0",
+    "@github/copilot-sdk": "^1.0.3",
     "@xterm/xterm": "^5.5.0",
     "app-path": "^3.3.0",
     "byline": "^5.0.0",
@@ -38,7 +38,7 @@
     "desktop-notifications": "file:../vendor/desktop-notifications",
     "desktop-trampoline": "file:../vendor/desktop-trampoline",
     "dexie": "^3.2.3",
-    "dompurify": "^3.4.0",
+    "dompurify": "^3.4.11",
     "dugite": "^3.2.2",
     "electron-window-state": "^5.0.3",
     "event-kit": "^2.0.0",

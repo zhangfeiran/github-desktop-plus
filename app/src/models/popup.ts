@@ -87,6 +87,7 @@ export enum PopupType {
   WarnLocalChangesBeforeUndo = 'WarnLocalChangesBeforeUndo',
   WarnUndoPushedCommit = 'WarnUndoPushedCommit',
   WarningBeforeReset = 'WarningBeforeReset',
+  WarnResetToPushedCommit = 'WarnResetToPushedCommit',
   InvalidatedToken = 'InvalidatedToken',
   AddSSHHost = 'AddSSHHost',
   SSHKeyPassphrase = 'SSHKeyPassphrase',
@@ -107,6 +108,7 @@ export enum PopupType {
   ConfirmRestart = 'ConfirmRestart',
   ConfirmCommitFilteredChanges = 'ConfirmCommitFilteredChanges',
   TestAbout = 'TestAbout',
+  TestCLIAction = 'TestCLIAction',
   PushProtectionError = 'PushProtectionError',
   BypassPushProtection = 'BypassPushProtection',
   GenerateCommitMessageOverrideWarning = 'GenerateCommitMessageOverrideWarning',
@@ -403,6 +405,11 @@ export type PopupDetail =
       commit: Commit
     }
   | {
+      type: PopupType.WarnResetToPushedCommit
+      repository: Repository
+      commit: Commit
+    }
+  | {
       type: PopupType.InvalidatedToken
       account: Account
     }
@@ -506,6 +513,9 @@ export type PopupDetail =
     }
   | {
       type: PopupType.TestAbout
+    }
+  | {
+      type: PopupType.TestCLIAction
     }
   | {
       type: PopupType.PushProtectionError

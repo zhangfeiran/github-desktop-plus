@@ -61,9 +61,24 @@ import {
 } from './notifications'
 import parseCommandLineArgs from 'minimist'
 import { CLIAction } from '../lib/cli-action'
+import {
+  getConfigMigrationResult,
+  migrateLegacyConfigDir,
+} from './migrate-config-dir'
+
+// Migrate the config directory from a previous app name (if needed) before
+// anything touches the userData directory.
+migrateLegacyConfigDir()
 
 app.setAppLogsPath()
 enableSourceMaps()
+
+// On Linux, enterprise/self-signed root CAs installed system-wide aren't honored
+// and trigger the "Untrusted server" dialog. Make Chromium also consult the system trust
+// store, aligning it with Git (expands the trust set, doesn't replace it).
+if (__LINUX__) {
+  app.commandLine.appendSwitch('use-system-ca')
+}
 
 const windows = new Map<number, AppWindow>()
 
@@ -127,7 +142,7 @@ if (__DARWIN__) {
 // On Windows, in order to get notifications properly working for dev builds,
 // we'll want to set the right App User Model ID from production builds.
 if (__WIN32__ && __DEV__) {
-  app.setAppUserModelId('com.squirrel.GitHubDesktopPlus.GitHubDesktopPlus')
+  app.setAppUserModelId('com.squirrel.DesktopPlus.DesktopPlus')
 }
 
 app.on('window-all-closed', () => {
@@ -203,7 +218,7 @@ function normalizeRepositoryPath(path: string) {
 function findWindowForRepositoryPath(rawTargetPath: string): AppWindow | null {
   const targetPath = normalizeRepositoryPath(rawTargetPath)
   const allWindows = getAppWindows().filter(w => w.hasSelectedRepositoryPath())
-  const windowsSortedFromMostSpecificToLeast = allWindows.sort(
+  const windowsSortedFromMostSpecificToLeast = allWindows.toSorted(
     (a, b) => b.selectedRepositoryPath.length - a.selectedRepositoryPath.length
   )
 
@@ -659,19 +674,6 @@ app.on('ready', () => {
     })
   })
 
-  ipcMain.on(
-    'open-worktree-in-new-window',
-    (_, repositoryId: number, worktreePath: string) => {
-      createWindow(window => {
-        window.sendCLIAction({
-          kind: 'open-worktree',
-          repositoryId,
-          worktreePath,
-        })
-      })
-    }
-  )
-
   ipcMain.on('set-window-title', (event, title: string) =>
     getAppWindowFromWebContents(event.sender)?.setTitle(title)
   )
@@ -893,6 +895,10 @@ app.on('ready', () => {
   ipcMain.handle('save-guid', (_, guid) => saveGUIDFile(guid))
 
   ipcMain.handle('get-main-process-config', async () => readMainProcessConfig())
+
+  ipcMain.handle('get-config-migration-result', async () =>
+    getConfigMigrationResult()
+  )
 
   ipcMain.handle(
     'update-main-process-config',

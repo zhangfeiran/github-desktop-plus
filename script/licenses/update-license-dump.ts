@@ -80,5 +80,26 @@ export async function updateLicenseDump(
     sourceText: licenseText,
   }
 
+  // The application icon is adapted from Lucide's `git-branch-plus` (ISC).
+  // It's a vendored asset rather than an npm dependency, so legal-eagle does
+  // not pick it up. Inject it manually (like the `desktop` entry above) so the
+  // ISC notice ships in the in-app license screen, since ISC requires the
+  // notice to appear in all copies, including the distributed binaries.
+  const lucideLicensePath = path.join(
+    appRoot,
+    'static',
+    'logos',
+    'LICENSE-lucide'
+  )
+  const lucideLicenseText = await readFile(lucideLicensePath, {
+    encoding: 'utf-8',
+  })
+  summary['lucide-icons'] = {
+    repository: 'https://github.com/lucide-icons/lucide',
+    license: 'ISC',
+    source: 'https://github.com/lucide-icons/lucide/blob/main/LICENSE',
+    sourceText: lucideLicenseText,
+  }
+
   await writeFile(outPath, JSON.stringify(summary), { encoding: 'utf8' })
 }
