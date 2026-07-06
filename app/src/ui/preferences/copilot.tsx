@@ -10,7 +10,6 @@ import { isGHES } from '../../lib/endpoint-capabilities'
 import {
   DefaultCopilotModel,
   DisabledCopilotModel,
-  type CopilotModel,
   type CopilotFeature,
   type CopilotModelSelections,
 } from '../../lib/stores/copilot-store'
@@ -30,10 +29,11 @@ import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { TabBar } from '../tab-bar'
 import { CopilotModelSelectionInfo } from './copilot-model-selection-info'
+import type { Model } from '@github/copilot-sdk/dist/generated/rpc'
 
 interface ICopilotPreferencesProps {
   readonly selectedCopilotModels: CopilotModelSelections
-  readonly copilotModels: ReadonlyArray<CopilotModel> | null
+  readonly copilotModels: ReadonlyArray<Model> | null
   readonly accounts: ReadonlyArray<Account>
   readonly byokProviders: ReadonlyArray<IBYOKProvider>
   readonly showBYOKSettings: boolean
@@ -316,7 +316,7 @@ export class CopilotPreferences extends React.Component<
   }
 
   private renderFeatureModelPicker(
-    copilotModels: ReadonlyArray<CopilotModel>,
+    copilotModels: ReadonlyArray<Model>,
     feature: CopilotFeature,
     label: string,
     onChange: (model: string) => void,
@@ -356,7 +356,7 @@ export class CopilotPreferences extends React.Component<
   }
 
   private resolveSelectionValue(
-    copilotModels: ReadonlyArray<CopilotModel>,
+    copilotModels: ReadonlyArray<Model>,
     byokProviders: ReadonlyArray<IBYOKProvider>,
     raw: string | null
   ): string {
@@ -383,7 +383,7 @@ export class CopilotPreferences extends React.Component<
   }
 
   private getFirstSelectableModelValue(
-    copilotModels: ReadonlyArray<CopilotModel>,
+    copilotModels: ReadonlyArray<Model>,
     byokProviders: ReadonlyArray<IBYOKProvider>
   ): string {
     if (copilotModels.length === 0 && byokProviders.length === 0) {

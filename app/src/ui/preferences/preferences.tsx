@@ -54,7 +54,6 @@ import {
 import { CopilotPreferences } from './copilot'
 import type {
   CopilotFeature,
-  CopilotModel,
   CopilotModelSelections,
 } from '../../lib/stores/copilot-store'
 import type { IBYOKProvider } from '../../lib/copilot/byok'
@@ -88,6 +87,7 @@ import {
   setNumberFormatPreference,
 } from '../../models/formatting-preferences'
 import { enableFormattingPreferences } from '../../lib/feature-flag'
+import type { Model } from '@github/copilot-sdk/dist/generated/rpc'
 
 interface IPreferencesProps {
   readonly dispatcher: Dispatcher
@@ -138,7 +138,7 @@ interface IPreferencesProps {
   readonly showDiffCheckMarks: boolean
   readonly copyPathNormalization: CopyPathNormalization
   readonly selectedCopilotModels: CopilotModelSelections
-  readonly copilotModels: ReadonlyArray<CopilotModel> | null
+  readonly copilotModels: ReadonlyArray<Model> | null
   readonly byokProviders: ReadonlyArray<IBYOKProvider>
   readonly alwaysUseCopilotForConflictResolution: boolean
 }

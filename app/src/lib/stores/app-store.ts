@@ -42,11 +42,7 @@ import {
   SignInStore,
   UpstreamRemoteName,
 } from '.'
-import type {
-  CopilotFeature,
-  CopilotModel,
-  CopilotModelSelections,
-} from './copilot-store'
+import type { CopilotFeature, CopilotModelSelections } from './copilot-store'
 import { DisabledCopilotModel } from './copilot-store'
 import { CommitMessageGenerationCancelledError } from './copilot-store'
 import {
@@ -471,6 +467,7 @@ import {
 } from '../pull-request-refs'
 import { resolveWithin } from '../path'
 import { WorktreeEntry } from '../../models/worktree'
+import type { Model } from '@github/copilot-sdk/dist/generated/rpc'
 
 const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
@@ -825,7 +822,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private overrideProgressTitle: string | null = null
 
   private selectedCopilotModels: CopilotModelSelections = {}
-  private copilotModels: ReadonlyArray<CopilotModel> | null = null
+  private copilotModels: ReadonlyArray<Model> | null = null
   private byokProviders: ReadonlyArray<IBYOKProvider> = []
 
   public constructor(

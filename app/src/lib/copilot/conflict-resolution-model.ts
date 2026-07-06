@@ -1,8 +1,8 @@
+import type { Model } from '@github/copilot-sdk/dist/generated/rpc'
 import {
   DefaultConflictResolutionReasoningEffort,
   getPreferredDefaultModel,
   getSupportedReasoningEffort,
-  type CopilotModel,
   type ReasoningEffort,
 } from '../stores/copilot-store'
 import { IBYOKProvider, parseModelKey } from './byok'
@@ -25,7 +25,7 @@ export interface IConflictResolutionModelDisplay {
  */
 export function getConflictResolutionModelDisplay(
   selection: string | null,
-  copilotModels: ReadonlyArray<CopilotModel> | null,
+  copilotModels: ReadonlyArray<Model> | null,
   byokProviders: ReadonlyArray<IBYOKProvider>
 ): IConflictResolutionModelDisplay {
   const key = selection !== null ? parseModelKey(selection) : null

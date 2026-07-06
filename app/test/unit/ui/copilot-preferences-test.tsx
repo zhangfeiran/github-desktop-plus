@@ -17,7 +17,6 @@ import { CopilotPreferences } from '../../../src/ui/preferences/copilot'
 import {
   DefaultCopilotModel,
   DisabledCopilotModel,
-  type CopilotModel,
   type CopilotFeature,
 } from '../../../src/lib/stores/copilot-store'
 import {
@@ -25,6 +24,7 @@ import {
   type IBYOKProvider,
 } from '../../../src/lib/copilot/byok'
 import { Account } from '../../../src/models/account'
+import type { Model } from '@github/copilot-sdk/dist/generated/rpc'
 import { setNumberFormatPreference } from '../../../src/models/formatting-preferences'
 
 interface IAccountOptions {
@@ -64,8 +64,8 @@ function makeAccount(options: IAccountOptions = {}): Account {
 }
 
 function makeModel(
-  overrides: Partial<CopilotModel> & Pick<CopilotModel, 'id' | 'name'>
-): CopilotModel {
+  overrides: Partial<Model> & Pick<Model, 'id' | 'name'>
+): Model {
   return {
     capabilities: {
       supports: { vision: false, reasoningEffort: false },
@@ -134,7 +134,7 @@ const missingBatchSizeModel = makeModel({
   },
 })
 
-const models: ReadonlyArray<CopilotModel> = [
+const models: ReadonlyArray<Model> = [
   defaultModel,
   otherModel,
   usageBilledModel,

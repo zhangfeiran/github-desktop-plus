@@ -1,6 +1,7 @@
 import {
   CopilotClient,
   CopilotSession,
+  RuntimeConnection,
   AssistantMessageEvent,
   MessageOptions,
   SessionConfig,
@@ -42,7 +43,7 @@ import { pathExists } from '../path-exists'
 import { enableCopilotSdkCommitMessageGeneration } from '../feature-flag'
 import type {
   Model,
-  ModelBilling,
+  ModelBillingTokenPrices,
 } from '@github/copilot-sdk/dist/generated/rpc'
 import { isGHE } from '../endpoint-capabilities'
 
@@ -75,25 +76,6 @@ export const DefaultCopilotRequestTimeoutMs = 60000
  * accepts.
  */
 export type CopilotProviderConfig = NonNullable<SessionConfig['provider']>
-
-export interface ICopilotModelBillingTokenPrices {
-  readonly batchSize?: number
-  readonly inputPrice?: number
-  readonly cachePrice?: number
-  readonly outputPrice?: number
-  readonly contextMax?: number
-}
-
-export type CopilotModelBilling = Omit<ModelBilling, 'multiplier'> & {
-  readonly multiplier?: number
-  readonly tokenPrices?: ICopilotModelBillingTokenPrices
-}
-
-export type CopilotModel = Omit<Model, 'billing'> & {
-  readonly billing?: CopilotModelBilling
-  readonly modelPickerCategory?: string
-  readonly modelPickerPriceCategory?: string
-}
 
 /**
  * Per-call resolution of which model to use for a Copilot feature. Either a
@@ -130,7 +112,7 @@ interface IResolvedConflictModelConfig {
 }
 
 interface ICopilotModelCacheEntry {
-  readonly models: ReadonlyArray<CopilotModel>
+  readonly models: ReadonlyArray<Model>
   readonly cachedAt: number
 }
 
@@ -371,8 +353,6 @@ export const ReasoningEffortOrder = ['low', 'medium', 'high', 'xhigh'] as const
 
 export type ReasoningEffort = typeof ReasoningEffortOrder[number]
 
-type ModelReasoningMetadata = Pick<Model, 'supportedReasoningEfforts'>
-
 /** Formats a reasoning effort for display, e.g. 'xhigh' → 'Extra high'. */
 export function formatReasoningEffort(effort: ReasoningEffort): string {
   return effort === 'xhigh'
@@ -385,7 +365,7 @@ export function formatReasoningEffort(effort: ReasoningEffort): string {
  * undefined if the model does not support reasoning effort configuration.
  */
 export function getLowestReasoningEffort(
-  model: ModelReasoningMetadata
+  model: Model
 ): ReasoningEffort | undefined {
   const supported = model.supportedReasoningEfforts
   if (!supported || supported.length === 0) {
@@ -401,7 +381,7 @@ export function getLowestReasoningEffort(
  * effort at all (so we don't forward an unsupported value to the SDK).
  */
 export function getSupportedReasoningEffort(
-  model: ModelReasoningMetadata,
+  model: Model,
   preferred: ReasoningEffort
 ): ReasoningEffort | undefined {
   return model.supportedReasoningEfforts?.includes(preferred)
@@ -412,7 +392,7 @@ export function getSupportedReasoningEffort(
 type ModelBillingKind = 'premium-requests' | 'usage'
 
 function getModelBillingKind(
-  models: ReadonlyArray<CopilotModel>
+  models: ReadonlyArray<Model>
 ): ModelBillingKind | null {
   if (models.some(m => m.billing?.multiplier !== undefined)) {
     return 'premium-requests'
@@ -421,9 +401,7 @@ function getModelBillingKind(
   return models.some(m => m.billing?.tokenPrices !== undefined) ? 'usage' : null
 }
 
-function getTokenPriceCost(
-  tokenPrices: ICopilotModelBillingTokenPrices
-): number {
+function getTokenPriceCost(tokenPrices: ModelBillingTokenPrices): number {
   const { batchSize, inputPrice, outputPrice } = tokenPrices
   if (
     batchSize === undefined ||
@@ -437,10 +415,7 @@ function getTokenPriceCost(
   return (inputPrice + outputPrice) / batchSize
 }
 
-function getModelBillingCost(
-  model: CopilotModel,
-  kind: ModelBillingKind | null
-) {
+function getModelBillingCost(model: Model, kind: ModelBillingKind | null) {
   switch (kind) {
     case 'premium-requests':
       return model.billing?.multiplier ?? Infinity
@@ -463,8 +438,8 @@ function getModelBillingCost(
  * Returns null if the model list is empty.
  */
 export function getPreferredDefaultModel(
-  models: ReadonlyArray<CopilotModel>
-): CopilotModel | null {
+  models: ReadonlyArray<Model>
+): Model | null {
   if (models.length === 0) {
     return null
   }
@@ -478,8 +453,7 @@ export function getPreferredDefaultModel(
   // metadata for the active billing kind are treated as most expensive
   // (unknown cost) so we don't accidentally pick a costly model.
   const billingKind = getModelBillingKind(models)
-  const getCost = (model: CopilotModel) =>
-    getModelBillingCost(model, billingKind)
+  const getCost = (model: Model) => getModelBillingCost(model, billingKind)
 
   return models.reduce((cheapestModel, model) =>
     getCost(model) < getCost(cheapestModel) ? model : cheapestModel
@@ -698,7 +672,7 @@ export class CopilotStore extends BaseStore {
   private readonly modelCaches = new Map<string, ICopilotModelCacheEntry>()
   private readonly modelsInFlight = new Map<
     string,
-    Promise<ReadonlyArray<CopilotModel> | null>
+    Promise<ReadonlyArray<Model> | null>
   >()
   private readonly signedInAccountKeys = new Set<string>()
 
@@ -780,8 +754,10 @@ export class CopilotStore extends BaseStore {
       : indexPath
 
     return new CopilotClient({
-      cliPath: await getCopilotCLIPath(),
-      cliArgs: ['--eval', `import '${importSpecifier}'`, '--'],
+      connection: RuntimeConnection.forStdio({
+        path: await getCopilotCLIPath(),
+        args: ['--eval', `import '${importSpecifier}'`, '--'],
+      }),
       env: {
         ELECTRON_RUN_AS_NODE: '1',
         COPILOT_RUN_APP: '1',
@@ -790,7 +766,7 @@ export class CopilotStore extends BaseStore {
           __DEV__ ? '-dev' : ''
         }`,
       },
-      cwd: repositoryPath,
+      workingDirectory: repositoryPath,
       gitHubToken: account.token,
     })
   }
@@ -1031,6 +1007,7 @@ export class CopilotStore extends BaseStore {
             content: buildCommitMessageSystemPrompt(hasRules, tags),
           },
           availableTools: [],
+          enableSessionStore: false,
           onPermissionRequest: async () => ({
             kind: 'reject',
           }),
@@ -1327,6 +1304,7 @@ export class CopilotStore extends BaseStore {
         provider: modelConfig.provider,
         streaming: true,
         availableTools: [],
+        enableSessionStore: false,
         systemMessage: {
           mode: 'append',
           content: ConflictResolutionSystemPrompt,
@@ -1410,9 +1388,7 @@ export class CopilotStore extends BaseStore {
    *
    * Null if models have never been fetched.
    */
-  public getCachedModelList(
-    account: Account
-  ): ReadonlyArray<CopilotModel> | null {
+  public getCachedModelList(account: Account): ReadonlyArray<Model> | null {
     return (
       this.modelCaches.get(getCopilotModelCacheKey(account))?.models ?? null
     )
@@ -1429,7 +1405,7 @@ export class CopilotStore extends BaseStore {
    */
   public async listModels(
     account: Account
-  ): Promise<ReadonlyArray<CopilotModel> | null> {
+  ): Promise<ReadonlyArray<Model> | null> {
     const key = getCopilotModelCacheKey(account)
     if (
       !this.signedInAccountKeys.has(key) ||
@@ -1457,13 +1433,13 @@ export class CopilotStore extends BaseStore {
    */
   private async getCachedModels(
     account: Account
-  ): Promise<ReadonlyArray<CopilotModel>> {
+  ): Promise<ReadonlyArray<Model>> {
     return (await this.listModels(account)) ?? []
   }
 
   private async fetchAndCacheModels(
     account: Account
-  ): Promise<ReadonlyArray<CopilotModel> | null> {
+  ): Promise<ReadonlyArray<Model> | null> {
     const key = getCopilotModelCacheKey(account)
 
     // Deduplicate concurrent fetches — if one is already in flight, reuse it.
@@ -1499,9 +1475,7 @@ export class CopilotStore extends BaseStore {
     }
   }
 
-  private async fetchModels(
-    account: Account
-  ): Promise<ReadonlyArray<CopilotModel>> {
+  private async fetchModels(account: Account): Promise<ReadonlyArray<Model>> {
     const client = await this.createClient(account)
 
     try {

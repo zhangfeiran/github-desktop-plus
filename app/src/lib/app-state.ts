@@ -1,7 +1,4 @@
-import type {
-  CopilotModel,
-  CopilotModelSelections,
-} from './stores/copilot-store'
+import type { CopilotModelSelections } from './stores/copilot-store'
 import type { IBYOKProvider } from './copilot/byok'
 import type { IConflictResolutionModelDisplay } from './copilot/conflict-resolution-model'
 import type {
@@ -73,6 +70,7 @@ import { IAPIRepoRuleset } from './api'
 import { ICustomIntegration } from './custom-integration'
 import { Emoji } from './emoji'
 import { IUpdateState } from '../ui/lib/update-store'
+import type { Model } from '@github/copilot-sdk/dist/generated/rpc'
 
 export enum SelectionType {
   Repository,
@@ -484,7 +482,7 @@ export interface IAppState {
    * The list of available Copilot models fetched from the SDK.
    * Null when the list has not been fetched yet.
    */
-  readonly copilotModels: ReadonlyArray<CopilotModel> | null
+  readonly copilotModels: ReadonlyArray<Model> | null
 
   /**
    * The list of user-configured Copilot model providers (BYOK). Empty when

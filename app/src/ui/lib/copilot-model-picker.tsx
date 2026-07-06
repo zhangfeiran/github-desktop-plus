@@ -5,18 +5,20 @@ import { formatCompactNumber, formatNumber } from '../../lib/format-number'
 import {
   DefaultCopilotModel,
   DisabledCopilotModel,
-  type CopilotModel,
-  type CopilotModelBilling,
 } from '../../lib/stores/copilot-store'
 import { type IBYOKProvider, encodeModelKey } from '../../lib/copilot/byok'
 import { IFilterListGroup, IFilterListItem } from './filter-list'
 import { PopoverDecoration } from './popover'
 import { PopoverDropdown } from './popover-dropdown'
 import { SectionFilterList } from './section-filter-list'
+import type {
+  Model,
+  ModelBilling,
+} from '@github/copilot-sdk/dist/generated/rpc'
 
 interface ICopilotModelPickerProps {
   readonly label: string
-  readonly copilotModels: ReadonlyArray<CopilotModel>
+  readonly copilotModels: ReadonlyArray<Model>
   readonly byokProviders: ReadonlyArray<IBYOKProvider>
   readonly value: string
   readonly onChange: (value: string) => void
@@ -33,7 +35,7 @@ interface ICopilotModelListItem extends IFilterListItem {
   readonly text: ReadonlyArray<string>
   readonly value: string
   readonly name: string
-  readonly billing: CopilotModelBilling | undefined
+  readonly billing: ModelBilling | undefined
   readonly modelPickerCategory: string | undefined
   readonly modelPickerPriceCategory: string | undefined
   readonly isDefault: boolean
@@ -58,9 +60,7 @@ export interface ICopilotModelPickerSelectionInfo {
 const ModelPickerCompactRowHeight = 30
 const ModelPickerSubtitleRowHeight = 46
 
-const getPremiumRequestsBillingLabel = (
-  billing: CopilotModelBilling | undefined
-) => {
+const getPremiumRequestsBillingLabel = (billing: ModelBilling | undefined) => {
   const multiplier = billing?.multiplier
   return multiplier === undefined ? '' : ` (${multiplier}x)`
 }
@@ -97,7 +97,7 @@ const formatAIModelCreditAmount = (value: number | undefined) =>
   value === undefined ? null : formatNumber(value)
 
 const getTokenPriceDetails = (
-  tokenPrices: CopilotModelBilling['tokenPrices']
+  tokenPrices: ModelBilling['tokenPrices']
 ): ICopilotModelPickerTokenPriceDetails | null => {
   if (tokenPrices === undefined) {
     return null
@@ -149,13 +149,13 @@ const getListItemSubtitle = (item: ICopilotModelListItem) => {
 }
 
 export const getCopilotModelPickerSelectionInfo = (
-  copilotModels: ReadonlyArray<CopilotModel>,
+  copilotModels: ReadonlyArray<Model>,
   value: string
 ): ICopilotModelPickerSelectionInfo | null => {
   const selectedModel = copilotModels.find(
     model => encodeModelKey({ kind: 'copilot', modelId: model.id }) === value
   )
-  const billing = selectedModel?.billing
+  const billing = selectedModel?.billing as ModelBilling | undefined
   const tokenPrices = billing?.tokenPrices
   const modelPickerPriceCategory =
     selectedModel?.modelPickerPriceCategory?.trim()
@@ -234,7 +234,7 @@ const getDisabledModelItem = (): ICopilotModelListItem => ({
 })
 
 const getCopilotModelGroups = (
-  copilotModels: ReadonlyArray<CopilotModel>,
+  copilotModels: ReadonlyArray<Model>,
   byokProviders: ReadonlyArray<IBYOKProvider>
 ): ReadonlyArray<IFilterListGroup<ICopilotModelListItem>> => {
   const groups = new Array<IFilterListGroup<ICopilotModelListItem>>()
@@ -268,7 +268,7 @@ const getCopilotModelGroups = (
         ],
         value,
         name: model.name,
-        billing: model.billing,
+        billing: model.billing as ModelBilling | undefined,
         modelPickerCategory,
         modelPickerPriceCategory,
         isDefault: model.id === DefaultCopilotModel,
@@ -334,7 +334,7 @@ const getCopilotModelGroups = (
 }
 
 export const hasCopilotModelPickerItems = (
-  copilotModels: ReadonlyArray<CopilotModel>,
+  copilotModels: ReadonlyArray<Model>,
   byokProviders: ReadonlyArray<IBYOKProvider>
 ) =>
   copilotModels.length > 0 ||

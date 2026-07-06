@@ -1,4 +1,5 @@
 import type { CopilotClient, CopilotSession } from '@github/copilot-sdk'
+import type { Model } from '@github/copilot-sdk/dist/generated/rpc'
 import assert from 'node:assert'
 import { after, before, describe, it } from 'node:test'
 import { getDotComAPIEndpoint } from '../../../src/lib/api'
@@ -6,7 +7,6 @@ import { AccountsStore } from '../../../src/lib/stores/accounts-store'
 import {
   CommitMessageGenerationCancelledError,
   CopilotConflictResolutionAbortError,
-  type CopilotModel,
   type CopilotModelRequest,
   CopilotStore,
   DefaultCopilotModel,
@@ -33,7 +33,7 @@ interface IAccountOverrides {
 
 interface ITestCopilotClient {
   start(): Promise<void>
-  listModels(): Promise<ReadonlyArray<CopilotModel>>
+  listModels(): Promise<ReadonlyArray<Model>>
   stop(): Promise<void>
 }
 
@@ -88,7 +88,7 @@ function createDeferred<T>(): {
 function createCopilotStoreWithModels(
   getModels: (
     account: Account
-  ) => ReadonlyArray<CopilotModel> | Promise<ReadonlyArray<CopilotModel>>
+  ) => ReadonlyArray<Model> | Promise<ReadonlyArray<Model>>
 ): {
   readonly accountsStore: AccountsStore
   readonly store: CopilotStore
@@ -122,8 +122,8 @@ function createCopilotStoreWithModels(
 }
 
 function makeModel(
-  overrides: Partial<CopilotModel> & Pick<CopilotModel, 'id' | 'name'>
-): CopilotModel {
+  overrides: Partial<Model> & Pick<Model, 'id' | 'name'>
+): Model {
   return {
     capabilities: {
       supports: { vision: false, reasoningEffort: false },
@@ -263,7 +263,7 @@ describe('CopilotStore model cache', () => {
   it('deduplicates concurrent fetches for the same account', async () => {
     const account = makeAccount()
     const models = [makeModel({ id: 'model-a', name: 'Model A' })]
-    const deferred = createDeferred<ReadonlyArray<CopilotModel>>()
+    const deferred = createDeferred<ReadonlyArray<Model>>()
     const { accountsStore, store, createClientAccounts } =
       createCopilotStoreWithModels(() => deferred.promise)
 
@@ -299,7 +299,7 @@ describe('CopilotStore model cache', () => {
   it('does not restore cached models when an in-flight fetch resolves after logout', async () => {
     const account = makeAccount()
     const models = [makeModel({ id: 'model-a', name: 'Model A' })]
-    const deferred = createDeferred<ReadonlyArray<CopilotModel>>()
+    const deferred = createDeferred<ReadonlyArray<Model>>()
     const { accountsStore, store } = createCopilotStoreWithModels(
       () => deferred.promise
     )
@@ -319,7 +319,7 @@ describe('CopilotStore model cache', () => {
     const account = makeAccount()
     const staleModels = [makeModel({ id: 'stale', name: 'Stale' })]
     const freshModels = [makeModel({ id: 'fresh', name: 'Fresh' })]
-    const deferred = createDeferred<ReadonlyArray<CopilotModel>>()
+    const deferred = createDeferred<ReadonlyArray<Model>>()
     let fetchCount = 0
     const { accountsStore, store } = createCopilotStoreWithModels(() => {
       fetchCount++
@@ -359,7 +359,7 @@ describe('CopilotStore commit message generation cancellation', () => {
   it('does not create a commit-message client after cancellation during model resolution', async () => {
     const account = makeAccount()
     const models = [makeModel({ id: DefaultCopilotModel, name: 'Default' })]
-    const deferred = createDeferred<ReadonlyArray<CopilotModel>>()
+    const deferred = createDeferred<ReadonlyArray<Model>>()
     const { accountsStore, store, createClientAccounts } =
       createCopilotStoreWithModels(() => deferred.promise)
 
