@@ -595,6 +595,10 @@ export class RepositoriesStore extends TypedBaseStore<
     worktreePath: string,
     missing = false
   ): Promise<{ repository: Repository; existingRepository: boolean }> {
+    const gitSourceOverride = normalizeRepositoryGitSource(
+      repository.path,
+      repository.gitSourceOverride
+    )
     const existing = await this.db.repositories.get({ path: worktreePath })
 
     if (existing !== undefined) {
@@ -607,10 +611,11 @@ export class RepositoriesStore extends TypedBaseStore<
     await this.db.repositories.update(repository.id, {
       path: worktreePath,
       missing,
+      gitSourceOverride,
     })
 
     deleteTrackedRepositoryGitSource(repository.path)
-    setTrackedRepositoryGitSource(worktreePath, repository.gitSourceOverride)
+    setTrackedRepositoryGitSource(worktreePath, gitSourceOverride)
     this.emitUpdatedRepositories()
 
     return {
@@ -624,7 +629,7 @@ export class RepositoriesStore extends TypedBaseStore<
         repository.defaultBranch,
         repository.workflowPreferences,
         repository.customEditorOverride,
-        repository.gitSourceOverride,
+        gitSourceOverride,
         repository.isTutorialRepository,
         repository.overrideLogin
       ),

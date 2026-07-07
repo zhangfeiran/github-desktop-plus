@@ -218,7 +218,7 @@ export class CopilotConflictsDialog extends React.Component<
     items.push(
       {
         label: OpenWithDefaultProgramLabel,
-        action: () => openFile(absolutePath, dispatcher),
+        action: () => openFile(absolutePath, dispatcher, repository),
       },
       {
         label: RevealInFileManagerLabel,

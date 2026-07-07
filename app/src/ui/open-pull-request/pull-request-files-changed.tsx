@@ -100,7 +100,7 @@ export class PullRequestFilesChanged extends React.Component<
    * said file type.
    */
   private onOpenBinaryFile = (fullPath: string) => {
-    openFile(fullPath, this.props.dispatcher)
+    openFile(fullPath, this.props.dispatcher, this.props.repository)
   }
 
   /** Called when the user changes the hide whitespace in diffs setting. */

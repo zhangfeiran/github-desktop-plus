@@ -224,7 +224,7 @@ export class CopilotConflictsChanges extends React.Component<
   }
 
   private onOpenBinaryFile = (fullPath: string) => {
-    openFile(fullPath, this.props.dispatcher)
+    openFile(fullPath, this.props.dispatcher, this.props.repository)
   }
 
   private onChangeImageDiffType = (imageDiffType: ImageDiffType) => {
@@ -235,7 +235,7 @@ export class CopilotConflictsChanges extends React.Component<
     const file = this.getCommittedFiles()[row]
     if (file !== undefined) {
       const fullPath = Path.join(this.props.repository.path, file.path)
-      openFile(fullPath, this.props.dispatcher)
+      openFile(fullPath, this.props.dispatcher, this.props.repository)
     }
   }
 

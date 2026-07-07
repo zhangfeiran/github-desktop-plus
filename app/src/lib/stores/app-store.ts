@@ -446,7 +446,7 @@ import {
 import { updateStore } from '../../ui/lib/update-store'
 import { startTimer } from '../../ui/lib/timing'
 import { BypassReasonType } from '../../ui/secret-scanning/bypass-push-protection-dialog'
-import { setTrackedRepositoryGitSources } from '../git/source'
+import { setTrackedRepositoryGitSources, toSshFsLocalPath } from '../git/source'
 import {
   selectReferencedContext,
   fallbackReferencedContext,
@@ -4591,7 +4591,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private async switchToMainWorktreeIfMissing(
     repository: Repository
   ): Promise<Repository | null> {
-    if (await pathExists(repository.path)) {
+    if (await this.repositoryPathExists(repository)) {
       return null
     }
 
@@ -4613,7 +4613,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return repository
     }
 
-    const type = await getRepositoryType(repository.path)
+    const type = await getRepositoryType(repository.path, {
+      gitSourceOverride: repository.gitSourceOverride,
+    })
 
     const foundRepository =
       type.kind === 'regular' && (await this._loadStatus(repository)) !== null
@@ -4639,7 +4641,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     // if the repository path doesn't exist on disk,
     // set the flag and don't try anything Git-related
-    const exists = await pathExists(repository.path)
+    const exists = await this.repositoryPathExists(repository)
     if (!exists) {
       // Only for the selected repo, so a background refresh of another repo
       // can't hijack the current selection by switching it to its main worktree.
@@ -4663,7 +4665,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     // Populate gitDir for repositories that don't have it yet
     if (repository.gitDir === undefined) {
-      const type = await getRepositoryType(repository.path)
+      const type = await getRepositoryType(repository.path, {
+        gitSourceOverride: repository.gitSourceOverride,
+      })
       if (type.kind === 'regular') {
         repository = await this.repositoriesStore.updateRepositoryGitDir(
           repository,
@@ -4742,6 +4746,28 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
+  private async repositoryPathExists(repository: Repository): Promise<boolean> {
+    if (repository.gitSourceOverride.kind !== 'ssh') {
+      return pathExists(repository.path)
+    }
+
+    const type = await getRepositoryType(repository.path, {
+      gitSourceOverride: repository.gitSourceOverride,
+    }).catch(e => {
+      log.error('Could not determine repository type', e)
+      return { kind: 'missing' } as RepositoryType
+    })
+
+    return type.kind !== 'missing'
+  }
+
+  private getLocalPathForExternalTool(
+    repository: Repository,
+    fullPath: string
+  ): string {
+    return toSshFsLocalPath(fullPath, repository.gitSourceOverride)
+  }
+
   private async updateStashEntryCountMetric(
     repository: Repository,
     desktopStashEntryCount: number,
@@ -4818,7 +4844,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
-    const exists = await pathExists(repository.path)
+    const exists = await this.repositoryPathExists(repository)
     if (!exists) {
       lookup.delete(repository.id)
       return
@@ -8616,6 +8642,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository | null,
     fullPath: string
   ): Promise<void> {
+    const editorPath =
+      repository !== null
+        ? this.getLocalPathForExternalTool(repository, fullPath)
+        : fullPath
+
     if (repository?.customEditorOverride) {
       const { selectedExternalEditor, useCustomEditor, customEditor } =
         repository?.customEditorOverride
@@ -8623,7 +8654,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         selectedExternalEditor,
         useCustomEditor,
         customEditor,
-        fullPath
+        editorPath
       )
     } else {
       const { selectedExternalEditor, useCustomEditor, customEditor } =
@@ -8632,7 +8663,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         selectedExternalEditor,
         useCustomEditor,
         customEditor,
-        fullPath
+        editorPath
       )
     }
   }

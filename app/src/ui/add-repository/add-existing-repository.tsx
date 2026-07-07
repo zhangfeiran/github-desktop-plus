@@ -355,7 +355,7 @@ export class AddExistingRepository extends React.Component<
 
     const resolvedPath = this.resolvedPath(path)
     const sshGitSource = this.isSshFsPath(path)
-      ? this.getSshFsGitSource(sshGitCommand, sshGitPath)
+      ? this.getSshFsGitSource(path, sshGitCommand, sshGitPath)
       : null
 
     if (sshGitSource === null && this.isSshFsPath(path)) {
@@ -383,6 +383,7 @@ export class AddExistingRepository extends React.Component<
   }
 
   private getSshFsGitSource(
+    repositoryPath: string,
     command: string,
     gitPath: string
   ): RepositoryGitSource | null {
@@ -398,6 +399,7 @@ export class AddExistingRepository extends React.Component<
       gitPath: trimmedGitPath,
       useWslPathTranslation: true,
       pathTranslation: 'sshfs',
+      sshFsDrive: repositoryPath.substring(0, 1).toUpperCase(),
     }
   }
 

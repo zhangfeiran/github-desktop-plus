@@ -815,12 +815,17 @@ export class RepositorySettings extends React.Component<
       case 'wsl':
         return WslGitSource
       case 'ssh':
+        const currentGitSource = this.props.repository.gitSourceOverride
         return {
           kind: 'ssh',
           command: this.state.sshGitCommand.trim(),
           gitPath: this.state.sshGitPath.trim(),
           useWslPathTranslation: this.state.sshGitPathTranslation !== 'none',
           pathTranslation: this.state.sshGitPathTranslation,
+          ...(currentGitSource.kind === 'ssh' &&
+          currentGitSource.sshFsDrive !== undefined
+            ? { sshFsDrive: currentGitSource.sshFsDrive }
+            : {}),
         }
       default:
         return assertNever(

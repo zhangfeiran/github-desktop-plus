@@ -43,6 +43,7 @@ describe('RepositoriesStore', () => {
         gitPath: '~/miniforge3/bin/git',
         useWslPathTranslation: true,
         pathTranslation: 'sshfs',
+        sshFsDrive: 'X',
       }
 
       const repository = await repositoriesStore.addRepository(

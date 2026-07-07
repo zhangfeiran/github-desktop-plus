@@ -41,7 +41,9 @@ repository**. When the selected repository path is on the `X:`, `Y:`, or `Z:`
 drive, the dialog prompts for an SSH command plus remote Git executable and
 stores the repository as SSH Git using SSHFS path translation. For example,
 `X:\home\feiran\hyper-parallel` is executed remotely as
-`/home/feiran/hyper-parallel`.
+`/home/feiran/hyper-parallel`. When repository or worktree state is held as a
+remote `/home/...` path, file-opening actions translate that path back through
+the remembered SSHFS drive before handing it to Windows applications.
 
 ## Periodic fetch is opt-in
 

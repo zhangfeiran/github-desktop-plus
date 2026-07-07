@@ -17,6 +17,7 @@ export type RepositoryGitSource =
       readonly gitPath: string
       readonly useWslPathTranslation: boolean
       readonly pathTranslation: SshGitPathTranslation
+      readonly sshFsDrive?: string
     }
 
 export type SshGitSource = Extract<RepositoryGitSource, { kind: 'ssh' }>
@@ -52,6 +53,7 @@ export function repositoryGitSourcesEqual(
       (a.command === b.command &&
         a.gitPath === b.gitPath &&
         a.useWslPathTranslation === b.useWslPathTranslation &&
-        a.pathTranslation === b.pathTranslation))
+        a.pathTranslation === b.pathTranslation &&
+        a.sshFsDrive === b.sshFsDrive))
   )
 }

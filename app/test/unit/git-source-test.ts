@@ -7,6 +7,7 @@ import {
   isWslRepositoryPath,
   normalizeRepositoryGitSource,
   setTrackedRepositoryGitSources,
+  toSshFsLocalPath,
   toSshFsPath,
   toRemotePosixPath,
   toWslPath,
@@ -124,6 +125,7 @@ describe('git/source', () => {
         gitPath: DefaultSshGitPath,
         useWslPathTranslation: true,
         pathTranslation: 'sshfs',
+        sshFsDrive: 'X',
       }
     )
   })
@@ -169,6 +171,28 @@ describe('git/source', () => {
     assert.equal(isSshFsRepositoryPath('E:\\repo'), false)
     assert.equal(toSshFsPath('X:\\home\\feiran\\repo'), '/home/feiran/repo')
     assert.equal(toSshFsPath('Z:\\'), '/')
+    assert.equal(
+      toSshFsLocalPath('/home/feiran/repo/file.txt', {
+        kind: 'ssh',
+        command: DefaultSshGitCommand,
+        gitPath: DefaultSshGitPath,
+        useWslPathTranslation: true,
+        pathTranslation: 'sshfs',
+        sshFsDrive: 'X',
+      }),
+      'X:\\home\\feiran\\repo\\file.txt'
+    )
+    assert.equal(
+      toSshFsLocalPath('\\home\\feiran\\repo\\file.txt', {
+        kind: 'ssh',
+        command: DefaultSshGitCommand,
+        gitPath: DefaultSshGitPath,
+        useWslPathTranslation: true,
+        pathTranslation: 'sshfs',
+        sshFsDrive: 'Y',
+      }),
+      'Y:\\home\\feiran\\repo\\file.txt'
+    )
     assert.equal(toRemotePosixPath('\\home\\feiran\\repo'), '/home/feiran/repo')
     assert.equal(
       toRemotePosixPath('X:\\home\\feiran\\repo'),

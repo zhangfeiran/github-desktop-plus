@@ -9,6 +9,7 @@ import {
 
 export const WslGitRepositoryPrefix = '\\\\wsl.localhost\\Ubuntu\\'
 const sshFsDrivePathRe = /^[x-z]:[\\/]/i
+const windowsDriveLetterRe = /^([a-zA-Z]):[\\/]/
 
 const normalizedWslPrefix = WslGitRepositoryPrefix.toLowerCase()
 const normalizedForwardSlashWslPrefix = '//wsl.localhost/ubuntu/'
@@ -27,6 +28,19 @@ export function isWslRepositoryPath(path: string): boolean {
 
 export function isSshFsRepositoryPath(path: string): boolean {
   return sshFsDrivePathRe.test(path)
+}
+
+function getWindowsDriveLetter(path: string): string | undefined {
+  return windowsDriveLetterRe.exec(path)?.[1].toUpperCase()
+}
+
+function normalizeWindowsDriveLetter(
+  drive: string | undefined
+): string | undefined {
+  const normalizedDrive = drive?.trim().substring(0, 1).toUpperCase()
+  return normalizedDrive !== undefined && /^[A-Z]$/.test(normalizedDrive)
+    ? normalizedDrive
+    : undefined
 }
 
 function getDefaultRepositoryGitSource(path: string): RepositoryGitSource {
@@ -48,6 +62,11 @@ export function normalizeRepositoryGitSource(
       ? 'wsl'
       : 'none'
     const pathTranslation = gitSource.pathTranslation ?? legacyPathTranslation
+    const sshFsDrive =
+      pathTranslation === 'sshfs'
+        ? normalizeWindowsDriveLetter(gitSource.sshFsDrive) ??
+          getWindowsDriveLetter(repositoryPath)
+        : undefined
 
     return {
       kind: 'ssh',
@@ -55,6 +74,7 @@ export function normalizeRepositoryGitSource(
       gitPath: gitPath.length > 0 ? gitPath : DefaultSshGitPath,
       useWslPathTranslation: pathTranslation !== 'none',
       pathTranslation,
+      ...(sshFsDrive !== undefined ? { sshFsDrive } : {}),
     }
   }
 
@@ -125,6 +145,27 @@ export function toSshFsPath(path: string): string {
   }
 
   return path.replace(/\\/g, '/')
+}
+
+export function toSshFsLocalPath(
+  path: string,
+  gitSource: RepositoryGitSource
+): string {
+  if (
+    gitSource.kind !== 'ssh' ||
+    gitSource.pathTranslation !== 'sshfs' ||
+    gitSource.sshFsDrive === undefined
+  ) {
+    return path
+  }
+
+  const normalized = path.replace(/\\/g, '/')
+  if (!normalized.startsWith('/')) {
+    return path
+  }
+
+  const suffix = normalized.replace(/^\/+/, '').replace(/\//g, '\\')
+  return `${gitSource.sshFsDrive}:\\${suffix}`
 }
 
 export function toRemotePosixPath(path: string): string {

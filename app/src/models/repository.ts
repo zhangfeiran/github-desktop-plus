@@ -365,6 +365,7 @@ function getGitSourceOverrideHash(
       : null,
     'pathTranslation' in gitSourceOverride
       ? gitSourceOverride.pathTranslation
-      : null
+      : null,
+    'sshFsDrive' in gitSourceOverride ? gitSourceOverride.sshFsDrive : null
   )
 }

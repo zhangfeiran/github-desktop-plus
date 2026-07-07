@@ -781,7 +781,7 @@ export class RepositoryView extends React.Component<
   }
 
   private onOpenBinaryFile = (fullPath: string) => {
-    openFile(fullPath, this.props.dispatcher)
+    openFile(fullPath, this.props.dispatcher, this.props.repository)
   }
 
   private onOpenSubmodule = (fullPath: string) => {
