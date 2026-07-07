@@ -1,6 +1,7 @@
 import {
   BundledGitSource,
   DefaultSshGitCommand,
+  DefaultSshGitPath,
   type SshGitPathTranslation,
   type RepositoryGitSource,
   WslGitSource,
@@ -42,6 +43,7 @@ export function normalizeRepositoryGitSource(
 
   if (gitSource?.kind === 'ssh') {
     const command = gitSource.command.trim()
+    const gitPath = gitSource.gitPath?.trim() ?? ''
     const legacyPathTranslation = gitSource.useWslPathTranslation
       ? 'wsl'
       : 'none'
@@ -50,6 +52,7 @@ export function normalizeRepositoryGitSource(
     return {
       kind: 'ssh',
       command: command.length > 0 ? command : DefaultSshGitCommand,
+      gitPath: gitPath.length > 0 ? gitPath : DefaultSshGitPath,
       useWslPathTranslation: pathTranslation !== 'none',
       pathTranslation,
     }
@@ -122,6 +125,14 @@ export function toSshFsPath(path: string): string {
   }
 
   return path.replace(/\\/g, '/')
+}
+
+export function toRemotePosixPath(path: string): string {
+  if (path.startsWith('\\') && !path.startsWith('\\\\')) {
+    return path.replace(/\\/g, '/')
+  }
+
+  return path
 }
 
 export function translateSshGitPath(

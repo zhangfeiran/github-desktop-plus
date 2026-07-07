@@ -29,15 +29,17 @@ The WSL Git path also includes:
 
 SSH Git extends the same process layer so a repository can run Git on a remote
 POSIX shell reached through WSL's `ssh`. Repository Settings exposes the SSH
-command under **Git source**; the default local test command is
-`ssh frz@127.0.0.1 -p 20022`. By default SSH Git uses the same Windows/WSL path
+command and remote Git executable under **Git source**; the default local test
+command is `ssh frz@127.0.0.1 -p 20022` and the default remote executable is
+`/usr/bin/git`. The remote executable can be changed to paths such as
+`~/miniforge3/bin/git`. By default SSH Git uses the same Windows/WSL path
 translation as WSL Git, so Windows paths such as `E:\repo` are executed as
 `/mnt/e/repo` on the SSH host.
 
 SSHFS-Win mapped repositories can also be added through **Add local
 repository**. When the selected repository path is on the `X:`, `Y:`, or `Z:`
-drive, the dialog prompts for an SSH command and stores the repository as SSH
-Git using SSHFS path translation. For example,
+drive, the dialog prompts for an SSH command plus remote Git executable and
+stores the repository as SSH Git using SSHFS path translation. For example,
 `X:\home\feiran\hyper-parallel` is executed remotely as
 `/home/feiran/hyper-parallel`.
 

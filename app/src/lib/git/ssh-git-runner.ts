@@ -6,6 +6,7 @@ import {
 import {
   PersistentShellGitRunner,
   shellQuote,
+  shellQuoteExecutablePath,
   type ShellGitExecutionOptions,
 } from './wsl-git-runner'
 
@@ -18,6 +19,7 @@ type SshGitSpawnOptions = {
   readonly args: ReadonlyArray<string>
   readonly cwd: string
   readonly env: ReadonlyArray<string>
+  readonly gitPath: string
   readonly processEnv: NodeJS.ProcessEnv
 }
 
@@ -217,11 +219,15 @@ export const createSshGitSpawnScript = ({
   args,
   cwd,
   env,
-}: Pick<SshGitSpawnOptions, 'args' | 'cwd' | 'env'>) => {
+  gitPath,
+}: Pick<SshGitSpawnOptions, 'args' | 'cwd' | 'env' | 'gitPath'>) => {
   const envArgs = env.map(shellQuote)
-  const gitCommand = ['env', ...envArgs, 'git', ...args.map(shellQuote)].join(
-    ' '
-  )
+  const gitCommand = [
+    'env',
+    ...envArgs,
+    shellQuoteExecutablePath(gitPath),
+    ...args.map(shellQuote),
+  ].join(' ')
 
   return `cd -- ${shellQuote(cwd)} && exec ${gitCommand} < /dev/null`
 }
@@ -231,10 +237,11 @@ export const spawnSshGitProcess = ({
   args,
   cwd,
   env,
+  gitPath,
   processEnv,
 }: SshGitSpawnOptions): ChildProcessWithoutNullStreams => {
   const commandArgs = getSshGitCommandArgs(command)
-  const script = createSshGitSpawnScript({ args, cwd, env })
+  const script = createSshGitSpawnScript({ args, cwd, env, gitPath })
   const remoteCommand = `bash --noprofile --norc -c ${shellQuote(script)}`
 
   return spawn('wsl.exe', ['--exec', ...commandArgs, remoteCommand], {

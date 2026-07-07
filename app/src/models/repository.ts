@@ -359,6 +359,7 @@ function getGitSourceOverrideHash(
     gitSourceOverride.kind,
     'path' in gitSourceOverride ? gitSourceOverride.path : null,
     'command' in gitSourceOverride ? gitSourceOverride.command : null,
+    'gitPath' in gitSourceOverride ? gitSourceOverride.gitPath : null,
     'useWslPathTranslation' in gitSourceOverride
       ? gitSourceOverride.useWslPathTranslation
       : null,

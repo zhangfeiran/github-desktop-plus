@@ -17,7 +17,10 @@ import { Ref } from '../lib/ref'
 import { InputError } from '../lib/input-description/input-error'
 import { IAccessibleMessage } from '../../models/accessible-message'
 import { isSshFsRepositoryPath } from '../../lib/git/source'
-import { RepositoryGitSource } from '../../models/repository-git-source'
+import {
+  DefaultSshGitPath,
+  RepositoryGitSource,
+} from '../../models/repository-git-source'
 
 interface IAddExistingRepositoryProps {
   readonly dispatcher: Dispatcher
@@ -46,6 +49,7 @@ interface IAddExistingRepositoryState {
   readonly repositoryUnsafePath?: string
   readonly isTrustingRepository: boolean
   readonly sshGitCommand: string
+  readonly sshGitPath: string
 }
 
 /** The component for adding an existing local repository. */
@@ -55,6 +59,7 @@ export class AddExistingRepository extends React.Component<
 > {
   private pathTextBoxRef = React.createRef<TextBox>()
   private sshGitCommandTextBoxRef = React.createRef<TextBox>()
+  private sshGitPathTextBoxRef = React.createRef<TextBox>()
 
   public constructor(props: IAddExistingRepositoryProps) {
     super(props)
@@ -68,6 +73,7 @@ export class AddExistingRepository extends React.Component<
       isRepositoryUnsafe: false,
       isTrustingRepository: false,
       sshGitCommand: '',
+      sshGitPath: DefaultSshGitPath,
     }
   }
 
@@ -234,15 +240,26 @@ export class AddExistingRepository extends React.Component<
     }
 
     return (
-      <Row>
-        <TextBox
-          ref={this.sshGitCommandTextBoxRef}
-          value={this.state.sshGitCommand}
-          label="SSH command"
-          placeholder="ssh feiran@8.92.7.129"
-          onValueChanged={this.onSshGitCommandChanged}
-        />
-      </Row>
+      <>
+        <Row>
+          <TextBox
+            ref={this.sshGitCommandTextBoxRef}
+            value={this.state.sshGitCommand}
+            label="SSH command"
+            placeholder="ssh feiran@8.92.7.129"
+            onValueChanged={this.onSshGitCommandChanged}
+          />
+        </Row>
+        <Row>
+          <TextBox
+            ref={this.sshGitPathTextBoxRef}
+            value={this.state.sshGitPath}
+            label="Remote Git path"
+            placeholder="/usr/bin/git"
+            onValueChanged={this.onSshGitPathChanged}
+          />
+        </Row>
+      </>
     )
   }
 
@@ -276,7 +293,8 @@ export class AddExistingRepository extends React.Component<
             okButtonText={__DARWIN__ ? 'Add Repository' : 'Add repository'}
             okButtonDisabled={
               this.isSshFsPath(this.state.path) &&
-              this.state.sshGitCommand.trim().length === 0
+              (this.state.sshGitCommand.trim().length === 0 ||
+                this.state.sshGitPath.trim().length === 0)
             }
           />
         </DialogFooter>
@@ -306,6 +324,10 @@ export class AddExistingRepository extends React.Component<
     this.setState({ sshGitCommand })
   }
 
+  private onSshGitPathChanged = (sshGitPath: string) => {
+    this.setState({ sshGitPath })
+  }
+
   private showFilePicker = async () => {
     const path = await showOpenDialog({
       properties: ['createDirectory', 'openDirectory'],
@@ -323,7 +345,7 @@ export class AddExistingRepository extends React.Component<
   }
 
   private addRepository = async () => {
-    const { path, sshGitCommand } = this.state
+    const { path, sshGitCommand, sshGitPath } = this.state
     const isValidPath = await this.validatePath(path)
 
     if (!isValidPath) {
@@ -333,45 +355,47 @@ export class AddExistingRepository extends React.Component<
 
     const resolvedPath = this.resolvedPath(path)
     const sshGitSource = this.isSshFsPath(path)
-      ? this.getSshFsGitSource(sshGitCommand)
+      ? this.getSshFsGitSource(sshGitCommand, sshGitPath)
       : null
 
     if (sshGitSource === null && this.isSshFsPath(path)) {
-      this.sshGitCommandTextBoxRef.current?.focus()
+      if (sshGitCommand.trim().length === 0) {
+        this.sshGitCommandTextBoxRef.current?.focus()
+      } else {
+        this.sshGitPathTextBoxRef.current?.focus()
+      }
       return
     }
 
     this.props.onDismissed()
     const { dispatcher } = this.props
-    const repositories = await dispatcher.addRepositories([resolvedPath], null)
+    const repositories = await dispatcher.addRepositories(
+      [resolvedPath],
+      null,
+      sshGitSource ?? undefined
+    )
 
     if (repositories.length > 0) {
-      if (sshGitSource !== null) {
-        await Promise.all(
-          repositories.map(repository =>
-            dispatcher.updateRepositoryGitSourceOverride(
-              repository,
-              sshGitSource
-            )
-          )
-        )
-      }
-
       dispatcher.closeFoldout(FoldoutType.Repository)
       dispatcher.selectRepository(repositories[0])
       dispatcher.recordAddExistingRepository()
     }
   }
 
-  private getSshFsGitSource(command: string): RepositoryGitSource | null {
+  private getSshFsGitSource(
+    command: string,
+    gitPath: string
+  ): RepositoryGitSource | null {
     const trimmedCommand = command.trim()
-    if (trimmedCommand.length === 0) {
+    const trimmedGitPath = gitPath.trim()
+    if (trimmedCommand.length === 0 || trimmedGitPath.length === 0) {
       return null
     }
 
     return {
       kind: 'ssh',
       command: trimmedCommand,
+      gitPath: trimmedGitPath,
       useWslPathTranslation: true,
       pathTranslation: 'sshfs',
     }

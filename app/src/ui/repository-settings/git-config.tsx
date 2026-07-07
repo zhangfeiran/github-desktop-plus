@@ -42,6 +42,7 @@ interface IGitConfigProps {
   readonly onExternalGitPathChanged: (path: string) => void
   readonly onChooseExternalGitPath: () => void
   readonly onSshGitCommandChanged: (command: string) => void
+  readonly onSshGitPathChanged: (path: string) => void
   readonly onSshGitUseWslPathTranslationChanged: (value: boolean) => void
   readonly onNameChanged: (name: string) => void
   readonly onEmailChanged: (email: string) => void
@@ -208,6 +209,14 @@ export class GitConfig extends React.Component<IGitConfigProps> {
             value={this.props.gitSource.command}
             onValueChanged={this.props.onSshGitCommandChanged}
             placeholder="ssh frz@127.0.0.1 -p 20022"
+          />
+        </div>
+        <div className="custom-integration-form-path-container">
+          <TextBox
+            label="Remote Git path"
+            value={this.props.gitSource.gitPath}
+            onValueChanged={this.props.onSshGitPathChanged}
+            placeholder="/usr/bin/git"
           />
         </div>
         <Checkbox

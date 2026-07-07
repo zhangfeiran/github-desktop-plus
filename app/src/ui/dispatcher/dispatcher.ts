@@ -195,9 +195,10 @@ export class Dispatcher {
    */
   public addRepositories(
     paths: ReadonlyArray<string>,
-    login: string | null
+    login: string | null,
+    gitSourceOverride?: RepositoryGitSource | null
   ): Promise<ReadonlyArray<Repository>> {
-    return this.appStore._addRepositories(paths, login)
+    return this.appStore._addRepositories(paths, login, gitSourceOverride)
   }
 
   /**

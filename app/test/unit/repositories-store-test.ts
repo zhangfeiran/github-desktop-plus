@@ -5,6 +5,8 @@ import { RepositoriesStore } from '../../src/lib/stores/repositories-store'
 import { TestRepositoriesDatabase } from '../helpers/databases'
 import { IAPIFullRepository, getDotComAPIEndpoint } from '../../src/lib/api'
 import { assertIsRepositoryWithGitHubRepository } from '../../src/models/repository'
+import { getRepositoryGitSource } from '../../src/lib/git/source'
+import { RepositoryGitSource } from '../../src/models/repository-git-source'
 
 describe('RepositoriesStore', () => {
   let repoDb = new TestRepositoriesDatabase()
@@ -31,6 +33,30 @@ describe('RepositoriesStore', () => {
 
       const repositories = await repositoriesStore.getAll()
       assert.equal(repositories[0].path, repoPath)
+    })
+
+    it('persists an initial Git source override', async () => {
+      const repoPath = 'X:\\home\\feiran\\hyper-parallel'
+      const gitSourceOverride: RepositoryGitSource = {
+        kind: 'ssh',
+        command: 'ssh feiran@8.92.7.129',
+        gitPath: '~/miniforge3/bin/git',
+        useWslPathTranslation: true,
+        pathTranslation: 'sshfs',
+      }
+
+      const repository = await repositoriesStore.addRepository(
+        repoPath,
+        'X:\\home\\feiran\\hyper-parallel\\.git',
+        null,
+        { gitSourceOverride }
+      )
+
+      assert.deepEqual(repository.gitSourceOverride, gitSourceOverride)
+
+      const repositories = await repositoriesStore.getAll()
+      assert.deepEqual(repositories[0].gitSourceOverride, gitSourceOverride)
+      assert.deepEqual(getRepositoryGitSource(repoPath), gitSourceOverride)
     })
   })
 

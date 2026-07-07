@@ -70,7 +70,7 @@ const getGitUserAgentCacheKey = (path: string) => {
     case 'external':
       return `${source.kind}:${source.path}`
     case 'ssh':
-      return `${source.kind}:${source.command}:${source.pathTranslation}`
+      return `${source.kind}:${source.command}:${source.gitPath}:${source.pathTranslation}`
     default:
       return source.kind
   }

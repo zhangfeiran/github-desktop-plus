@@ -8,10 +8,12 @@ import {
   normalizeRepositoryGitSource,
   setTrackedRepositoryGitSources,
   toSshFsPath,
+  toRemotePosixPath,
   toWslPath,
 } from '../../src/lib/git/source'
 import {
   DefaultSshGitCommand,
+  DefaultSshGitPath,
   DefaultSshGitSource,
   repositoryGitSourcesEqual,
 } from '../../src/models/repository-git-source'
@@ -82,12 +84,14 @@ describe('git/source', () => {
       normalizeRepositoryGitSource('E:\\repo', {
         kind: 'ssh',
         command: '  ssh frz@127.0.0.1 -p 20022  ',
+        gitPath: '  ~/miniforge3/bin/git  ',
         useWslPathTranslation: true,
         pathTranslation: 'wsl',
       }),
       {
         kind: 'ssh',
         command: 'ssh frz@127.0.0.1 -p 20022',
+        gitPath: '~/miniforge3/bin/git',
         useWslPathTranslation: true,
         pathTranslation: 'wsl',
       }
@@ -97,6 +101,7 @@ describe('git/source', () => {
       normalizeRepositoryGitSource('E:\\repo', {
         kind: 'ssh',
         command: '',
+        gitPath: '',
         useWslPathTranslation: true,
         pathTranslation: 'wsl',
       }),
@@ -109,12 +114,14 @@ describe('git/source', () => {
       normalizeRepositoryGitSource('X:\\home\\feiran\\repo', {
         kind: 'ssh',
         command: 'ssh feiran@8.92.7.129',
+        gitPath: DefaultSshGitPath,
         useWslPathTranslation: true,
         pathTranslation: 'sshfs',
       }),
       {
         kind: 'ssh',
         command: 'ssh feiran@8.92.7.129',
+        gitPath: DefaultSshGitPath,
         useWslPathTranslation: true,
         pathTranslation: 'sshfs',
       }
@@ -127,6 +134,7 @@ describe('git/source', () => {
         {
           kind: 'ssh',
           command: DefaultSshGitCommand,
+          gitPath: DefaultSshGitPath,
           useWslPathTranslation: true,
           pathTranslation: 'wsl',
         },
@@ -139,12 +147,14 @@ describe('git/source', () => {
         {
           kind: 'ssh',
           command: DefaultSshGitCommand,
+          gitPath: DefaultSshGitPath,
           useWslPathTranslation: true,
           pathTranslation: 'wsl',
         },
         {
           kind: 'ssh',
           command: DefaultSshGitCommand,
+          gitPath: DefaultSshGitPath,
           useWslPathTranslation: false,
           pathTranslation: 'none',
         }
@@ -159,6 +169,11 @@ describe('git/source', () => {
     assert.equal(isSshFsRepositoryPath('E:\\repo'), false)
     assert.equal(toSshFsPath('X:\\home\\feiran\\repo'), '/home/feiran/repo')
     assert.equal(toSshFsPath('Z:\\'), '/')
+    assert.equal(toRemotePosixPath('\\home\\feiran\\repo'), '/home/feiran/repo')
+    assert.equal(
+      toRemotePosixPath('X:\\home\\feiran\\repo'),
+      'X:\\home\\feiran\\repo'
+    )
   })
 
   it('translates between Windows and WSL paths', () => {

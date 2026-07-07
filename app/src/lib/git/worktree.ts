@@ -7,6 +7,7 @@ import { directoryExists } from '../directory-exists'
 import {
   fromWslPath,
   isWslRepositoryPath,
+  toRemotePosixPath,
   translateWslPathValue,
 } from './source'
 
@@ -26,6 +27,15 @@ export function translateWorktreePathForRepository(
     !worktreePath.startsWith('\\\\')
   ) {
     return fromWslPath(worktreePath.replace(/\\/g, '/'))
+  }
+
+  if (
+    process.platform === 'win32' &&
+    repository.gitSourceOverride.kind === 'ssh' &&
+    worktreePath.startsWith('\\') &&
+    !worktreePath.startsWith('\\\\')
+  ) {
+    return toRemotePosixPath(worktreePath)
   }
 
   return worktreePath

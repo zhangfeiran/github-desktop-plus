@@ -8,6 +8,7 @@ export type ShellGitExecutionOptions = {
   readonly args: ReadonlyArray<string>
   readonly cwd: string
   readonly env: ReadonlyArray<string>
+  readonly gitPath?: string
   readonly processEnv: NodeJS.ProcessEnv
   readonly stdin?: string | Buffer
   readonly stdinEncoding?: BufferEncoding
@@ -25,6 +26,7 @@ type WslGitCommandScriptOptions = {
   readonly args: ReadonlyArray<string>
   readonly cwd: string
   readonly env: ReadonlyArray<string>
+  readonly gitPath?: string
   readonly stdin?: Buffer
 }
 
@@ -61,6 +63,18 @@ const controlByte = '\x1e'
 const wslGitMarkerPrefix = `${controlByte}GDP_WSL_GIT`
 
 export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+
+export const shellQuoteExecutablePath = (value: string) => {
+  if (value === '~') {
+    return '"$HOME"'
+  }
+
+  if (value.startsWith('~/')) {
+    return `"${'$'}HOME"/${shellQuote(value.slice(2))}`
+  }
+
+  return shellQuote(value)
+}
 
 const markerPattern = (name: string, id: string) =>
   `${wslGitMarkerPrefix}_${name}_${id}${controlByte}`
@@ -102,6 +116,7 @@ export const createWslGitCommandScript = ({
   args,
   cwd,
   env,
+  gitPath = 'git',
   stdin,
 }: WslGitCommandScriptOptions) => {
   const stdinVariableName = `__gdp_wsl_git_stdin_${id}`
@@ -120,9 +135,12 @@ export const createWslGitCommandScript = ({
   const stdinCleanup =
     stdin === undefined ? '' : `rm -f "$${stdinVariableName}"\n`
   const envArgs = env.map(shellQuote)
-  const gitCommand = ['env', ...envArgs, 'git', ...args.map(shellQuote)].join(
-    ' '
-  )
+  const gitCommand = [
+    'env',
+    ...envArgs,
+    shellQuoteExecutablePath(gitPath),
+    ...args.map(shellQuote),
+  ].join(' ')
 
   return [
     stdinSetup,
@@ -233,6 +251,7 @@ export class PersistentShellGitRunner {
           args: options.args,
           cwd: options.cwd,
           env: options.env,
+          gitPath: options.gitPath,
           stdin,
         }),
         encoding: options.encoding,

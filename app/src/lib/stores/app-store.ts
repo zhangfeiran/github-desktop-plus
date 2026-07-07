@@ -7089,7 +7089,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     worktree: WorktreeEntry
   ): Promise<Repository> {
-    const { kind } = await getRepositoryType(worktree.path).catch(e => {
+    const { kind } = await getRepositoryType(worktree.path, {
+      gitSourceOverride: repository.gitSourceOverride,
+    }).catch(e => {
       log.error('Could not determine repository type', e)
       return { kind: 'missing' } as RepositoryType
     })
@@ -9172,7 +9174,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   public async _addRepositories(
     paths: ReadonlyArray<string>,
-    login: string | null
+    login: string | null,
+    gitSourceOverride?: RepositoryGitSource | null
   ): Promise<ReadonlyArray<Repository>> {
     const addedRepositories = new Array<Repository>()
     const lfsRepositories = new Array<Repository>()
@@ -9190,7 +9193,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
           undefined,
           login,
 
-          { missing: true }
+          { missing: true, gitSourceOverride }
         )
 
         addedRepositories.push(repository)
@@ -9209,14 +9212,22 @@ export class AppStore extends TypedBaseStore<IAppState> {
         // We don't have to worry about repositoryWithRefreshedGitHubRepository
         // and isUsingLFS if the repo already exists in the app.
         if (existing !== undefined) {
-          addedRepositories.push(existing)
+          const repository =
+            gitSourceOverride !== undefined
+              ? await this.repositoriesStore.updateRepositoryGitSourceOverride(
+                  existing,
+                  gitSourceOverride
+                )
+              : existing
+          addedRepositories.push(repository)
           continue
         }
 
         const addedRepo = await this.repositoriesStore.addRepository(
           validatedPath,
           repositoryType.gitDir,
-          login
+          login,
+          { gitSourceOverride }
         )
 
         // initialize the remotes for this new repository to ensure it can fetch

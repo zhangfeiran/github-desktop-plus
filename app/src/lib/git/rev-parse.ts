@@ -1,13 +1,22 @@
 import { git } from './core'
 import { directoryExists } from '../directory-exists'
 import { resolve } from 'path'
-import { translateWslPathValue } from './source'
+import {
+  setTrackedRepositoryGitSource,
+  translateSshGitPath,
+  translateWslPathValue,
+} from './source'
+import { RepositoryGitSource } from '../../models/repository-git-source'
 
 export type RepositoryType =
   | { kind: 'bare' }
   | { kind: 'regular'; topLevelWorkingDirectory: string; gitDir: string }
   | { kind: 'missing' }
   | { kind: 'unsafe'; path: string }
+
+type GetRepositoryTypeOptions = {
+  readonly gitSourceOverride?: RepositoryGitSource
+}
 
 /**
  * Attempts to fulfill the work of isGitRepository and isBareRepository while
@@ -16,9 +25,19 @@ export type RepositoryType =
  * Returns 'bare', 'regular', or 'missing' if the repository couldn't be
  * found.
  */
-export async function getRepositoryType(path: string): Promise<RepositoryType> {
-  if (!(await directoryExists(path))) {
+export async function getRepositoryType(
+  path: string,
+  options: GetRepositoryTypeOptions = {}
+): Promise<RepositoryType> {
+  const gitSourceOverride = options.gitSourceOverride
+  const shouldUseRemoteGit = gitSourceOverride?.kind === 'ssh'
+
+  if (!shouldUseRemoteGit && !(await directoryExists(path))) {
     return { kind: 'missing' }
+  }
+
+  if (shouldUseRemoteGit) {
+    setTrackedRepositoryGitSource(path, gitSourceOverride)
   }
 
   try {
@@ -49,8 +68,18 @@ export async function getRepositoryType(path: string): Promise<RepositoryType> {
           ? { kind: 'bare' }
           : {
               kind: 'regular',
-              topLevelWorkingDirectory: resolve(path, cdup),
-              gitDir: resolve(path, gitDir),
+              topLevelWorkingDirectory: shouldUseRemoteGit
+                ? translateSshGitPath(
+                    resolve(path, cdup),
+                    gitSourceOverride.pathTranslation
+                  )
+                : resolve(path, cdup),
+              gitDir: shouldUseRemoteGit
+                ? translateSshGitPath(
+                    resolve(path, gitDir),
+                    gitSourceOverride.pathTranslation
+                  )
+                : resolve(path, gitDir),
             }
       }
     }

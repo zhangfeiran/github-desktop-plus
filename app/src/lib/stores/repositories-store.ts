@@ -42,6 +42,7 @@ import {
 
 type AddRepositoryOptions = {
   missing?: boolean
+  gitSourceOverride?: RepositoryGitSource | null
 }
 
 /** The store for local repositories. */
@@ -286,6 +287,13 @@ export class RepositoriesStore extends TypedBaseStore<
           return await this.toRepository(existing)
         }
 
+        const gitSourceOverride = normalizeRepositoryGitSource(
+          path,
+          opts?.gitSourceOverride !== undefined
+            ? opts.gitSourceOverride
+            : getRepositoryGitSource(path)
+        )
+
         const dbRepo: IDatabaseRepository = {
           path,
           gitHubRepositoryID: null,
@@ -294,7 +302,7 @@ export class RepositoriesStore extends TypedBaseStore<
           alias: null,
           groupName: null,
           defaultBranch: null,
-          gitSourceOverride: getRepositoryGitSource(path),
+          gitSourceOverride,
           login,
           gitDir,
         }
@@ -480,7 +488,7 @@ export class RepositoriesStore extends TypedBaseStore<
   public async updateRepositoryGitSourceOverride(
     repository: Repository,
     gitSourceOverride: RepositoryGitSource | null
-  ): Promise<void> {
+  ): Promise<Repository> {
     const normalizedGitSourceOverride = normalizeRepositoryGitSource(
       repository.path,
       gitSourceOverride
@@ -492,6 +500,22 @@ export class RepositoriesStore extends TypedBaseStore<
 
     setTrackedRepositoryGitSource(repository.path, normalizedGitSourceOverride)
     this.emitUpdatedRepositories()
+
+    return new Repository(
+      repository.path,
+      repository.id,
+      repository.gitHubRepository,
+      repository.missing,
+      repository.alias,
+      repository.groupName,
+      repository.defaultBranch,
+      repository.workflowPreferences,
+      repository.customEditorOverride,
+      normalizedGitSourceOverride,
+      repository.isTutorialRepository,
+      repository.overrideLogin,
+      repository.gitDir
+    )
   }
 
   /**
@@ -585,6 +609,8 @@ export class RepositoriesStore extends TypedBaseStore<
       missing,
     })
 
+    deleteTrackedRepositoryGitSource(repository.path)
+    setTrackedRepositoryGitSource(worktreePath, repository.gitSourceOverride)
     this.emitUpdatedRepositories()
 
     return {

@@ -43,6 +43,7 @@ type GitCommand = {
   }
   readonly ssh?: {
     readonly command: string
+    readonly gitPath: string
     readonly args: ReadonlyArray<string>
     readonly cwd: string
     readonly env: ReadonlyArray<string>
@@ -378,6 +379,7 @@ const resolveGitCommand = (
         source,
         ssh: {
           command: source.command,
+          gitPath: source.gitPath,
           args: translatedArgs,
           cwd: translatedCwd,
           env: translatedEnv,
@@ -444,6 +446,7 @@ export async function execGitProcess(
   if (command.source.kind === 'ssh' && command.ssh !== undefined) {
     return execSshGitProcess({
       command: command.ssh.command,
+      gitPath: command.ssh.gitPath,
       args: command.ssh.args,
       cwd: command.ssh.cwd,
       env: command.ssh.env,
@@ -507,6 +510,7 @@ export const spawnGitProcess = (
   ) {
     const child = spawnSshGitProcess({
       command: resolvedCommand.ssh.command,
+      gitPath: resolvedCommand.ssh.gitPath,
       args: resolvedCommand.ssh.args,
       cwd: resolvedCommand.ssh.cwd,
       env: resolvedCommand.ssh.env,

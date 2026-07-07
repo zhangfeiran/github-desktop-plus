@@ -45,6 +45,7 @@ describe('git/reset', () => {
         {
           kind: 'ssh',
           command: 'ssh frz@127.0.0.1 -p 20022',
+          gitPath: '/usr/bin/git',
           useWslPathTranslation: true,
           pathTranslation: 'wsl',
         }

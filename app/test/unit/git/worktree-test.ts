@@ -320,6 +320,39 @@ describe('git/worktree', () => {
           : worktreePath
       )
     })
+
+    it('translates SSHFS absolute paths normalized by Windows path handling', () => {
+      const repository = new Repository(
+        'X:\\home\\feiran\\hyper-parallel',
+        -1,
+        null,
+        false,
+        null,
+        null,
+        null,
+        {},
+        null,
+        {
+          kind: 'ssh',
+          command: 'ssh feiran@8.92.7.129',
+          gitPath: '/usr/bin/git',
+          useWslPathTranslation: true,
+          pathTranslation: 'sshfs',
+        }
+      )
+      const worktreePath = '\\home\\feiran\\hyper-parallel-task-optimize'
+      const translatedPath = translateWorktreePathForRepository(
+        repository,
+        worktreePath
+      )
+
+      assert.equal(
+        translatedPath,
+        process.platform === 'win32'
+          ? '/home/feiran/hyper-parallel-task-optimize'
+          : worktreePath
+      )
+    })
   })
 
   describe('getMainWorktreePath', () => {

@@ -91,9 +91,11 @@ describe('git/process', () => {
       args: ['status', '--porcelain=v2', "quote's"],
       cwd: "/home/me/repo's",
       env: [`GIT_CONFIG_PARAMETERS='credential.helper=!"/mnt/e/helper.exe"'`],
+      gitPath: '~/miniforge3/bin/git',
     })
 
     assert.ok(script.includes(`cd -- '/home/me/repo'\\''s'`))
+    assert.ok(script.includes(`"$HOME"/'miniforge3/bin/git'`))
     assert.ok(script.includes(`'quote'\\''s'`))
     assert.ok(script.includes('< /dev/null'))
   })
