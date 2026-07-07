@@ -42,7 +42,9 @@ import {
 import { getAvailableEditors } from '../../lib/editors/lookup'
 import {
   BundledGitSource,
+  DefaultSshGitSource,
   RepositoryGitSource,
+  SshGitPathTranslation,
   WslGitSource,
   repositoryGitSourcesEqual,
 } from '../../models/repository-git-source'
@@ -98,6 +100,8 @@ interface IRepositorySettingsState {
   readonly repositoryAccount: Account | null
   readonly gitSourceKind: RepositoryGitSource['kind']
   readonly externalGitPath: string
+  readonly sshGitCommand: string
+  readonly sshGitPathTranslation: SshGitPathTranslation
   readonly isValidExternalGitPath: boolean
   readonly showInvalidExternalGitPathWarning: boolean
   readonly gitSourceSaveDisabled: boolean
@@ -152,11 +156,21 @@ export class RepositorySettings extends React.Component<
         initialGitSourceOverride.kind === 'external'
           ? initialGitSourceOverride.path
           : '',
+      sshGitCommand:
+        initialGitSourceOverride.kind === 'ssh'
+          ? initialGitSourceOverride.command
+          : DefaultSshGitSource.command,
+      sshGitPathTranslation:
+        initialGitSourceOverride.kind === 'ssh'
+          ? initialGitSourceOverride.pathTranslation
+          : DefaultSshGitSource.pathTranslation,
       isValidExternalGitPath: initialGitSourceOverride.kind !== 'external',
       showInvalidExternalGitPathWarning: false,
       gitSourceSaveDisabled:
-        initialGitSourceOverride.kind === 'external' &&
-        initialGitSourceOverride.path.length === 0,
+        (initialGitSourceOverride.kind === 'external' &&
+          initialGitSourceOverride.path.length === 0) ||
+        (initialGitSourceOverride.kind === 'ssh' &&
+          initialGitSourceOverride.command.trim().length === 0),
     }
   }
 
@@ -246,7 +260,9 @@ export class RepositorySettings extends React.Component<
       showInvalidExternalGitPathWarning:
         currentGitSource.kind === 'external' && !isValidExternalGitPath,
       gitSourceSaveDisabled:
-        currentGitSource.kind === 'external' && !isValidExternalGitPath,
+        (currentGitSource.kind === 'external' && !isValidExternalGitPath) ||
+        (currentGitSource.kind === 'ssh' &&
+          currentGitSource.command.trim().length === 0),
     })
   }
 
@@ -385,6 +401,10 @@ export class RepositorySettings extends React.Component<
             onGitSourceChanged={this.onGitSourceChanged}
             onExternalGitPathChanged={this.onExternalGitPathChanged}
             onChooseExternalGitPath={this.onChooseExternalGitPath}
+            onSshGitCommandChanged={this.onSshGitCommandChanged}
+            onSshGitUseWslPathTranslationChanged={
+              this.onSshGitUseWslPathTranslationChanged
+            }
             name={this.state.committerName}
             email={this.state.committerEmail}
             globalName={this.state.globalCommitterName}
@@ -581,7 +601,8 @@ export class RepositorySettings extends React.Component<
       this.state.selectedExternalEditor !==
         this.props.repository.customEditorOverride?.selectedExternalEditor ||
       this.state.useCustomEditor !==
-        (this.props.repository.customEditorOverride?.useCustomEditor ?? false) ||
+        (this.props.repository.customEditorOverride?.useCustomEditor ??
+          false) ||
       this.state.customEditor.path !==
         this.props.repository.customEditorOverride?.customEditor?.path ||
       this.state.customEditor.arguments !==
@@ -653,7 +674,11 @@ export class RepositorySettings extends React.Component<
     this.setState({
       gitSourceKind,
       gitSourceSaveDisabled:
-        gitSourceKind === 'external' ? !this.state.isValidExternalGitPath : false,
+        gitSourceKind === 'external'
+          ? !this.state.isValidExternalGitPath
+          : gitSourceKind === 'ssh'
+          ? this.state.sshGitCommand.trim().length === 0
+          : false,
       showInvalidExternalGitPathWarning:
         gitSourceKind === 'external'
           ? this.state.showInvalidExternalGitPathWarning
@@ -709,6 +734,26 @@ export class RepositorySettings extends React.Component<
     await this.updateExternalGitPath(externalGitPath)
   }
 
+  private onSshGitCommandChanged = (sshGitCommand: string) => {
+    this.setState({
+      sshGitCommand,
+      gitSourceSaveDisabled:
+        this.state.gitSourceKind === 'ssh' && sshGitCommand.trim().length === 0,
+    })
+  }
+
+  private onSshGitUseWslPathTranslationChanged = (
+    sshGitUseWslPathTranslation: boolean
+  ) => {
+    this.setState(state => ({
+      sshGitPathTranslation: sshGitUseWslPathTranslation
+        ? state.sshGitPathTranslation === 'sshfs'
+          ? 'sshfs'
+          : 'wsl'
+        : 'none',
+    }))
+  }
+
   private async updateExternalGitPath(externalGitPath: string) {
     const validationId = ++this.externalGitValidationId
 
@@ -748,6 +793,13 @@ export class RepositorySettings extends React.Component<
         return { kind: 'external', path: this.state.externalGitPath }
       case 'wsl':
         return WslGitSource
+      case 'ssh':
+        return {
+          kind: 'ssh',
+          command: this.state.sshGitCommand.trim(),
+          useWslPathTranslation: this.state.sshGitPathTranslation !== 'none',
+          pathTranslation: this.state.sshGitPathTranslation,
+        }
       default:
         return assertNever(
           this.state.gitSourceKind,

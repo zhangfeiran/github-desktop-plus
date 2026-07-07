@@ -357,6 +357,13 @@ function getGitSourceOverrideHash(
 ): string {
   return createEqualityHash(
     gitSourceOverride.kind,
-    'path' in gitSourceOverride ? gitSourceOverride.path : null
+    'path' in gitSourceOverride ? gitSourceOverride.path : null,
+    'command' in gitSourceOverride ? gitSourceOverride.command : null,
+    'useWslPathTranslation' in gitSourceOverride
+      ? gitSourceOverride.useWslPathTranslation
+      : null,
+    'pathTranslation' in gitSourceOverride
+      ? gitSourceOverride.pathTranslation
+      : null
   )
 }

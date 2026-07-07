@@ -3,11 +3,18 @@ import { afterEach, describe, it } from 'node:test'
 import {
   fromWslPath,
   getRepositoryGitSource,
+  isSshFsRepositoryPath,
   isWslRepositoryPath,
   normalizeRepositoryGitSource,
   setTrackedRepositoryGitSources,
+  toSshFsPath,
   toWslPath,
 } from '../../src/lib/git/source'
+import {
+  DefaultSshGitCommand,
+  DefaultSshGitSource,
+  repositoryGitSourcesEqual,
+} from '../../src/models/repository-git-source'
 
 describe('git/source', () => {
   afterEach(() => {
@@ -70,6 +77,90 @@ describe('git/source', () => {
     )
   })
 
+  it('normalizes SSH Git sources without restricting them to WSL paths', () => {
+    assert.deepEqual(
+      normalizeRepositoryGitSource('E:\\repo', {
+        kind: 'ssh',
+        command: '  ssh frz@127.0.0.1 -p 20022  ',
+        useWslPathTranslation: true,
+        pathTranslation: 'wsl',
+      }),
+      {
+        kind: 'ssh',
+        command: 'ssh frz@127.0.0.1 -p 20022',
+        useWslPathTranslation: true,
+        pathTranslation: 'wsl',
+      }
+    )
+
+    assert.deepEqual(
+      normalizeRepositoryGitSource('E:\\repo', {
+        kind: 'ssh',
+        command: '',
+        useWslPathTranslation: true,
+        pathTranslation: 'wsl',
+      }),
+      DefaultSshGitSource
+    )
+  })
+
+  it('normalizes SSHFS Git source path translation', () => {
+    assert.deepEqual(
+      normalizeRepositoryGitSource('X:\\home\\feiran\\repo', {
+        kind: 'ssh',
+        command: 'ssh feiran@8.92.7.129',
+        useWslPathTranslation: true,
+        pathTranslation: 'sshfs',
+      }),
+      {
+        kind: 'ssh',
+        command: 'ssh feiran@8.92.7.129',
+        useWslPathTranslation: true,
+        pathTranslation: 'sshfs',
+      }
+    )
+  })
+
+  it('compares SSH Git source settings by command and path translation', () => {
+    assert.equal(
+      repositoryGitSourcesEqual(
+        {
+          kind: 'ssh',
+          command: DefaultSshGitCommand,
+          useWslPathTranslation: true,
+          pathTranslation: 'wsl',
+        },
+        DefaultSshGitSource
+      ),
+      true
+    )
+    assert.equal(
+      repositoryGitSourcesEqual(
+        {
+          kind: 'ssh',
+          command: DefaultSshGitCommand,
+          useWslPathTranslation: true,
+          pathTranslation: 'wsl',
+        },
+        {
+          kind: 'ssh',
+          command: DefaultSshGitCommand,
+          useWslPathTranslation: false,
+          pathTranslation: 'none',
+        }
+      ),
+      false
+    )
+  })
+
+  it('detects SSHFS drive paths and translates them to remote paths', () => {
+    assert.equal(isSshFsRepositoryPath('X:\\home\\feiran\\repo'), true)
+    assert.equal(isSshFsRepositoryPath('Y:/home/feiran/repo'), true)
+    assert.equal(isSshFsRepositoryPath('E:\\repo'), false)
+    assert.equal(toSshFsPath('X:\\home\\feiran\\repo'), '/home/feiran/repo')
+    assert.equal(toSshFsPath('Z:\\'), '/')
+  })
+
   it('translates between Windows and WSL paths', () => {
     assert.equal(
       toWslPath('\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo'),
@@ -79,7 +170,10 @@ describe('git/source', () => {
       toWslPath('E:\\Documents\\GitHub\\github-desktop-plus'),
       '/mnt/e/Documents/GitHub/github-desktop-plus'
     )
-    assert.equal(fromWslPath('/home/feiran/repo'), '\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo')
+    assert.equal(
+      fromWslPath('/home/feiran/repo'),
+      '\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo'
+    )
     assert.equal(
       fromWslPath('/mnt/e/Documents/GitHub/github-desktop-plus'),
       'E:\\Documents\\GitHub\\github-desktop-plus'

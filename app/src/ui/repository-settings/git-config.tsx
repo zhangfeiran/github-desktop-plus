@@ -8,6 +8,7 @@ import { LinkButton } from '../lib/link-button'
 import { assertNever } from '../../lib/fatal-error'
 import { Button } from '../lib/button'
 import { TextBox } from '../lib/text-box'
+import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { InputError } from '../lib/input-description/input-error'
 import {
   IConfigValueOrigin,
@@ -40,6 +41,8 @@ interface IGitConfigProps {
   readonly onGitSourceChanged: (kind: RepositoryGitSourceOption) => void
   readonly onExternalGitPathChanged: (path: string) => void
   readonly onChooseExternalGitPath: () => void
+  readonly onSshGitCommandChanged: (command: string) => void
+  readonly onSshGitUseWslPathTranslationChanged: (value: boolean) => void
   readonly onNameChanged: (name: string) => void
   readonly onEmailChanged: (email: string) => void
 }
@@ -85,6 +88,8 @@ export class GitConfig extends React.Component<IGitConfigProps> {
         return 'External Git executable'
       case 'wsl':
         return 'WSL Git'
+      case 'ssh':
+        return 'SSH Git'
       default:
         return assertNever(key, `Unknown git source: ${key}`)
     }
@@ -93,8 +98,11 @@ export class GitConfig extends React.Component<IGitConfigProps> {
   public render() {
     const { isWslRepository } = this.props
     const configOptions = [GitConfigLocation.Global, GitConfigLocation.Local]
-    const gitSourceOptions: ReadonlyArray<RepositoryGitSourceOption> =
+    const baseGitSourceOptions: ReadonlyArray<RepositoryGitSourceOption> =
       isWslRepository ? ['bundled', 'external', 'wsl'] : ['bundled', 'external']
+    const gitSourceOptions: ReadonlyArray<RepositoryGitSourceOption> = __WIN32__
+      ? [...baseGitSourceOptions, 'ssh']
+      : baseGitSourceOptions
     const selectionOption =
       configOptions.find(o => o === this.props.gitConfigLocation) ??
       GitConfigLocation.Global
@@ -113,6 +121,7 @@ export class GitConfig extends React.Component<IGitConfigProps> {
             />
           </Row>
           {this.renderExternalGitPath()}
+          {this.renderSshGitSettings()}
         </div>
         <div className="advanced-section">
           <h2 id="git-config-heading">For this repository I wish to</h2>
@@ -176,6 +185,40 @@ export class GitConfig extends React.Component<IGitConfigProps> {
             </InputError>
           </div>
         )}
+      </>
+    )
+  }
+
+  private onSshGitUseWslPathTranslationChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    this.props.onSshGitUseWslPathTranslationChanged(event.currentTarget.checked)
+  }
+
+  private renderSshGitSettings() {
+    if (this.props.gitSource.kind !== 'ssh') {
+      return null
+    }
+
+    return (
+      <>
+        <div className="custom-integration-form-path-container">
+          <TextBox
+            label="SSH command"
+            value={this.props.gitSource.command}
+            onValueChanged={this.props.onSshGitCommandChanged}
+            placeholder="ssh frz@127.0.0.1 -p 20022"
+          />
+        </div>
+        <Checkbox
+          label="Translate local paths for the SSH host"
+          value={
+            this.props.gitSource.useWslPathTranslation
+              ? CheckboxValue.On
+              : CheckboxValue.Off
+          }
+          onChange={this.onSshGitUseWslPathTranslationChanged}
+        />
       </>
     )
   }

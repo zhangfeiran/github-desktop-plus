@@ -31,6 +31,31 @@ describe('git/reset', () => {
       )
     })
 
+    it('does not use Git for Windows reset stdin arguments with SSH Git', () => {
+      const repository = new Repository(
+        'E:\\repo',
+        -1,
+        null,
+        false,
+        null,
+        null,
+        null,
+        {},
+        null,
+        {
+          kind: 'ssh',
+          command: 'ssh frz@127.0.0.1 -p 20022',
+          useWslPathTranslation: true,
+          pathTranslation: 'wsl',
+        }
+      )
+
+      assert.equal(
+        shouldResetPathsFromStdin(repository, GitResetMode.Mixed),
+        false
+      )
+    })
+
     it('only uses reset stdin for mixed resets through Windows Git', () => {
       const repository = new Repository('E:\\repo', -1, null, false)
 

@@ -1,7 +1,7 @@
 import { git } from './core'
 import { Repository } from '../../models/repository'
 import { assertNever } from '../fatal-error'
-import { getRepositoryGitSource } from './source'
+import { isPosixGitSource } from './source'
 
 /** The reset modes which are supported. */
 export const enum GitResetMode {
@@ -56,7 +56,7 @@ export function shouldResetPathsFromStdin(
   return (
     __WIN32__ &&
     mode === GitResetMode.Mixed &&
-    getRepositoryGitSource(repository.path).kind !== 'wsl'
+    !isPosixGitSource(repository.gitSourceOverride)
   )
 }
 

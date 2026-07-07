@@ -66,9 +66,14 @@ export const getCredentialUrl = (cred: Map<string, string>) => {
 
 const getGitUserAgentCacheKey = (path: string) => {
   const source = getRepositoryGitSource(path)
-  return source.kind === 'external'
-    ? `${source.kind}:${source.path}`
-    : source.kind
+  switch (source.kind) {
+    case 'external':
+      return `${source.kind}:${source.path}`
+    case 'ssh':
+      return `${source.kind}:${source.command}:${source.pathTranslation}`
+    default:
+      return source.kind
+  }
 }
 
 export const GitUserAgent = memoizeOne((path: string, cacheKey: string) =>

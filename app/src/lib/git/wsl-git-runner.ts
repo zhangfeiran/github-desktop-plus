@@ -4,7 +4,7 @@ import { EventEmitter } from 'events'
 import { PassThrough } from 'stream'
 import { ExecError, type IGitResult } from 'dugite'
 
-type WslGitExecutionOptions = {
+export type ShellGitExecutionOptions = {
   readonly args: ReadonlyArray<string>
   readonly cwd: string
   readonly env: ReadonlyArray<string>
@@ -17,6 +17,8 @@ type WslGitExecutionOptions = {
   readonly killSignal?: ExecFileOptions['killSignal']
   readonly processCallback?: (process: ChildProcess) => void
 }
+
+type WslGitExecutionOptions = ShellGitExecutionOptions
 
 type WslGitCommandScriptOptions = {
   readonly id: string
@@ -58,7 +60,7 @@ type QueuedRequest = {
 const controlByte = '\x1e'
 const wslGitMarkerPrefix = `${controlByte}GDP_WSL_GIT`
 
-const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
 
 const markerPattern = (name: string, id: string) =>
   `${wslGitMarkerPrefix}_${name}_${id}${controlByte}`
@@ -173,10 +175,15 @@ class WslGitProcess extends EventEmitter {
   }
 }
 
-class WslGitRunner {
+export class PersistentShellGitRunner {
   private child: ChildProcess | null = null
   private readonly queue = new Array<QueuedRequest>()
   private activeRequest: ActiveRequest | null = null
+
+  public constructor(
+    private readonly runnerName: string,
+    private readonly spawnShell: (processEnv: NodeJS.ProcessEnv) => ChildProcess
+  ) {}
 
   public shutdown() {
     const child = this.child
@@ -287,7 +294,7 @@ class WslGitRunner {
       this.rejectActiveRequest(
         (stdout, stderr) =>
           new ExecError(
-            'WSL Git runner stdin is not available',
+            `${this.runnerName} stdin is not available`,
             stdout,
             stderr
           ),
@@ -311,14 +318,7 @@ class WslGitRunner {
       return this.child
     }
 
-    const child = spawn(
-      'wsl.exe',
-      ['--exec', 'bash', '--noprofile', '--norc'],
-      {
-        cwd: process.cwd(),
-        env: processEnv,
-      }
-    )
+    const child = this.spawnShell(processEnv)
 
     child.stdout?.on('data', chunk => {
       if (this.child === child) {
@@ -351,9 +351,9 @@ class WslGitRunner {
         this.rejectActiveRequest(
           (stdout, stderr) =>
             new ExecError(
-              `WSL Git runner exited with code ${code ?? 'null'} and signal ${
-                signal ?? 'null'
-              }`,
+              `${this.runnerName} exited with code ${
+                code ?? 'null'
+              } and signal ${signal ?? 'null'}`,
               stdout,
               stderr,
               { code: code?.toString(), signal: signal ?? undefined }
@@ -580,11 +580,16 @@ class WslGitRunner {
   }
 }
 
-let runner: WslGitRunner | null = null
+let runner: PersistentShellGitRunner | null = null
 
 const getRunner = () => {
   if (runner === null) {
-    runner = new WslGitRunner()
+    runner = new PersistentShellGitRunner('WSL Git runner', processEnv =>
+      spawn('wsl.exe', ['--exec', 'bash', '--noprofile', '--norc'], {
+        cwd: process.cwd(),
+        env: processEnv,
+      })
+    )
   }
 
   return runner

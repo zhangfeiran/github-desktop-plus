@@ -10,7 +10,7 @@ merge-base. It excludes changes that came from merged upstream `main` history.
 ## WSL Git support
 
 `my-dev` adds repository-level Git source selection. A repository can use the
-bundled Git, a configured external Git executable, or WSL Git.
+bundled Git, a configured external Git executable, WSL Git, or SSH Git.
 
 WSL repositories are detected from Ubuntu UNC paths such as
 `\\wsl.localhost\Ubuntu\...`. For these repositories, the default source is WSL
@@ -26,6 +26,20 @@ The WSL Git path also includes:
   through WSL.
 - Worktree, config, hook, reset, cherry-pick, and ref operations adjusted to
   work with translated paths.
+
+SSH Git extends the same process layer so a repository can run Git on a remote
+POSIX shell reached through WSL's `ssh`. Repository Settings exposes the SSH
+command under **Git source**; the default local test command is
+`ssh frz@127.0.0.1 -p 20022`. By default SSH Git uses the same Windows/WSL path
+translation as WSL Git, so Windows paths such as `E:\repo` are executed as
+`/mnt/e/repo` on the SSH host.
+
+SSHFS-Win mapped repositories can also be added through **Add local
+repository**. When the selected repository path is on the `X:`, `Y:`, or `Z:`
+drive, the dialog prompts for an SSH command and stores the repository as SSH
+Git using SSHFS path translation. For example,
+`X:\home\feiran\hyper-parallel` is executed remotely as
+`/home/feiran/hyper-parallel`.
 
 ## Periodic fetch is opt-in
 
@@ -104,6 +118,7 @@ Focused unit coverage was added or updated for:
 - WSL Git source detection and path translation.
 - WSL Git process execution.
 - WSL trampoline environment behavior.
+- SSH Git source selection and WSL-style command/path translation.
 - Git checkout, pull, reset, worktree, log, and diff behavior.
 - Gitee and GitCode endpoint mapping and remote parsing.
 - WSL-aware worktree path translation and operations.

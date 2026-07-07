@@ -11,7 +11,7 @@ import which from 'which'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { spawnGitProcess } from '../git/process'
-import { getRepositoryGitSource } from '../git/source'
+import { getRepositoryGitSource, isPosixGitSource } from '../git/source'
 
 const execFileAsync = promisify(execFile)
 
@@ -222,10 +222,9 @@ export const createHooksProxy = (
 
     const terminalOutput: Buffer[] = []
     const gitSource = getRepositoryGitSource(proxyCwd)
-    const baseShellEnv: ShellEnvResult =
-      gitSource.kind === 'wsl'
-        ? { kind: 'success', env: {} }
-        : await getShellEnv(proxyCwd)
+    const baseShellEnv: ShellEnvResult = isPosixGitSource(gitSource)
+      ? { kind: 'success', env: {} }
+      : await getShellEnv(proxyCwd)
     const shellEnv =
       gitSource.kind === 'bundled'
         ? await ensureGitExecPathEnv(baseShellEnv)

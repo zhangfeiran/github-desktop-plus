@@ -5,6 +5,10 @@ import {
   translateWslEnv,
   translateWslGitConfigParameters,
 } from '../../../src/lib/git/process'
+import {
+  createSshGitSpawnScript,
+  getSshGitCommandArgs,
+} from '../../../src/lib/git/ssh-git-runner'
 import { createWslGitCommandScript } from '../../../src/lib/git/wsl-git-runner'
 
 describe('git/process', () => {
@@ -71,5 +75,26 @@ describe('git/process', () => {
     assert.ok(script.includes(`'quote'\\''s'`))
     assert.ok(script.includes('GDP_WSL_GIT_STDOUT_END_abc123'))
     assert.ok(script.includes('GDP_WSL_GIT_STDERR_END_abc123:%03d'))
+  })
+
+  it('normalizes SSH Git command port options written after the destination', () => {
+    assert.deepEqual(getSshGitCommandArgs('ssh frz@127.0.0.1 -p 20022'), [
+      'ssh',
+      '-p',
+      '20022',
+      'frz@127.0.0.1',
+    ])
+  })
+
+  it('quotes SSH Git spawn commands', () => {
+    const script = createSshGitSpawnScript({
+      args: ['status', '--porcelain=v2', "quote's"],
+      cwd: "/home/me/repo's",
+      env: [`GIT_CONFIG_PARAMETERS='credential.helper=!"/mnt/e/helper.exe"'`],
+    })
+
+    assert.ok(script.includes(`cd -- '/home/me/repo'\\''s'`))
+    assert.ok(script.includes(`'quote'\\''s'`))
+    assert.ok(script.includes('< /dev/null'))
   })
 })

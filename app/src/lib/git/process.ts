@@ -17,8 +17,17 @@ import {
   type IGitBufferResult,
   type IGitSpawnOptions,
 } from 'dugite'
-import type { RepositoryGitSource } from '../../models/repository-git-source'
-import { getRepositoryGitSource, toWslPath } from './source'
+import type {
+  RepositoryGitSource,
+  SshGitPathTranslation,
+} from '../../models/repository-git-source'
+import {
+  getRepositoryGitSource,
+  toSshFsPath,
+  toWslPath,
+  translateSshGitPath,
+} from './source'
+import { execSshGitProcess, spawnSshGitProcess } from './ssh-git-runner'
 import { execWslGitProcess } from './wsl-git-runner'
 
 type GitCommand = {
@@ -28,6 +37,12 @@ type GitCommand = {
   readonly env: Record<string, string | undefined>
   readonly source: Exclude<RepositoryGitSource, { kind: 'bundled' }>
   readonly wsl?: {
+    readonly args: ReadonlyArray<string>
+    readonly cwd: string
+    readonly env: ReadonlyArray<string>
+  }
+  readonly ssh?: {
+    readonly command: string
     readonly args: ReadonlyArray<string>
     readonly cwd: string
     readonly env: ReadonlyArray<string>
@@ -53,6 +68,9 @@ const quotedWslRepositoryPathRe =
 const isWindowsAbsolutePath = (value: string) =>
   windowsDrivePathRe.test(value) || wslRepositoryPathRe.test(value)
 
+const getWindowsDriveLetter = (value: string): string | null =>
+  /^([a-zA-Z]):[\\/]/.exec(value)?.[1].toLowerCase() ?? null
+
 const sanitizeWindowsGitEnv = (
   env: Record<string, string | undefined>
 ): Record<string, string | undefined> => {
@@ -65,36 +83,52 @@ const sanitizeWindowsGitEnv = (
   return sanitized
 }
 
-const translateWslPathArgument = (value: string): string => {
+const translatePathArgument = (
+  value: string,
+  translatePath: (path: string) => string
+): string => {
   if (isWindowsAbsolutePath(value)) {
-    return toWslPath(value)
+    return translatePath(value)
   }
 
   return value
 }
 
-const translateQuotedWslPathArgument = (value: string): string => {
+const translateQuotedPathArgument = (
+  value: string,
+  translatePath: (path: string) => string
+): string => {
   const quotedWindowsPath = quotedWindowsDrivePathRe.exec(value)
   if (quotedWindowsPath !== null) {
-    return `"${toWslPath(quotedWindowsPath[1])}"`
+    return `"${translatePath(quotedWindowsPath[1])}"`
   }
 
   const quotedRepositoryPath = quotedWslRepositoryPathRe.exec(value)
   if (quotedRepositoryPath !== null) {
-    return `"${toWslPath(quotedRepositoryPath[1])}"`
+    return `"${translatePath(quotedRepositoryPath[1])}"`
   }
 
   return value
 }
 
-const translateWslGitConfigValue = (value: string): string =>
+const translateGitConfigValue = (
+  value: string,
+  translatePath: (path: string) => string
+): string =>
   value.startsWith('!')
-    ? `!${translateQuotedWslPathArgument(
-        translateWslPathArgument(value.substring(1))
+    ? `!${translateQuotedPathArgument(
+        translatePathArgument(value.substring(1), translatePath),
+        translatePath
       )}`
-    : translateQuotedWslPathArgument(translateWslPathArgument(value))
+    : translateQuotedPathArgument(
+        translatePathArgument(value, translatePath),
+        translatePath
+      )
 
-export const translateWslGitConfigParameters = (value: string): string =>
+const translateGitConfigParameters = (
+  value: string,
+  translatePath: (path: string) => string
+): string =>
   value.replace(
     /'([^'=]+)=([^']*)'/g,
     (_, key: string, configValue: string) => {
@@ -102,9 +136,18 @@ export const translateWslGitConfigParameters = (value: string): string =>
         return `'${key}='`
       }
 
-      return `'${key}=${translateWslGitConfigValue(configValue)}'`
+      return `'${key}=${translateGitConfigValue(configValue, translatePath)}'`
     }
   )
+
+const translateWslPathArgument = (value: string): string =>
+  translatePathArgument(value, toWslPath)
+
+const translateQuotedWslPathArgument = (value: string): string =>
+  translateQuotedPathArgument(value, toWslPath)
+
+export const translateWslGitConfigParameters = (value: string): string =>
+  translateGitConfigParameters(value, toWslPath)
 
 const appendWslInteropEnvKeys = (value: string | undefined): string => {
   const entries =
@@ -174,6 +217,52 @@ export const translateWslEnv = (
   return translated
 }
 
+const translateSshEnv = (
+  env: Record<string, string | undefined>,
+  translatePath: (path: string) => string
+): ReadonlyArray<string> => {
+  const translated = new Array<string>()
+
+  for (const [key, rawValue] of Object.entries(env)) {
+    if (
+      rawValue === undefined ||
+      bundledGitEnvironmentKeys.has(key) ||
+      key === 'WSLENV'
+    ) {
+      continue
+    }
+
+    if (key === 'PATH' && rawValue.includes(';')) {
+      continue
+    }
+
+    let value = rawValue
+
+    switch (key) {
+      case 'GIT_CONFIG_PARAMETERS':
+        value = translateGitConfigParameters(value, translatePath)
+        break
+      case 'GIT_ASKPASS':
+      case 'SSH_ASKPASS':
+        value = translatePathArgument(value, translatePath)
+        break
+      case 'GIT_SSH_COMMAND':
+        value = translateQuotedPathArgument(
+          translatePathArgument(value, translatePath),
+          translatePath
+        )
+        break
+      default:
+        value = translatePathArgument(value, translatePath)
+        break
+    }
+
+    translated.push(`${key}=${value}`)
+  }
+
+  return translated
+}
+
 const translateWslGitArgument = (arg: string): string => {
   const equalsIndex = arg.indexOf('=')
 
@@ -187,6 +276,44 @@ const translateWslGitArgument = (arg: string): string => {
   }
 
   return translateWslPathArgument(arg)
+}
+
+const createSshGitPathTranslator = (
+  repositoryPath: string,
+  pathTranslation: SshGitPathTranslation
+) => {
+  if (pathTranslation !== 'sshfs') {
+    return (value: string) => translateSshGitPath(value, pathTranslation)
+  }
+
+  const repositoryDrive = getWindowsDriveLetter(repositoryPath)
+
+  return (value: string) => {
+    const valueDrive = getWindowsDriveLetter(value)
+    if (valueDrive !== null && valueDrive === repositoryDrive) {
+      return toSshFsPath(value)
+    }
+
+    return value
+  }
+}
+
+const translateSshGitArgument = (
+  arg: string,
+  translatePath: (path: string) => string
+): string => {
+  const equalsIndex = arg.indexOf('=')
+
+  if (equalsIndex > 0) {
+    const prefix = arg.substring(0, equalsIndex + 1)
+    const value = arg.substring(equalsIndex + 1)
+
+    if (value.length > 0) {
+      return `${prefix}${translatePathArgument(value, translatePath)}`
+    }
+  }
+
+  return translatePathArgument(arg, translatePath)
 }
 
 const resolveGitCommand = (
@@ -225,6 +352,32 @@ const resolveGitCommand = (
         env: sanitizeWindowsGitEnv({}),
         source,
         wsl: {
+          args: translatedArgs,
+          cwd: translatedCwd,
+          env: translatedEnv,
+        },
+      }
+    }
+
+    case 'ssh': {
+      const translatePath = createSshGitPathTranslator(
+        path,
+        source.pathTranslation
+      )
+      const translatedEnv = translateSshEnv(env, translatePath)
+      const translatedArgs = args.map(arg =>
+        translateSshGitArgument(arg, translatePath)
+      )
+      const translatedCwd = translatePath(path)
+
+      return {
+        command: 'wsl.exe',
+        args: [],
+        cwd: process.cwd(),
+        env: sanitizeWindowsGitEnv({}),
+        source,
+        ssh: {
+          command: source.command,
           args: translatedArgs,
           cwd: translatedCwd,
           env: translatedEnv,
@@ -288,6 +441,23 @@ export async function execGitProcess(
     })
   }
 
+  if (command.source.kind === 'ssh' && command.ssh !== undefined) {
+    return execSshGitProcess({
+      command: command.ssh.command,
+      args: command.ssh.args,
+      cwd: command.ssh.cwd,
+      env: command.ssh.env,
+      processEnv: execOptions.env,
+      encoding: execOptions.encoding,
+      maxBuffer: execOptions.maxBuffer,
+      stdin: options?.stdin,
+      stdinEncoding: options?.stdinEncoding,
+      signal: options?.signal,
+      killSignal: options?.killSignal,
+      processCallback: options?.processCallback,
+    })
+  }
+
   return new Promise((resolve, reject) => {
     const cp = execFile(
       command.command,
@@ -330,6 +500,22 @@ export const spawnGitProcess = (
   }
 
   const { command, args: commandArgs, cwd, env } = resolvedCommand
+
+  if (
+    resolvedCommand.source.kind === 'ssh' &&
+    resolvedCommand.ssh !== undefined
+  ) {
+    const child = spawnSshGitProcess({
+      command: resolvedCommand.ssh.command,
+      args: resolvedCommand.ssh.args,
+      cwd: resolvedCommand.ssh.cwd,
+      env: resolvedCommand.ssh.env,
+      processEnv: env,
+    })
+
+    ignoreClosedInputStream(child)
+    return child
+  }
 
   const child = spawn(command, commandArgs, {
     cwd,

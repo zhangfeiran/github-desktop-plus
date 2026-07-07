@@ -1,7 +1,13 @@
 import { git } from './core'
 import { Repository } from '../../models/repository'
 import { isAbsolute, normalize } from 'path'
-import { isWslRepositoryPath, toWslPath, translateWslPathValue } from './source'
+import {
+  getRepositoryGitSource,
+  isWslRepositoryPath,
+  toWslPath,
+  translateSshGitPath,
+  translateWslPathValue,
+} from './source'
 
 /**
  * Look up a config value by name in the repository.
@@ -208,6 +214,17 @@ export async function addGlobalConfigValue(
  * if the path is owner by a different user than the current.
  */
 export async function addSafeDirectory(path: string) {
+  const source = getRepositoryGitSource(path)
+
+  if (source.kind === 'ssh' && source.pathTranslation !== 'none') {
+    await addGlobalConfigValueIfMissing(
+      'safe.directory',
+      translateSshGitPath(path, source.pathTranslation),
+      path
+    )
+    return
+  }
+
   if (isWslRepositoryPath(path)) {
     await addGlobalConfigValueIfMissing('safe.directory', toWslPath(path), path)
     return

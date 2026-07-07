@@ -1,10 +1,13 @@
 import {
   BundledGitSource,
+  DefaultSshGitCommand,
+  type SshGitPathTranslation,
   type RepositoryGitSource,
   WslGitSource,
 } from '../../models/repository-git-source'
 
 export const WslGitRepositoryPrefix = '\\\\wsl.localhost\\Ubuntu\\'
+const sshFsDrivePathRe = /^[x-z]:[\\/]/i
 
 const normalizedWslPrefix = WslGitRepositoryPrefix.toLowerCase()
 const normalizedForwardSlashWslPrefix = '//wsl.localhost/ubuntu/'
@@ -12,10 +15,17 @@ const normalizedForwardSlashWslPrefix = '//wsl.localhost/ubuntu/'
 const trackedRepositoryGitSources = new Map<string, RepositoryGitSource>()
 
 const normalizeRepositorySourceKey = (path: string) =>
-  path.replace(/\//g, '\\').replace(/[\\\/]+$/, '').toLowerCase()
+  path
+    .replace(/\//g, '\\')
+    .replace(/[\\\/]+$/, '')
+    .toLowerCase()
 
 export function isWslRepositoryPath(path: string): boolean {
   return path.replace(/\//g, '\\').toLowerCase().startsWith(normalizedWslPrefix)
+}
+
+export function isSshFsRepositoryPath(path: string): boolean {
+  return sshFsDrivePathRe.test(path)
 }
 
 function getDefaultRepositoryGitSource(path: string): RepositoryGitSource {
@@ -28,6 +38,21 @@ export function normalizeRepositoryGitSource(
 ): RepositoryGitSource {
   if (gitSource?.kind === 'external') {
     return gitSource
+  }
+
+  if (gitSource?.kind === 'ssh') {
+    const command = gitSource.command.trim()
+    const legacyPathTranslation = gitSource.useWslPathTranslation
+      ? 'wsl'
+      : 'none'
+    const pathTranslation = gitSource.pathTranslation ?? legacyPathTranslation
+
+    return {
+      kind: 'ssh',
+      command: command.length > 0 ? command : DefaultSshGitCommand,
+      useWslPathTranslation: pathTranslation !== 'none',
+      pathTranslation,
+    }
   }
 
   if (gitSource?.kind === 'wsl' && !isWslRepositoryPath(repositoryPath)) {
@@ -76,9 +101,41 @@ export function getTrackedRepositoryGitSource(path: string) {
 
 export function getRepositoryGitSource(path: string): RepositoryGitSource {
   return (
-    getTrackedRepositoryGitSource(path) ??
-    getDefaultRepositoryGitSource(path)
+    getTrackedRepositoryGitSource(path) ?? getDefaultRepositoryGitSource(path)
   )
+}
+
+export function isPosixGitSource(source: RepositoryGitSource): boolean {
+  return source.kind === 'wsl' || source.kind === 'ssh'
+}
+
+export function toSshFsPath(path: string): string {
+  if (path.length === 0) {
+    return path
+  }
+
+  const driveMatch = /^[a-zA-Z]:[\\/](.*)$/.exec(path)
+  if (driveMatch !== null) {
+    const [, rest] = driveMatch
+    const suffix = rest.replace(/\\/g, '/').replace(/^\/+/, '')
+    return suffix.length > 0 ? `/${suffix}` : '/'
+  }
+
+  return path.replace(/\\/g, '/')
+}
+
+export function translateSshGitPath(
+  path: string,
+  translation: SshGitPathTranslation
+): string {
+  switch (translation) {
+    case 'wsl':
+      return toWslPath(path)
+    case 'sshfs':
+      return toSshFsPath(path)
+    case 'none':
+      return path
+  }
 }
 
 export function toWslPath(path: string): string {
@@ -114,13 +171,9 @@ export function fromWslPath(path: string): string {
   const normalizedForwardSlashes = path.replace(/\\/g, '/')
 
   if (
-    normalizedForwardSlashes
-      .toLowerCase()
-      .startsWith('/wsl.localhost/ubuntu/')
+    normalizedForwardSlashes.toLowerCase().startsWith('/wsl.localhost/ubuntu/')
   ) {
-    return `\\\\${normalizedForwardSlashes
-      .slice(1)
-      .replace(/\//g, '\\')}`
+    return `\\\\${normalizedForwardSlashes.slice(1).replace(/\//g, '\\')}`
   }
 
   if (
