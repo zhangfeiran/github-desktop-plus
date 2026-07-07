@@ -136,6 +136,28 @@ export class SelectedCommits extends DiffPresentationStateComponent<
     }
   }
 
+  private getSelectedFilesForFileList(): ReadonlyArray<CommittedFileChange> {
+    const { selectedFile, changesetData } = this.props
+    const selectedPaths = new Set(this.state.selectedFiles.map(f => f.path))
+    const selectedFiles = changesetData.files.filter(f =>
+      selectedPaths.has(f.path)
+    )
+
+    if (selectedFiles.length > 0) {
+      return selectedFiles
+    }
+
+    if (selectedFile === null) {
+      return []
+    }
+
+    const currentSelectedFile = changesetData.files.find(
+      f => f.path === selectedFile.path
+    )
+
+    return currentSelectedFile === undefined ? [] : [currentSelectedFile]
+  }
+
   private onRowDoubleClick = (row: number) => {
     const files = this.props.changesetData.files
     const file = files[row]
@@ -320,7 +342,7 @@ export class SelectedCommits extends DiffPresentationStateComponent<
         <FileList
           files={files}
           onSelectionChanged={this.onFileSelectionChanged}
-          selectedFiles={this.state.selectedFiles}
+          selectedFiles={this.getSelectedFilesForFileList()}
           availableWidth={availableWidth}
           onContextMenu={this.onContextMenu}
           onRowDoubleClick={this.onRowDoubleClick}
@@ -503,7 +525,7 @@ export class SelectedCommits extends DiffPresentationStateComponent<
       ? `Open in ${externalEditorLabel}`
       : DefaultEditorLabel
 
-    const { selectedFiles } = this.state
+    const selectedFiles = this.getSelectedFilesForFileList()
     const isMultiSelect =
       selectedFiles.length > 1 && selectedFiles.some(f => f.path === file.path)
     const filesToCopy = isMultiSelect ? selectedFiles : [file]
