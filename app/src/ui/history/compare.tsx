@@ -7,6 +7,7 @@ import {
   ICompareBranch,
   ComparisonMode,
   IDisplayHistory,
+  IMergePreviewSelection,
 } from '../../lib/app-state'
 import { CommitList } from './commit-list'
 import { Repository } from '../../models/repository'
@@ -25,6 +26,7 @@ import { IMatches } from '../../lib/fuzzy-find'
 import { Ref } from '../lib/ref'
 import { MergeCallToActionWithConflicts } from './merge-call-to-action-with-conflicts'
 import { AheadBehindStore } from '../../lib/stores/ahead-behind-store'
+import { MergePreviewStore } from '../../lib/stores/merge-preview-store'
 import { DragType } from '../../models/drag-drop'
 import { PopupType } from '../../models/popup'
 import { getUniqueCoauthorsAsAuthors } from '../../lib/unique-coauthors-as-authors'
@@ -36,6 +38,7 @@ import { Account } from '../../models/account'
 import { Emoji } from '../../lib/emoji'
 import { syncClockwise } from '../octicons'
 import { formatNumber } from '../../lib/format-number'
+import { CompareMergePreview } from './compare-merge-preview'
 
 interface ICompareSidebarProps {
   readonly isCompareView: boolean
@@ -49,6 +52,7 @@ interface ICompareSidebarProps {
   readonly dispatcher: Dispatcher
   readonly currentBranch: Branch | null
   readonly selectedCommitShas: ReadonlyArray<string>
+  readonly selectedMergePreview: IMergePreviewSelection | null
   readonly branchSortOrder: BranchSortOrder
   readonly onRevertCommit: (commit: Commit) => void
   readonly onAmendCommit: (commit: Commit, isLocalCommit: boolean) => void
@@ -63,6 +67,7 @@ interface ICompareSidebarProps {
   readonly localTags: Map<string, string> | null
   readonly tagsToPush: ReadonlyArray<string> | null
   readonly aheadBehindStore: AheadBehindStore
+  readonly mergePreviewStore: MergePreviewStore
   readonly isMultiCommitOperationInProgress?: boolean
   readonly shasToHighlight: ReadonlyArray<string>
   readonly accounts: ReadonlyArray<Account>
@@ -405,11 +410,28 @@ export class CompareSidebar extends React.Component<
   private renderActiveTab(view: ICompareBranch) {
     return (
       <div className="compare-commit-list">
+        <CompareMergePreview
+          repository={this.props.repository}
+          mergePreviewStore={this.props.mergePreviewStore}
+          currentBranch={this.props.currentBranch}
+          view={view}
+          selectedMergePreview={this.props.selectedMergePreview}
+          onSelected={this.onMergePreviewSelected}
+        />
         {this.renderCommitList()}
         {view.comparisonMode === ComparisonMode.Behind
           ? this.renderMergeCallToAction(view)
           : null}
       </div>
+    )
+  }
+
+  private onMergePreviewSelected = (
+    mergePreview: IMergePreviewSelection
+  ): Promise<void> => {
+    return this.props.dispatcher.changeMergePreviewSelection(
+      this.props.repository,
+      mergePreview
     )
   }
 

@@ -804,6 +804,9 @@ export interface IWorktreesState {
 }
 
 export interface ICommitSelection {
+  /** A virtual merge preview selected from the Compare tab, if any. */
+  readonly mergePreview: IMergePreviewSelection | null
+
   /** The commits currently selected in the app */
   readonly shas: ReadonlyArray<string>
 
@@ -851,6 +854,14 @@ export interface ICommitSelection {
 
   /** Which diff strategy is used when showing a single merge commit. */
   readonly diffMode: HistoryCommitDiffMode
+}
+
+export interface IMergePreviewSelection {
+  readonly comparisonMode: ComparisonMode.Ahead | ComparisonMode.Behind
+  readonly targetBranchName: string
+  readonly sourceBranchName: string
+  readonly targetSHA: string
+  readonly sourceSHA: string
 }
 
 export enum ChangesSelectionKind {

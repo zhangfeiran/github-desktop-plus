@@ -85,6 +85,23 @@ diff mode toggle:
 If remerge diff loading fails, the app falls back to first-parent mode. Image
 diff rendering is disabled for remerge diffs.
 
+## Compare merge preview selection
+
+After selecting a branch in the Compare tab, the selected comparison view shows
+a fixed merge preview row above the commit list. Selecting that row behaves like
+selecting a virtual merge commit: the right-hand history pane shows the files
+that would change and lets each file's diff be opened.
+
+- On the **Behind** tab, the virtual row shows the files that would change if the
+  compared branch were merged into the current branch.
+- On the **Ahead** tab, the virtual row shows the files that would change if the
+  current branch were merged into the compared branch.
+
+The preview uses Git's virtual merge tree and diffs that tree against the target
+branch tip, so it does not modify the working tree or create a real commit.
+Conflict previews still load as selectable virtual rows and mark conflicted
+files in the right-hand file list.
+
 ## History author and committer search
 
 History search supports advanced text syntax for matching commit identity
@@ -126,5 +143,6 @@ Focused unit coverage was added or updated for:
 - Git checkout, pull, reset, worktree, log, and diff behavior.
 - Gitee and GitCode endpoint mapping and remote parsing.
 - WSL-aware worktree path translation and operations.
+- Compare merge preview selection.
 - History author/committer search parsing and matching.
 - Progress parsing and model type guards.

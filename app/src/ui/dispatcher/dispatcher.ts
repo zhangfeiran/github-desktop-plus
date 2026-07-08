@@ -24,6 +24,7 @@ import {
   MultiCommitOperationConflictState,
   IMultiCommitOperationState,
   CommitOptions,
+  IMergePreviewSelection,
 } from '../../lib/app-state'
 import { assertNever, fatalError } from '../../lib/fatal-error'
 import {
@@ -333,6 +334,14 @@ export class Dispatcher {
     isContiguous: boolean
   ): void {
     return this.appStore._changeCommitSelection(repository, shas, isContiguous)
+  }
+
+  /** Change the selected virtual merge preview in the history view. */
+  public changeMergePreviewSelection(
+    repository: Repository,
+    mergePreview: IMergePreviewSelection
+  ): Promise<void> {
+    return this.appStore._changeMergePreviewSelection(repository, mergePreview)
   }
 
   /** Update the shas that should be highlighted */

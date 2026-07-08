@@ -13,6 +13,7 @@ import {
 import { Dispatcher } from './dispatcher'
 import { AppStore, GitHubUserStore, IssuesStore } from '../lib/stores'
 import { DisabledCopilotModel } from '../lib/stores/copilot-store'
+import { MergePreviewStore } from '../lib/stores/merge-preview-store'
 import { assertNever } from '../lib/fatal-error'
 import { shell } from '../lib/app-shell'
 import { updateStore, UpdateStatus } from './lib/update-store'
@@ -262,6 +263,7 @@ interface IAppProps {
   readonly issuesStore: IssuesStore
   readonly gitHubUserStore: GitHubUserStore
   readonly aheadBehindStore: AheadBehindStore
+  readonly mergePreviewStore: MergePreviewStore
   readonly notificationsDebugStore: NotificationsDebugStore
   readonly startTime: number
 }
@@ -4190,6 +4192,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           isShowingModal={this.isShowingModal}
           isShowingFoldout={this.state.currentFoldout !== null}
           aheadBehindStore={this.props.aheadBehindStore}
+          mergePreviewStore={this.props.mergePreviewStore}
           commitSpellcheckEnabled={this.state.commitSpellcheckEnabled}
           showCommitLengthWarning={this.state.showCommitLengthWarning}
           showCommitAuthorInfo={this.state.showCommitAuthorInfo}

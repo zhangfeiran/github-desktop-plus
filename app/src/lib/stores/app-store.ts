@@ -23,6 +23,7 @@ import {
   DiffFontFamily,
 } from '../../models/diff-font'
 import { EditorOverride } from '../../models/editor-override'
+import { MergePreviewFile } from '../../models/merge'
 import { stageResolvedConflictFiles } from '../git/stage'
 import {
   canReuseCommitSearchResults,
@@ -113,7 +114,10 @@ import {
   CommittedFileChange,
   WorkingDirectoryFileChange,
   WorkingDirectoryStatus,
+  AppFileStatus,
   AppFileStatusKind,
+  GitStatusEntry,
+  UnmergedEntrySummary,
 } from '../../models/status'
 import { TipState, tipEquals, IValidBranch } from '../../models/tip'
 import {
@@ -191,6 +195,7 @@ import {
   ICompareState,
   CommitOptions,
   IChangesState,
+  IMergePreviewSelection,
 } from '../app-state'
 import {
   findEditorOrDefault,
@@ -252,6 +257,7 @@ import {
   removeWorktree,
   moveWorktree,
   getCommitRangeDiff,
+  getTreeDiff,
   getCommitRangeChangedFiles,
   updateRemoteHEAD,
   getBranchMergeBaseChangedFiles,
@@ -428,6 +434,7 @@ import { offsetFromNow } from '../offset-from'
 import { findContributionTargetDefaultBranch } from '../branch'
 import { ValidNotificationPullRequestReview } from '../valid-notification-pull-request-review'
 import { determineMergeability } from '../git/merge-tree'
+import { getMergePreview } from '../git/merge-tree'
 import { PopupManager } from '../popup-manager'
 import { resizableComponentClass } from '../../ui/resizable'
 import { compare } from '../compare'
@@ -1677,6 +1684,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   private clearSelectedCommit(repository: Repository) {
     this.repositoryStateCache.updateCommitSelection(repository, () => ({
+      mergePreview: null,
       shas: [],
       file: null,
       changesetData: { files: [], linesAdded: 0, linesDeleted: 0 },
@@ -1712,6 +1720,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     this.repositoryStateCache.updateCommitSelection(repository, () => ({
+      mergePreview: null,
       shas,
       shasInDiff,
       isContiguous,
@@ -1722,6 +1731,36 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }))
 
     this.emitUpdate()
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public _changeMergePreviewSelection(
+    repository: Repository,
+    mergePreview: IMergePreviewSelection
+  ): Promise<void> {
+    const { commitSelection } = this.repositoryStateCache.get(repository)
+    const currentMergePreview = commitSelection.mergePreview
+
+    if (
+      currentMergePreview !== null &&
+      mergePreviewSelectionsEqual(currentMergePreview, mergePreview)
+    ) {
+      return Promise.resolve()
+    }
+
+    this.repositoryStateCache.updateCommitSelection(repository, () => ({
+      mergePreview,
+      shas: [],
+      shasInDiff: [],
+      isContiguous: true,
+      file: null,
+      changesetData: { files: [], linesAdded: 0, linesDeleted: 0 },
+      diff: null,
+      diffMode: HistoryCommitDiffMode.FirstParent,
+    }))
+
+    this.emitUpdate()
+    return this._loadChangedFilesForCurrentSelection(repository)
   }
 
   private recordMultiCommitDiff(
@@ -1806,6 +1845,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
     commitSHAs: ReadonlyArray<string>
   ) {
     const state = this.repositoryStateCache.get(repository)
+
+    if (
+      state.commitSelection.mergePreview !== null &&
+      commitSHAs.length === 0
+    ) {
+      this.clearSelectedCommit(repository)
+      return
+    }
+
     let selectedSHA =
       state.commitSelection.shas.length > 0
         ? state.commitSelection.shas[0]
@@ -2423,6 +2471,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
       isContiguous,
       diffMode: requestedDiffMode,
     } = commitSelection
+    const mergePreview = commitSelection.mergePreview
+    if (mergePreview !== null) {
+      return this.loadMergePreviewChangedFiles(repository, mergePreview)
+    }
+
     if (currentSHAs.length === 0 || (currentSHAs.length > 1 && !isContiguous)) {
       return
     }
@@ -2493,6 +2546,63 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
+  private async loadMergePreviewChangedFiles(
+    repository: Repository,
+    mergePreviewSelection: IMergePreviewSelection
+  ): Promise<void> {
+    const gitStore = this.gitStoreCache.get(repository)
+    const preview = await gitStore.performFailableOperation(() =>
+      getMergePreview(
+        repository,
+        mergePreviewSelection.targetSHA,
+        mergePreviewSelection.sourceSHA
+      )
+    )
+
+    if (!preview) {
+      return
+    }
+
+    const stateAfterLoad = this.repositoryStateCache.get(repository)
+    const latestMergePreview = stateAfterLoad.commitSelection.mergePreview
+    if (
+      latestMergePreview === null ||
+      !mergePreviewSelectionsEqual(latestMergePreview, mergePreviewSelection)
+    ) {
+      return
+    }
+
+    const files =
+      preview.kind === ComputedAction.Invalid
+        ? []
+        : preview.files.map(file =>
+            createMergePreviewCommittedFileChange(
+              file,
+              preview.mergeTree,
+              mergePreviewSelection.targetSHA
+            )
+          )
+
+    const changesetData = {
+      files,
+      linesAdded: 0,
+      linesDeleted: 0,
+    }
+    const firstFileOrDefault = files.length > 0 ? files[0] : null
+
+    this.repositoryStateCache.updateCommitSelection(repository, () => ({
+      file: firstFileOrDefault,
+      changesetData,
+      diff: null,
+    }))
+
+    this.emitUpdate()
+
+    if (firstFileOrDefault !== null) {
+      this._changeFileSelection(repository, firstFileOrDefault)
+    }
+  }
+
   /** This shouldn't be called directly. See `Dispatcher`. */
   public async _setRepositoryFilterText(text: string): Promise<void> {
     this.repositoryFilterText = text
@@ -2516,6 +2626,39 @@ export class AppStore extends TypedBaseStore<IAppState> {
       isContiguous,
       diffMode: requestedDiffMode,
     } = stateBeforeLoad.commitSelection
+    const mergePreview = stateBeforeLoad.commitSelection.mergePreview
+
+    if (mergePreview !== null) {
+      const diff = await getTreeDiff(
+        repository,
+        file,
+        file.parentCommitish,
+        file.commitish,
+        this.hideWhitespaceInHistoryDiff
+      )
+
+      const stateAfterLoad = this.repositoryStateCache.get(repository)
+      const mergePreviewAfterLoad = stateAfterLoad.commitSelection.mergePreview
+      if (
+        mergePreviewAfterLoad === null ||
+        !mergePreviewSelectionsEqual(mergePreviewAfterLoad, mergePreview)
+      ) {
+        return
+      }
+
+      if (!stateAfterLoad.commitSelection.file) {
+        return
+      }
+      if (stateAfterLoad.commitSelection.file.id !== file.id) {
+        return
+      }
+
+      this.repositoryStateCache.updateCommitSelection(repository, () => ({
+        diff,
+      }))
+
+      return this.emitUpdate()
+    }
 
     if (shas.length === 0) {
       if (__DEV__) {
@@ -11143,6 +11286,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       baseBranch,
       commitSHAs,
       commitSelection: {
+        mergePreview: null,
         shas: commitSHAs,
         shasInDiff: commitSHAs,
         isContiguous: true,
@@ -11867,6 +12011,65 @@ export class AppStore extends TypedBaseStore<IAppState> {
     setBoolean(showChangesFilterKey, this.showChangesFilter)
     this.updateMenuLabelsForSelectedRepository()
     this.emitUpdate()
+  }
+}
+
+function mergePreviewSelectionsEqual(
+  a: IMergePreviewSelection,
+  b: IMergePreviewSelection
+) {
+  return (
+    a.comparisonMode === b.comparisonMode &&
+    a.targetBranchName === b.targetBranchName &&
+    a.sourceBranchName === b.sourceBranchName &&
+    a.targetSHA === b.targetSHA &&
+    a.sourceSHA === b.sourceSHA
+  )
+}
+
+function createMergePreviewCommittedFileChange(
+  file: MergePreviewFile,
+  mergeTree: string,
+  targetSHA: string
+) {
+  return new CommittedFileChange(
+    file.path,
+    getMergePreviewAppFileStatus(file),
+    mergeTree,
+    targetSHA
+  )
+}
+
+function getMergePreviewAppFileStatus(file: MergePreviewFile): AppFileStatus {
+  switch (file.status) {
+    case 'added':
+      return { kind: AppFileStatusKind.New }
+    case 'modified':
+      return { kind: AppFileStatusKind.Modified }
+    case 'deleted':
+      return { kind: AppFileStatusKind.Deleted }
+    case 'renamed':
+      return {
+        kind: AppFileStatusKind.Renamed,
+        oldPath: file.oldPath ?? file.path,
+        renameIncludesModifications: true,
+      }
+    case 'copied':
+      return {
+        kind: AppFileStatusKind.Copied,
+        oldPath: file.oldPath ?? file.path,
+        renameIncludesModifications: false,
+      }
+    case 'conflicted':
+      return {
+        kind: AppFileStatusKind.Conflicted,
+        entry: {
+          kind: 'conflicted',
+          action: UnmergedEntrySummary.BothModified,
+          us: GitStatusEntry.UpdatedButUnmerged,
+          them: GitStatusEntry.UpdatedButUnmerged,
+        },
+      }
   }
 }
 

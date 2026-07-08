@@ -362,6 +362,7 @@ export class RepositoryStateCache {
 function getInitialRepositoryState(): IRepositoryState {
   return {
     commitSelection: {
+      mergePreview: null,
       shas: [],
       shasInDiff: [],
       isContiguous: true,

@@ -266,6 +266,46 @@ export async function getCommitRangeDiff(
 }
 
 /**
+ * Render the difference for a file between two tree-ish values.
+ */
+export async function getTreeDiff(
+  repository: Repository,
+  file: FileChange,
+  baseTreeish: string,
+  targetTreeish: string,
+  hideWhitespaceInDiff: boolean = false
+): Promise<IDiff> {
+  const args = [
+    'diff',
+    baseTreeish,
+    targetTreeish,
+    '-M',
+    '-C',
+    ...(hideWhitespaceInDiff ? ['-w'] : []),
+    '--no-ext-diff',
+    '--patch-with-raw',
+    '--format=',
+    '-z',
+    '--no-color',
+    '--',
+    ensureRelativePath(file.path),
+  ]
+
+  if (
+    file.status.kind === AppFileStatusKind.Renamed ||
+    file.status.kind === AppFileStatusKind.Copied
+  ) {
+    args.push(ensureRelativePath(file.status.oldPath))
+  }
+
+  const result = await git(args, repository.path, 'getTreeDiff', {
+    encoding: 'buffer',
+  })
+
+  return buildDiff(result.stdout, repository, file, targetTreeish, baseTreeish)
+}
+
+/**
  * Get the files that were changed for the merge base comparison of two branches.
  * (What would be the result of a merge)
  */

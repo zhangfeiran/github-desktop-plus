@@ -31,6 +31,7 @@ import { TutorialPanel, TutorialWelcome, TutorialDone } from './tutorial'
 import { TutorialStep, isValidTutorialStep } from '../models/tutorial-step'
 import { openFile } from './lib/open-file'
 import { AheadBehindStore } from '../lib/stores/ahead-behind-store'
+import { MergePreviewStore } from '../lib/stores/merge-preview-store'
 import { dragAndDropManager } from '../lib/drag-and-drop-manager'
 import { DragType } from '../models/drag-drop'
 import { PullRequestSuggestedNextAction } from '../models/pull-request'
@@ -119,6 +120,7 @@ interface IRepositoryViewProps {
 
   readonly onExitTutorial: () => void
   readonly aheadBehindStore: AheadBehindStore
+  readonly mergePreviewStore: MergePreviewStore
   readonly onCherryPick: (
     repository: Repository,
     commits: ReadonlyArray<CommitOneLine>,
@@ -470,13 +472,19 @@ export class RepositoryView extends React.Component<
   }
 
   private renderCompareSidebar(): JSX.Element {
-    const { repository, dispatcher, state, aheadBehindStore, emoji } =
-      this.props
+    const {
+      repository,
+      dispatcher,
+      state,
+      aheadBehindStore,
+      mergePreviewStore,
+      emoji,
+    } = this.props
     const {
       remote,
       compareState,
       branchesState,
-      commitSelection: { shas },
+      commitSelection: { shas, mergePreview },
       commitLookup,
       localCommitSHAs,
       localTags,
@@ -502,6 +510,7 @@ export class RepositoryView extends React.Component<
         compareState={compareState}
         branchSortOrder={this.props.branchSortOrder}
         selectedCommitShas={shas}
+        selectedMergePreview={mergePreview}
         shasToHighlight={compareState.shasToHighlight}
         currentBranch={currentBranch}
         emoji={emoji}
@@ -517,6 +526,7 @@ export class RepositoryView extends React.Component<
         compareListScrollTop={scrollTop}
         tagsToPush={tagsToPush}
         aheadBehindStore={aheadBehindStore}
+        mergePreviewStore={mergePreviewStore}
         isMultiCommitOperationInProgress={mcos !== null}
         askForConfirmationOnCheckoutCommit={
           this.props.askForConfirmationOnCheckoutCommit
@@ -633,6 +643,7 @@ export class RepositoryView extends React.Component<
       changesetData,
       file,
       diff,
+      mergePreview,
       shas,
       shasInDiff,
       isContiguous,
@@ -656,6 +667,7 @@ export class RepositoryView extends React.Component<
         repository={this.props.repository}
         dispatcher={this.props.dispatcher}
         selectedCommits={selectedCommits}
+        mergePreviewSelection={mergePreview}
         shasInDiff={shasInDiff}
         isContiguous={isContiguous}
         localCommitSHAs={localCommitSHAs}

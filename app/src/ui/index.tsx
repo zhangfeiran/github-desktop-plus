@@ -60,6 +60,7 @@ import { PullRequestCoordinator } from '../lib/stores/pull-request-coordinator'
 import { sendNonFatalException } from '../lib/helpers/non-fatal-exception'
 import { enableUnhandledRejectionReporting } from '../lib/feature-flag'
 import { AheadBehindStore } from '../lib/stores/ahead-behind-store'
+import { MergePreviewStore } from '../lib/stores/merge-preview-store'
 import {
   ApplicationTheme,
   supportsSystemThemeChanges,
@@ -293,6 +294,7 @@ const apiRepositoriesStore = new ApiRepositoriesStore(accountsStore)
 
 const commitStatusStore = new CommitStatusStore(accountsStore)
 const aheadBehindStore = new AheadBehindStore()
+const mergePreviewStore = new MergePreviewStore()
 
 const aliveStore = new AliveStore(accountsStore)
 
@@ -429,6 +431,7 @@ ReactDOM.render(
     issuesStore={issuesStore}
     gitHubUserStore={gitHubUserStore}
     aheadBehindStore={aheadBehindStore}
+    mergePreviewStore={mergePreviewStore}
     notificationsDebugStore={notificationsDebugStore}
     startTime={startTime}
   />,

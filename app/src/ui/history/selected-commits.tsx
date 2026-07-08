@@ -31,7 +31,7 @@ import { SeamlessDiffSwitcher } from '../diff/seamless-diff-switcher'
 import { getDotComAPIEndpoint } from '../../lib/api'
 import { IMenuItem } from '../../lib/menu-item'
 import { IChangesetData } from '../../lib/git'
-import { IConstrainedValue } from '../../lib/app-state'
+import { IConstrainedValue, IMergePreviewSelection } from '../../lib/app-state'
 import { clamp } from '../../lib/clamp'
 import { pathExists } from '../../lib/path-exists'
 import { UnreachableCommitsTab } from './unreachable-commits-dialog'
@@ -46,12 +46,14 @@ import {
   DiffPresentationStateComponent,
   IDiffPresentationState,
 } from '../diff/diff-presentation-state'
+import { Ref } from '../lib/ref'
 
 interface ISelectedCommitsProps {
   readonly repository: Repository
   readonly dispatcher: Dispatcher
   readonly emoji: Map<string, Emoji>
   readonly selectedCommits: ReadonlyArray<Commit>
+  readonly mergePreviewSelection: IMergePreviewSelection | null
   readonly shasInDiff: ReadonlyArray<string>
   readonly localCommitSHAs: ReadonlyArray<string>
   readonly changesetData: IChangesetData
@@ -167,8 +169,14 @@ export class SelectedCommits extends DiffPresentationStateComponent<
 
   public componentWillUpdate(nextProps: ISelectedCommitsProps) {
     // reset isExpanded if we're switching commits.
-    const currentValue = this.props.selectedCommits.map(c => c.sha).join('')
-    const nextValue = nextProps.selectedCommits.map(c => c.sha).join('')
+    const currentValue = getHistorySelectionKey(
+      this.props.selectedCommits,
+      this.props.mergePreviewSelection
+    )
+    const nextValue = getHistorySelectionKey(
+      nextProps.selectedCommits,
+      nextProps.mergePreviewSelection
+    )
 
     if (
       currentValue !== nextValue ||
@@ -271,6 +279,12 @@ export class SelectedCommits extends DiffPresentationStateComponent<
   }
 
   private renderCommitSummary(commits: ReadonlyArray<Commit>) {
+    if (this.props.mergePreviewSelection !== null) {
+      return this.renderMergePreviewCommitSummary(
+        this.props.mergePreviewSelection
+      )
+    }
+
     return (
       <ExpandableCommitSummary
         selectedCommits={commits}
@@ -284,6 +298,25 @@ export class SelectedCommits extends DiffPresentationStateComponent<
         showUnreachableCommits={this.showUnreachableCommits}
         accounts={this.props.accounts}
       />
+    )
+  }
+
+  private renderMergePreviewCommitSummary(
+    mergePreview: IMergePreviewSelection
+  ) {
+    return (
+      <div
+        id="expandable-commit-summary"
+        className="merge-preview-commit-summary"
+      >
+        <div className="ecs-title">Merge preview</div>
+        <div className="beneath-summary">
+          <div className="merge-preview-commit-summary-details">
+            Merging <Ref>{mergePreview.sourceBranchName}</Ref> into{' '}
+            <Ref>{mergePreview.targetBranchName}</Ref>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -418,13 +451,13 @@ export class SelectedCommits extends DiffPresentationStateComponent<
   }
 
   public render() {
-    const { selectedCommits, isContiguous } = this.props
+    const { selectedCommits, isContiguous, mergePreviewSelection } = this.props
 
     if (selectedCommits.length > 1 && !isContiguous) {
       return this.renderMultipleCommitsBlankSlate()
     }
 
-    if (selectedCommits.length === 0) {
+    if (selectedCommits.length === 0 && mergePreviewSelection === null) {
       return <NoCommitSelected />
     }
 
@@ -584,15 +617,21 @@ export class SelectedCommits extends DiffPresentationStateComponent<
     ]
 
     const gitHubRepository = repository.gitHubRepository
+    const selectedCommit =
+      selectedCommits.length === 1 ? selectedCommits[0] : null
 
     items.push({
       label: gitHubRepository
         ? getViewOnGitHubLabel(gitHubRepository)
         : 'Not uploaded to GitHub',
-      action: () => this.onViewOnGitHub(selectedCommits[0].sha, file),
+      action: () => {
+        if (selectedCommit !== null) {
+          this.onViewOnGitHub(selectedCommit.sha, file)
+        }
+      },
       enabled:
-        selectedCommits.length === 1 &&
-        !localCommitSHAs.includes(selectedCommits[0].sha) &&
+        selectedCommit !== null &&
+        !localCommitSHAs.includes(selectedCommit.sha) &&
         !!gitHubRepository &&
         this.props.selectedCommits.length > 0,
     })
@@ -617,6 +656,24 @@ function NoCommitSelected() {
       No commit selected
     </div>
   )
+}
+
+function getHistorySelectionKey(
+  selectedCommits: ReadonlyArray<Commit>,
+  mergePreviewSelection: IMergePreviewSelection | null
+) {
+  if (mergePreviewSelection !== null) {
+    return [
+      'merge-preview',
+      mergePreviewSelection.comparisonMode,
+      mergePreviewSelection.targetBranchName,
+      mergePreviewSelection.sourceBranchName,
+      mergePreviewSelection.targetSHA,
+      mergePreviewSelection.sourceSHA,
+    ].join(':')
+  }
+
+  return selectedCommits.map(c => c.sha).join('')
 }
 
 function getViewOnGitHubLabel(gitHubRepository: GitHubRepository) {

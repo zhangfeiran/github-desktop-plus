@@ -243,6 +243,16 @@
   }
 }
 
+.merge-preview-commit-summary {
+  .merge-preview-commit-summary-details {
+    color: var(--text-secondary-color);
+    font-size: var(--font-size-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 // This make it so there is not a double scroll bar when zoomed in on a very
 // small screen.
 @media (max-width: 650px) {
