@@ -52,6 +52,8 @@ describe('git/merge-tree', () => {
 
       assert.match(mergeFeatureIntoMaster.mergeTree, /^[0-9a-f]{40}$/)
       assert.equal(mergeFeatureIntoMaster.changedFiles, 1)
+      assert.equal(mergeFeatureIntoMaster.linesAdded, 1)
+      assert.equal(mergeFeatureIntoMaster.linesDeleted, 0)
       assert.equal(mergeFeatureIntoMaster.conflictedFiles, 0)
       assert.deepStrictEqual(mergeFeatureIntoMaster.files, [
         { path: 'feature.txt', status: 'added' },
@@ -68,6 +70,8 @@ describe('git/merge-tree', () => {
 
       assert.match(mergeMasterIntoFeature.mergeTree, /^[0-9a-f]{40}$/)
       assert.equal(mergeMasterIntoFeature.changedFiles, 1)
+      assert.equal(mergeMasterIntoFeature.linesAdded, 1)
+      assert.equal(mergeMasterIntoFeature.linesDeleted, 0)
       assert.equal(mergeMasterIntoFeature.conflictedFiles, 0)
       assert.deepStrictEqual(mergeMasterIntoFeature.files, [
         { path: 'main.txt', status: 'added' },
@@ -105,6 +109,8 @@ describe('git/merge-tree', () => {
 
       assert.match(preview.mergeTree, /^[0-9a-f]{40}$/)
       assert.equal(preview.changedFiles, 1)
+      assert.ok(preview.linesAdded > 0)
+      assert.ok(preview.linesDeleted > 0)
       assert.equal(preview.conflictedFiles, 1)
       assert.deepStrictEqual(preview.files, [
         { path: 'conflict.txt', status: 'conflicted' },

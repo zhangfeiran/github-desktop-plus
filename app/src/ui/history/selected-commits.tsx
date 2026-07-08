@@ -309,13 +309,31 @@ export class SelectedCommits extends DiffPresentationStateComponent<
         id="expandable-commit-summary"
         className="merge-preview-commit-summary"
       >
-        <div className="ecs-title">Merge preview</div>
+        <div className="ecs-title">
+          <span>Merge preview</span>
+          {this.renderMergePreviewLinesChanged()}
+        </div>
         <div className="beneath-summary">
           <div className="merge-preview-commit-summary-details">
             Merging <Ref>{mergePreview.sourceBranchName}</Ref> into{' '}
             <Ref>{mergePreview.targetBranchName}</Ref>
           </div>
         </div>
+      </div>
+    )
+  }
+
+  private renderMergePreviewLinesChanged() {
+    const { linesAdded, linesDeleted } = this.props.changesetData
+
+    if (linesAdded === 0 && linesDeleted === 0) {
+      return null
+    }
+
+    return (
+      <div className="merge-preview-lines-changed">
+        <div className="lines-added">+{linesAdded}</div>
+        <div className="lines-deleted">-{linesDeleted}</div>
       </div>
     )
   }

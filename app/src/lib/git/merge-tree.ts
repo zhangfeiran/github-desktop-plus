@@ -96,6 +96,25 @@ function parseMergePreviewFiles(
   return files
 }
 
+function parseMergePreviewLineCounts(stdout: string) {
+  let linesAdded = 0
+  let linesDeleted = 0
+
+  for (const entry of stdout.split('\0')) {
+    const match = /^(\d+|-)\t(\d+|-)\t/.exec(entry)
+
+    if (match === null) {
+      continue
+    }
+
+    const [, added, deleted] = match
+    linesAdded += added === '-' ? 0 : parseInt(added, 10)
+    linesDeleted += deleted === '-' ? 0 : parseInt(deleted, 10)
+  }
+
+  return { linesAdded, linesDeleted }
+}
+
 /**
  * Preview merging `source` into `target` without touching the working tree.
  *
@@ -124,13 +143,23 @@ export async function getMergePreview(
   )
     .then<MergePreviewResult>(async ({ stdout }) => {
       const { mergeTree, conflictedFiles } = parseMergeTreeOutput(stdout)
-      const diff = await git(
-        ['diff', '-M', '-C', '--name-status', '-z', target, mergeTree],
-        repository.path,
-        'getMergePreviewChangedFiles'
-      )
+      const [diff, numstat] = await Promise.all([
+        git(
+          ['diff', '-M', '-C', '--name-status', '-z', target, mergeTree],
+          repository.path,
+          'getMergePreviewChangedFiles'
+        ),
+        git(
+          ['diff', '-M', '-C', '--numstat', '-z', target, mergeTree],
+          repository.path,
+          'getMergePreviewLineCounts'
+        ),
+      ])
       const files = parseMergePreviewFiles(diff.stdout, conflictedFiles)
       const changedFiles = files.length
+      const { linesAdded, linesDeleted } = parseMergePreviewLineCounts(
+        numstat.stdout
+      )
 
       return conflictedFiles.length > 0
         ? {
@@ -138,6 +167,8 @@ export async function getMergePreview(
             mergeTree,
             conflictedFiles: conflictedFiles.length,
             changedFiles,
+            linesAdded,
+            linesDeleted,
             files,
           }
         : {
@@ -145,6 +176,8 @@ export async function getMergePreview(
             mergeTree,
             conflictedFiles: 0,
             changedFiles,
+            linesAdded,
+            linesDeleted,
             files,
           }
     })

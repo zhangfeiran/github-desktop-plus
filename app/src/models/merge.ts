@@ -57,6 +57,8 @@ export type MergePreviewClean = {
   readonly kind: ComputedAction.Clean
   readonly mergeTree: string
   readonly changedFiles: number
+  readonly linesAdded: number
+  readonly linesDeleted: number
   readonly conflictedFiles: 0
   readonly files: ReadonlyArray<MergePreviewFile>
 }
@@ -65,6 +67,8 @@ export type MergePreviewConflicts = {
   readonly kind: ComputedAction.Conflicts
   readonly mergeTree: string
   readonly changedFiles: number
+  readonly linesAdded: number
+  readonly linesDeleted: number
   readonly conflictedFiles: number
   readonly files: ReadonlyArray<MergePreviewFile>
 }

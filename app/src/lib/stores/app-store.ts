@@ -2585,8 +2585,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     const changesetData = {
       files,
-      linesAdded: 0,
-      linesDeleted: 0,
+      linesAdded:
+        preview.kind === ComputedAction.Invalid ? 0 : preview.linesAdded,
+      linesDeleted:
+        preview.kind === ComputedAction.Invalid ? 0 : preview.linesDeleted,
     }
     const firstFileOrDefault = files.length > 0 ? files[0] : null
 

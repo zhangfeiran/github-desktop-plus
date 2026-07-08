@@ -90,7 +90,8 @@ diff rendering is disabled for remerge diffs.
 After selecting a branch in the Compare tab, the selected comparison view shows
 a fixed merge preview row above the commit list. Selecting that row behaves like
 selecting a virtual merge commit: the right-hand history pane shows the files
-that would change and lets each file's diff be opened.
+that would change, the added/removed line totals, and lets each file's diff be
+opened.
 
 - On the **Behind** tab, the virtual row shows the files that would change if the
   compared branch were merged into the current branch.
