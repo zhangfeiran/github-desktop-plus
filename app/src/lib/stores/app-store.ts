@@ -253,9 +253,10 @@ import {
   getRepositoryType,
   RepositoryType,
   listWorktrees,
-  getMainWorktreePath,
+  listWorktreesFromGitDir,
   removeWorktree,
   moveWorktree,
+  translateWorktreePathForRepository,
   getCommitRangeDiff,
   getTreeDiff,
   getCommitRangeChangedFiles,
@@ -272,6 +273,7 @@ import {
   IConfigValueOrigin,
   unstageAll,
   git,
+  listWorktreesFromGitDirFallback,
 } from '../git'
 import {
   installGlobalLFSFilters,
@@ -2809,16 +2811,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     // if repository might be marked missing, try checking if it has been restored
     const refreshedRepository = await this.recoverMissingRepository(repository)
-
-    // A removed linked worktree falls back to its main worktree instead of the
-    // missing-repository view.
-    const mainWorktreeRepository = await this.switchToMainWorktreeIfMissing(
-      refreshedRepository
-    )
-    if (mainWorktreeRepository !== null) {
-      return this._selectRepository(mainWorktreeRepository)
-    }
-
     if (refreshedRepository.missing) {
       // as the repository is no longer found on disk, cleaning this up
       // ensures we don't accidentally run any Git operations against the
@@ -4725,32 +4717,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
-  /**
-   * If the repository points at a linked worktree that's gone from disk, switch
-   * it back to its main worktree so we don't needlessly show it as missing.
-   *
-   * Returns the repository pointing at the main worktree, or null if no switch
-   * happened (path still exists, not a linked worktree, or main worktree gone
-   * too). Validating the switched-to worktree is left to the following refresh.
-   */
-  private async switchToMainWorktreeIfMissing(
-    repository: Repository
-  ): Promise<Repository | null> {
-    if (await this.repositoryPathExists(repository)) {
-      return null
-    }
-
-    const mainWorktreePath = await getMainWorktreePath(repository)
-    if (mainWorktreePath === null) {
-      return null
-    }
-
-    const { repository: updatedRepository } =
-      await this.repositoriesStore.switchWorktree(repository, mainWorktreePath)
-
-    return updatedRepository
-  }
-
   private async recoverMissingRepository(
     repository: Repository
   ): Promise<Repository> {
@@ -4775,7 +4741,71 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
       return recovered
     }
+
+    const recoveredWorktree = await this.recoverMissingWorktree(repository)
+    if (recoveredWorktree !== null) {
+      return recoveredWorktree
+    }
+
     return repository
+  }
+
+  private async recoverMissingWorktree(
+    repository: Repository
+  ): Promise<Repository | null> {
+    if (repository.gitDir === undefined) {
+      return null
+    }
+    const repositoryGitDir = repository.gitDir
+
+    const worktrees = await listWorktreesFromGitDir(repository.gitDir).catch(
+      e => {
+        log.error('Could not list worktrees from git dir', e)
+        return listWorktreesFromGitDirFallback(repositoryGitDir)
+      }
+    )
+    const mainWorktree = worktrees.find(wt => wt.type === 'main')
+
+    if (mainWorktree === undefined) {
+      return null
+    }
+
+    const mainWorktreePath = translateWorktreePathForRepository(
+      repository,
+      mainWorktree.path
+    )
+
+    if (mainWorktreePath === repository.path) {
+      return null
+    }
+
+    const type = await getRepositoryType(mainWorktreePath, {
+      gitSourceOverride: repository.gitSourceOverride,
+    }).catch(e => {
+      log.error('Could not determine main worktree repository type', e)
+      return { kind: 'missing' } as RepositoryType
+    })
+
+    if (type.kind !== 'regular') {
+      return null
+    }
+
+    const result = await this.repositoriesStore.switchWorktree(
+      repository,
+      type.topLevelWorkingDirectory,
+      false,
+      type.gitDir
+    )
+
+    if (!result.existingRepository) {
+      this.repositoryStateCache.seedFromWorktree(
+        result.repository,
+        repository,
+        { ...mainWorktree, path: type.topLevelWorkingDirectory }
+      )
+    }
+
+    return result.repository
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
@@ -4788,20 +4818,19 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // set the flag and don't try anything Git-related
     const exists = await this.repositoryPathExists(repository)
     if (!exists) {
-      // Only for the selected repo, so a background refresh of another repo
-      // can't hijack the current selection by switching it to its main worktree.
-      const isSelected =
-        this.selectedRepository instanceof Repository &&
-        this.selectedRepository.id === repository.id
+      const recoveredWorktree = await this.recoverMissingWorktree(repository)
 
-      if (isSelected) {
-        const mainWorktreeRepository = await this.switchToMainWorktreeIfMissing(
-          repository
-        )
-        if (mainWorktreeRepository !== null) {
-          await this._selectRepository(mainWorktreeRepository)
-          return
+      if (recoveredWorktree !== null) {
+        if (
+          this.selectedRepository instanceof Repository &&
+          this.selectedRepository.id === repository.id
+        ) {
+          await this._selectRepository(recoveredWorktree)
+        } else {
+          await this._refreshRepository(recoveredWorktree)
         }
+
+        return
       }
 
       this._updateRepositoryMissing(repository, true)
@@ -7260,14 +7289,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     worktree: WorktreeEntry
   ): Promise<Repository> {
-    const { kind } = await getRepositoryType(worktree.path, {
+    const type = await getRepositoryType(worktree.path, {
       gitSourceOverride: repository.gitSourceOverride,
     }).catch(e => {
       log.error('Could not determine repository type', e)
       return { kind: 'missing' } as RepositoryType
     })
 
-    if (kind !== 'regular' && kind !== 'unsafe') {
+    if (type.kind !== 'regular' && type.kind !== 'unsafe') {
       throw new Error(
         `The worktree path '${worktree.path}' does not appear to be a valid Git repository.`
       )
@@ -7276,12 +7305,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // If the repository path isn't trusted we'll mark the repository as
     // missing. The missing repository view knows how to add a path to the
     // allow list.
-    const missing = kind === 'unsafe'
+    const missing = type.kind === 'unsafe'
+    const gitDir = type.kind === 'regular' ? type.gitDir : undefined
 
     const result = await this.repositoriesStore.switchWorktree(
       repository,
       worktree.path,
-      missing
+      missing,
+      gitDir
     )
 
     this.repositoryStateCache.seedFromWorktree(
@@ -7593,21 +7624,21 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     return this.withIsGeneratingCommitMessage(repository, async signal => {
-      // If user is amending a commit, we want to use the commit
-      // to amend as the base for the commit message generation.
-      const commitToAmend =
-        this.repositoryStateCache.get(repository)?.commitToAmend?.sha ??
-        undefined
-      const diff = await getFilesDiffText(
-        repository,
-        filesSelected,
-        commitToAmend ? `${commitToAmend}^` : undefined
-      )
-      if (!diff) {
-        return false
-      }
-
       try {
+        // If user is amending a commit, we want to use the commit
+        // to amend as the base for the commit message generation.
+        const commitToAmend =
+          this.repositoryStateCache.get(repository)?.commitToAmend?.sha ??
+          undefined
+        const diff = await getFilesDiffText(
+          repository,
+          filesSelected,
+          commitToAmend ? `${commitToAmend}^` : undefined
+        )
+        if (!diff) {
+          return false
+        }
+
         const response = enableCopilotSdkCommitMessageGeneration(account)
           ? await this.copilotStore.generateCommitMessage(
               account,

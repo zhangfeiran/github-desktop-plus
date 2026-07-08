@@ -2,13 +2,14 @@ import {
   getMainWorktreePath,
   getRepositoryType,
   listWorktrees,
+  listWorktreesFromGitDir,
   parseWorktreePorcelainOutput,
   translateWorktreePathForRepository,
 } from '../../../src/lib/git'
 import assert from 'node:assert'
 import * as Path from 'path'
-import { describe, it } from 'node:test'
 import { realpath, rm } from 'fs/promises'
+import { describe, it } from 'node:test'
 import { exec } from 'dugite'
 import { setupEmptyRepository } from '../../helpers/repositories'
 import { makeCommit } from '../../helpers/repository-scaffolding'
@@ -355,6 +356,34 @@ describe('git/worktree', () => {
     })
   })
 
+  describe('listWorktreesFromGitDir', () => {
+    it('lists worktrees from a git dir after a linked worktree directory is removed', async t => {
+      const repo = await setupEmptyRepository(t, 'main')
+      await makeCommit(repo, {
+        entries: [{ path: 'README', contents: 'hello' }],
+      })
+      await exec(['branch', 'feature-a'], repo.path)
+
+      const worktreePath = repo.path + '-wt-a'
+      await exec(['worktree', 'add', worktreePath, 'feature-a'], repo.path)
+
+      const { stdout } = await exec(['rev-parse', '--git-dir'], worktreePath)
+      const gitDir = Path.resolve(worktreePath, stdout.trim())
+
+      await rm(worktreePath, { recursive: true, force: true })
+
+      const worktrees = await listWorktreesFromGitDir(gitDir)
+      const mainWorktree = worktrees.find(wt => wt.type === 'main')
+      const repoPath = await realpath(repo.path)
+      const resolvedWorktreePath = repoPath + '-wt-a'
+
+      assert.strictEqual(mainWorktree?.path, repoPath)
+      assert(
+        worktrees.some(wt => wt.path === resolvedWorktreePath && wt.isPrunable)
+      )
+    })
+  })
+
   describe('getMainWorktreePath', () => {
     /** Build a Repository pointing at `path`, populating its real `gitDir`. */
     async function repositoryAt(path: string): Promise<Repository> {
@@ -389,7 +418,6 @@ describe('git/worktree', () => {
 
       const linkedRepo = await repositoryAt(worktreePath)
 
-      // rm leaves the worktree's admin files (and `commondir`) intact.
       await rm(worktreePath, { recursive: true, force: true })
 
       assert.strictEqual(
