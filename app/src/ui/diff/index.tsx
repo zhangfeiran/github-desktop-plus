@@ -33,6 +33,7 @@ import { IFileContents } from './syntax-highlighting'
 import { SubmoduleDiff } from './submodule-diff'
 import { Octicon } from '../octicons'
 import * as OcticonSymbol from '../octicons/octicons.generated'
+import { getEffectiveShowSideBySideDiff } from './diff-display'
 
 // image used when no diff is displayed
 const NoDiffImage = encodePathAsUrl(__dirname, 'static/ufo-alert.svg')
@@ -323,13 +324,18 @@ export class Diff extends React.Component<IDiffProps, IDiffState> {
   }
 
   private renderTextDiff(diff: ITextDiff) {
+    const showSideBySideDiff = getEffectiveShowSideBySideDiff(
+      this.props.showSideBySideDiff,
+      this.props.file.status
+    )
+
     return (
       <SideBySideDiff
         file={this.props.file}
         diff={diff}
         fileContents={this.props.fileContents}
         hideWhitespaceInDiff={this.props.hideWhitespaceInDiff}
-        showSideBySideDiff={this.props.showSideBySideDiff}
+        showSideBySideDiff={showSideBySideDiff}
         showDiffMinimap={this.props.showDiffMinimap}
         showWholeFile={this.props.showWholeFile}
         onShowWholeFileChanged={this.props.onShowWholeFileChanged}

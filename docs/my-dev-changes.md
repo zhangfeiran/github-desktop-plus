@@ -152,6 +152,10 @@ matches.
 The branch adjusts commit detail styling and diff-related parsing to handle
 remerge diff headers and reduce visual bulk in the diff area.
 
+New, untracked, and deleted text diffs temporarily render in unified mode even
+when the saved diff display preference is split, since those file states only
+have one meaningful side to inspect.
+
 ## Tests touched by the branch
 
 Focused unit coverage was added or updated for:
@@ -166,4 +170,5 @@ Focused unit coverage was added or updated for:
 - Compare merge preview selection.
 - Changes view staging.
 - History author/committer search parsing and matching.
+- Diff display fallback for new, untracked, and deleted files.
 - Progress parsing and model type guards.
