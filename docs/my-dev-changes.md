@@ -41,9 +41,12 @@ repository**. When the selected repository path is on the `X:`, `Y:`, or `Z:`
 drive, the dialog prompts for an SSH command plus remote Git executable and
 stores the repository as SSH Git using SSHFS path translation. For example,
 `X:\home\feiran\hyper-parallel` is executed remotely as
-`/home/feiran/hyper-parallel`. When repository or worktree state is held as a
-remote `/home/...` path, file-opening actions translate that path back through
-the remembered SSHFS drive before handing it to Windows applications.
+`/home/feiran/hyper-parallel`. The repository and worktree records keep the
+selected SSHFS drive path so two servers that both contain
+`/home/feiran/hyper-parallel` can coexist as `X:\...` and `Y:\...`, while Git
+commands still execute through SSH. If a Git result later contains a remote
+`/home/...` path, file-opening actions translate that path back through the
+remembered SSHFS drive before handing it to Windows applications.
 
 ## Periodic fetch is opt-in
 

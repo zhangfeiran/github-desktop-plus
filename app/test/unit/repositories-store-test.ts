@@ -58,6 +58,10 @@ describe('RepositoriesStore', () => {
       const repositories = await repositoriesStore.getAll()
       assert.deepEqual(repositories[0].gitSourceOverride, gitSourceOverride)
       assert.deepEqual(getRepositoryGitSource(repoPath), gitSourceOverride)
+      assert.deepEqual(
+        getRepositoryGitSource('X:\\home\\feiran\\hyper-parallel\\.git'),
+        gitSourceOverride
+      )
     })
   })
 

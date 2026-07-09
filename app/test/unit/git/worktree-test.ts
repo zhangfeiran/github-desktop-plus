@@ -350,7 +350,7 @@ describe('git/worktree', () => {
       assert.equal(
         translatedPath,
         process.platform === 'win32'
-          ? '/home/feiran/hyper-parallel-task-optimize'
+          ? 'X:\\home\\feiran\\hyper-parallel-task-optimize'
           : worktreePath
       )
     })

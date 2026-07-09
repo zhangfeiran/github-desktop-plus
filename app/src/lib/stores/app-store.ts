@@ -462,7 +462,11 @@ import {
 import { updateStore } from '../../ui/lib/update-store'
 import { startTimer } from '../../ui/lib/timing'
 import { BypassReasonType } from '../../ui/secret-scanning/bypass-push-protection-dialog'
-import { setTrackedRepositoryGitSources, toSshFsLocalPath } from '../git/source'
+import {
+  isSshFsGitSource,
+  setTrackedRepositoryGitSources,
+  toSshFsLocalPath,
+} from '../git/source'
 import {
   selectReferencedContext,
   fallbackReferencedContext,
@@ -4767,10 +4771,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     if (foundRepository) {
       let recovered = await this._updateRepositoryMissing(repository, false)
-      if (type.kind === 'regular' && recovered.gitDir !== type.gitDir) {
+      const gitDir =
+        type.kind === 'regular'
+          ? this.getRepositoryStoragePath(repository, type.gitDir)
+          : undefined
+      if (gitDir !== undefined && recovered.gitDir !== gitDir) {
         recovered = await this.repositoriesStore.updateRepositoryGitDir(
           recovered,
-          type.gitDir
+          gitDir
         )
       }
       return recovered
@@ -4824,18 +4832,23 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return null
     }
 
+    const worktreePath = this.getRepositoryStoragePath(
+      repository,
+      type.topLevelWorkingDirectory
+    )
+    const gitDir = this.getRepositoryStoragePath(repository, type.gitDir)
     const result = await this.repositoriesStore.switchWorktree(
       repository,
-      type.topLevelWorkingDirectory,
+      worktreePath,
       false,
-      type.gitDir
+      gitDir
     )
 
     if (!result.existingRepository) {
       this.repositoryStateCache.seedFromWorktree(
         result.repository,
         repository,
-        { ...mainWorktree, path: type.topLevelWorkingDirectory }
+        { ...mainWorktree, path: worktreePath }
       )
     }
 
@@ -4879,7 +4892,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       if (type.kind === 'regular') {
         repository = await this.repositoriesStore.updateRepositoryGitDir(
           repository,
-          type.gitDir
+          this.getRepositoryStoragePath(repository, type.gitDir)
         )
       }
     }
@@ -4974,6 +4987,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
     fullPath: string
   ): string {
     return toSshFsLocalPath(fullPath, repository.gitSourceOverride)
+  }
+
+  private getRepositoryStoragePath(
+    repository: Repository,
+    path: string
+  ): string {
+    return isSshFsGitSource(repository.gitSourceOverride)
+      ? toSshFsLocalPath(path, repository.gitSourceOverride)
+      : path
   }
 
   private async updateStashEntryCountMetric(
@@ -7340,7 +7362,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // missing. The missing repository view knows how to add a path to the
     // allow list.
     const missing = type.kind === 'unsafe'
-    const gitDir = type.kind === 'regular' ? type.gitDir : undefined
+    const gitDir =
+      type.kind === 'regular'
+        ? this.getRepositoryStoragePath(repository, type.gitDir)
+        : undefined
 
     const result = await this.repositoriesStore.switchWorktree(
       repository,
@@ -9423,7 +9448,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const invalidPaths = new Array<string>()
 
     for (const path of paths) {
-      const repositoryType = await getRepositoryType(path).catch(e => {
+      const getRepositoryTypeOptions =
+        gitSourceOverride !== undefined && gitSourceOverride !== null
+          ? { gitSourceOverride }
+          : {}
+      const repositoryType = await getRepositoryType(
+        path,
+        getRepositoryTypeOptions
+      ).catch(e => {
         log.error('Could not determine repository type', e)
         return { kind: 'missing' } as RepositoryType
       })
@@ -9442,7 +9474,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
 
       if (repositoryType.kind === 'regular') {
-        const validatedPath = repositoryType.topLevelWorkingDirectory
+        const validatedPath = isSshFsGitSource(gitSourceOverride)
+          ? toSshFsLocalPath(
+              repositoryType.topLevelWorkingDirectory,
+              gitSourceOverride
+            )
+          : repositoryType.topLevelWorkingDirectory
+        const gitDir = isSshFsGitSource(gitSourceOverride)
+          ? toSshFsLocalPath(repositoryType.gitDir, gitSourceOverride)
+          : repositoryType.gitDir
         log.info(
           `[AppStore] adding repository at ${validatedPath} @${login} to store`
         )
@@ -9466,7 +9506,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
         const addedRepo = await this.repositoriesStore.addRepository(
           validatedPath,
-          repositoryType.gitDir,
+          gitDir,
           login,
           { gitSourceOverride }
         )

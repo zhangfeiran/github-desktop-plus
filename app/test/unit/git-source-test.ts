@@ -61,22 +61,28 @@ describe('git/source', () => {
   })
 
   it('prefers tracked repository overrides over path defaults', () => {
+    const gitSourceOverride = {
+      kind: 'external' as const,
+      path: 'C:\\Program Files\\Git\\cmd\\git.exe',
+    }
+
     setTrackedRepositoryGitSources([
       {
         path: '\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo',
-        gitSourceOverride: {
-          kind: 'external',
-          path: 'C:\\Program Files\\Git\\cmd\\git.exe',
-        },
+        gitDir: '\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo\\.git',
+        gitSourceOverride,
       },
     ])
 
     assert.deepEqual(
       getRepositoryGitSource('\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo'),
-      {
-        kind: 'external',
-        path: 'C:\\Program Files\\Git\\cmd\\git.exe',
-      }
+      gitSourceOverride
+    )
+    assert.deepEqual(
+      getRepositoryGitSource(
+        '\\\\wsl.localhost\\Ubuntu\\home\\feiran\\repo\\.git'
+      ),
+      gitSourceOverride
     )
   })
 

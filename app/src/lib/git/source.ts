@@ -30,6 +30,15 @@ export function isSshFsRepositoryPath(path: string): boolean {
   return sshFsDrivePathRe.test(path)
 }
 
+export function isSshFsGitSource(
+  gitSource: RepositoryGitSource | null | undefined
+): gitSource is RepositoryGitSource & {
+  readonly kind: 'ssh'
+  readonly pathTranslation: 'sshfs'
+} {
+  return gitSource?.kind === 'ssh' && gitSource.pathTranslation === 'sshfs'
+}
+
 function getWindowsDriveLetter(path: string): string | undefined {
   return windowsDriveLetterRe.exec(path)?.[1].toUpperCase()
 }
@@ -88,34 +97,64 @@ export function normalizeRepositoryGitSource(
 export function setTrackedRepositoryGitSources(
   repositories: ReadonlyArray<{
     path: string
+    gitDir?: string
     gitSourceOverride: RepositoryGitSource
   }>
 ) {
   trackedRepositoryGitSources.clear()
 
   for (const repository of repositories) {
+    const gitSourceOverride = normalizeRepositoryGitSource(
+      repository.path,
+      repository.gitSourceOverride
+    )
+
     trackedRepositoryGitSources.set(
       normalizeRepositorySourceKey(repository.path),
-      normalizeRepositoryGitSource(
-        repository.path,
-        repository.gitSourceOverride
-      )
+      gitSourceOverride
     )
+
+    if (repository.gitDir !== undefined) {
+      trackedRepositoryGitSources.set(
+        normalizeRepositorySourceKey(repository.gitDir),
+        gitSourceOverride
+      )
+    }
   }
 }
 
 export function setTrackedRepositoryGitSource(
   path: string,
-  gitSourceOverride: RepositoryGitSource
+  gitSourceOverride: RepositoryGitSource,
+  gitDir?: string
 ) {
+  const normalizedGitSourceOverride = normalizeRepositoryGitSource(
+    path,
+    gitSourceOverride
+  )
+
   trackedRepositoryGitSources.set(
     normalizeRepositorySourceKey(path),
-    normalizeRepositoryGitSource(path, gitSourceOverride)
+    normalizedGitSourceOverride
   )
+
+  if (gitDir !== undefined) {
+    trackedRepositoryGitSources.set(
+      normalizeRepositorySourceKey(gitDir),
+      normalizedGitSourceOverride
+    )
+  }
 }
 
-export function deleteTrackedRepositoryGitSource(path: string) {
+export function deleteTrackedRepositoryGitSource(
+  path: string,
+  gitDir?: string
+) {
   trackedRepositoryGitSources.delete(normalizeRepositorySourceKey(path))
+
+  if (gitDir !== undefined) {
+    trackedRepositoryGitSources.delete(normalizeRepositorySourceKey(gitDir))
+  }
 }
 
 export function getTrackedRepositoryGitSource(path: string) {

@@ -92,6 +92,7 @@ export class AddExistingRepository extends React.Component<
   }
 
   private async validatePath(path: string): Promise<boolean> {
+    const sshGitSource = this.getCurrentSshFsGitSource(path)
     if (path.length === 0) {
       this.setState({
         isRepositoryBare: false,
@@ -100,7 +101,19 @@ export class AddExistingRepository extends React.Component<
       return false
     }
 
-    const type = await getRepositoryType(path)
+    if (this.isSshFsPath(path) && sshGitSource === null) {
+      this.setState({
+        isRepositoryBare: false,
+        isRepositoryUnsafe: false,
+        showNonGitRepositoryWarning: false,
+        repositoryUnsafePath: undefined,
+      })
+      return false
+    }
+
+    const type = await getRepositoryType(this.resolvedPath(path), {
+      ...(sshGitSource !== null ? { gitSourceOverride: sshGitSource } : {}),
+    })
 
     const isRepository = type.kind !== 'missing' && type.kind !== 'unsafe'
     const isRepositoryUnsafe = type.kind === 'unsafe'
@@ -303,7 +316,22 @@ export class AddExistingRepository extends React.Component<
   }
 
   private onPathChanged = async (path: string) => {
-    const type = await getRepositoryType(this.resolvedPath(path))
+    const sshGitSource = this.getCurrentSshFsGitSource(path)
+
+    if (this.isSshFsPath(path) && sshGitSource === null) {
+      this.setState({
+        path,
+        isRepositoryUnsafe: false,
+        isRepositoryBare: false,
+        showNonGitRepositoryWarning: false,
+        repositoryUnsafePath: undefined,
+      })
+      return
+    }
+
+    const type = await getRepositoryType(this.resolvedPath(path), {
+      ...(sshGitSource !== null ? { gitSourceOverride: sshGitSource } : {}),
+    })
 
     const isRepository = type.kind !== 'missing' && type.kind !== 'unsafe'
     const isRepositoryUnsafe = type.kind === 'unsafe'
@@ -346,13 +374,6 @@ export class AddExistingRepository extends React.Component<
 
   private addRepository = async () => {
     const { path, sshGitCommand, sshGitPath } = this.state
-    const isValidPath = await this.validatePath(path)
-
-    if (!isValidPath) {
-      this.pathTextBoxRef.current?.focus()
-      return
-    }
-
     const resolvedPath = this.resolvedPath(path)
     const sshGitSource = this.isSshFsPath(path)
       ? this.getSshFsGitSource(path, sshGitCommand, sshGitPath)
@@ -364,6 +385,13 @@ export class AddExistingRepository extends React.Component<
       } else {
         this.sshGitPathTextBoxRef.current?.focus()
       }
+      return
+    }
+
+    const isValidPath = await this.validatePath(path)
+
+    if (!isValidPath) {
+      this.pathTextBoxRef.current?.focus()
       return
     }
 
@@ -401,6 +429,18 @@ export class AddExistingRepository extends React.Component<
       pathTranslation: 'sshfs',
       sshFsDrive: repositoryPath.substring(0, 1).toUpperCase(),
     }
+  }
+
+  private getCurrentSshFsGitSource(path: string): RepositoryGitSource | null {
+    if (!this.isSshFsPath(path)) {
+      return null
+    }
+
+    return this.getSshFsGitSource(
+      path,
+      this.state.sshGitCommand,
+      this.state.sshGitPath
+    )
   }
 
   private onCreateRepositoryClicked = () => {

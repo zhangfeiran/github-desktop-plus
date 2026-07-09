@@ -6,7 +6,9 @@ import { directoryExists } from '../directory-exists'
 import { readFile } from 'fs/promises'
 import {
   fromWslPath,
+  isSshFsGitSource,
   isWslRepositoryPath,
+  toSshFsLocalPath,
   toRemotePosixPath,
   translateWslPathValue,
 } from './source'
@@ -35,7 +37,10 @@ export function translateWorktreePathForRepository(
     worktreePath.startsWith('\\') &&
     !worktreePath.startsWith('\\\\')
   ) {
-    return toRemotePosixPath(worktreePath)
+    const remotePath = toRemotePosixPath(worktreePath)
+    return isSshFsGitSource(repository.gitSourceOverride)
+      ? toSshFsLocalPath(remotePath, repository.gitSourceOverride)
+      : remotePath
   }
 
   return worktreePath

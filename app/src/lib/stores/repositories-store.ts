@@ -260,7 +260,7 @@ export class RepositoriesStore extends TypedBaseStore<
       }
     )
 
-    setTrackedRepositoryGitSource(path, gitSourceOverride)
+    setTrackedRepositoryGitSource(path, gitSourceOverride, gitDir)
     this.emitUpdatedRepositories()
   }
 
@@ -311,7 +311,11 @@ export class RepositoriesStore extends TypedBaseStore<
       }
     )
 
-    setTrackedRepositoryGitSource(repository.path, repository.gitSourceOverride)
+    setTrackedRepositoryGitSource(
+      repository.path,
+      repository.gitSourceOverride,
+      repository.gitDir
+    )
     this.emitUpdatedRepositories()
 
     return repository
@@ -320,7 +324,7 @@ export class RepositoriesStore extends TypedBaseStore<
   /** Remove the given repository. */
   public async removeRepository(repository: Repository): Promise<void> {
     await this.db.repositories.delete(repository.id)
-    deleteTrackedRepositoryGitSource(repository.path)
+    deleteTrackedRepositoryGitSource(repository.path, repository.gitDir)
     clearTagsToPush(repository)
 
     this.emitUpdatedRepositories()
@@ -359,6 +363,11 @@ export class RepositoriesStore extends TypedBaseStore<
   ): Promise<Repository> {
     await this.db.repositories.update(repository.id, { gitDir })
 
+    setTrackedRepositoryGitSource(
+      repository.path,
+      repository.gitSourceOverride,
+      gitDir
+    )
     this.emitUpdatedRepositories()
 
     return new Repository(
@@ -498,7 +507,11 @@ export class RepositoriesStore extends TypedBaseStore<
       gitSourceOverride: normalizedGitSourceOverride,
     })
 
-    setTrackedRepositoryGitSource(repository.path, normalizedGitSourceOverride)
+    setTrackedRepositoryGitSource(
+      repository.path,
+      normalizedGitSourceOverride,
+      repository.gitDir
+    )
     this.emitUpdatedRepositories()
 
     return new Repository(
@@ -551,8 +564,8 @@ export class RepositoriesStore extends TypedBaseStore<
       gitSourceOverride,
     })
 
-    deleteTrackedRepositoryGitSource(repository.path)
-    setTrackedRepositoryGitSource(path, gitSourceOverride)
+    deleteTrackedRepositoryGitSource(repository.path, repository.gitDir)
+    setTrackedRepositoryGitSource(path, gitSourceOverride, gitDir)
     this.emitUpdatedRepositories()
 
     return new Repository(
@@ -617,8 +630,8 @@ export class RepositoriesStore extends TypedBaseStore<
       gitDir,
     })
 
-    deleteTrackedRepositoryGitSource(repository.path)
-    setTrackedRepositoryGitSource(worktreePath, gitSourceOverride)
+    deleteTrackedRepositoryGitSource(repository.path, repository.gitDir)
+    setTrackedRepositoryGitSource(worktreePath, gitSourceOverride, gitDir)
     this.emitUpdatedRepositories()
 
     return {
