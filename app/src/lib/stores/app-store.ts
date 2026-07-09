@@ -24,7 +24,11 @@ import {
 } from '../../models/diff-font'
 import { EditorOverride } from '../../models/editor-override'
 import { MergePreviewFile } from '../../models/merge'
-import { stageResolvedConflictFiles } from '../git/stage'
+import {
+  stageResolvedConflictFiles,
+  stageWorkingDirectoryFiles,
+  unstageWorkingDirectoryFiles,
+} from '../git/stage'
 import {
   canReuseCommitSearchResults,
   createCommitSearchMatcher,
@@ -217,6 +221,7 @@ import {
   addRemote,
   checkoutBranch,
   createCommit,
+  createStagedCommit,
   getAuthorIdentity,
   getChangedFiles,
   getCommitDiff,
@@ -267,7 +272,9 @@ import {
   getRemoteURL,
   getGlobalConfigPath,
   getFilesDiffText,
+  getStagedFilesDiffText,
   TerminalOutput,
+  TerminalOutputListener,
   HookProgress,
   getConfigValueWithOrigin,
   IConfigValueOrigin,
@@ -4454,9 +4461,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<boolean> {
     const state = this.repositoryStateCache.get(repository)
     const files = state.changesState.workingDirectory.files
-    const selectedFiles = files.filter(file => {
+    const selectedFilesFromSelection = files.filter(file => {
       return file.selection.getSelectionType() !== DiffSelectionType.None
     })
+    const stagedFiles = files.filter(file => file.isStaged)
+    const selectedFiles =
+      stagedFiles.length > 0 ? stagedFiles : selectedFilesFromSelection
 
     const gitStore = this.gitStoreCache.get(repository)
 
@@ -4465,11 +4475,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
         async () => {
           const message = await formatCommitMessage(repository, context)
           let aborted = false
-          return createCommit(repository, message, selectedFiles, {
+          const options = {
             amend: context.amend,
             onHookProgress: this.onHookProgress(repository),
             onHookFailure: this.onHookFailure(() => (aborted = true)),
-            onTerminalOutputAvailable: subscribeToCommitOutput => {
+            onTerminalOutputAvailable: (
+              subscribeToCommitOutput: TerminalOutputListener
+            ) => {
               this.repositoryStateCache.update(repository, state => ({
                 ...state,
                 subscribeToCommitOutput,
@@ -4478,7 +4490,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
             noVerify: state.skipCommitHooks,
             signOff: state.signOffCommits,
             allowEmpty: state.allowEmptyCommit,
-          }).catch(err => (aborted ? undefined : Promise.reject(err)))
+          }
+
+          const commit =
+            stagedFiles.length > 0
+              ? createStagedCommit(repository, message, options)
+              : createCommit(repository, message, selectedFiles, options)
+
+          return commit.catch(err =>
+            aborted ? undefined : Promise.reject(err)
+          )
         },
         { gitContext: { kind: 'commit' }, repository }
       )
@@ -4629,7 +4650,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
-  public _changeFileIncluded(
+  public async _changeFileIncluded(
     repository: Repository,
     file:
       | WorkingDirectoryFileChange
@@ -4637,20 +4658,33 @@ export class AppStore extends TypedBaseStore<IAppState> {
     include: boolean
   ): Promise<void> {
     const files = Array.isArray(file) ? file : [file]
-    const modifiedIds = new Set<string>(files.map(f => f.id))
 
-    this.repositoryStateCache.updateChangesState(repository, state => {
-      const workingDirectory = WorkingDirectoryStatus.fromFiles(
-        state.workingDirectory.files.map(f =>
-          modifiedIds.has(f.id) ? f.withIncludeAll(include) : f
+    if (files.length === 0) {
+      return
+    }
+
+    try {
+      if (include) {
+        await stageWorkingDirectoryFiles(
+          repository,
+          files.map(f => f.withIncludeAll(true))
         )
+      } else {
+        await unstageWorkingDirectoryFiles(repository, files)
+      }
+    } catch (error) {
+      log.error(
+        include ? 'Failed staging changes' : 'Failed unstaging changes',
+        error
       )
+      this.emitError(error)
+      return
+    }
 
-      return { workingDirectory }
+    await this.refreshChangesSection(repository, {
+      includingStatus: true,
+      clearPartialState: false,
     })
-
-    this.emitUpdate()
-    return Promise.resolve()
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
@@ -7630,11 +7664,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
         const commitToAmend =
           this.repositoryStateCache.get(repository)?.commitToAmend?.sha ??
           undefined
-        const diff = await getFilesDiffText(
-          repository,
-          filesSelected,
-          commitToAmend ? `${commitToAmend}^` : undefined
-        )
+        const commitish = commitToAmend ? `${commitToAmend}^` : undefined
+        const hasStagedFiles = filesSelected.some(f => f.isStaged)
+        const diff = hasStagedFiles
+          ? await getStagedFilesDiffText(repository, commitish)
+          : await getFilesDiffText(repository, filesSelected, commitish)
         if (!diff) {
           return false
         }

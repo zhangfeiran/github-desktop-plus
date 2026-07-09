@@ -9,6 +9,7 @@ import {
   AppFileStatusKind,
   SubmoduleStatus,
   CommittedFileChange,
+  WorkingDirectoryFileChangeDiffType,
 } from '../../models/status'
 import {
   DiffType,
@@ -416,10 +417,13 @@ export async function getWorkingDirectoryDiff(
   ]
   const successExitCodes = new Set([0])
   const isSubmodule = file.status.submoduleStatus !== undefined
+  const isStagedDiff =
+    file.diffType === WorkingDirectoryFileChangeDiffType.Staged
 
   // For added submodules, we'll use the "default" parameters, which are able
   // to output the submodule commit.
   if (
+    !isStagedDiff &&
     !isSubmodule &&
     (file.status.kind === AppFileStatusKind.New ||
       file.status.kind === AppFileStatusKind.Untracked)
@@ -444,9 +448,17 @@ export async function getWorkingDirectoryDiff(
     // already staged to the renamed file which differs from our other diffs.
     // The closest I got to that was running hash-object and then using
     // git diff <blob> <blob> but that seems a bit excessive.
+    if (isStagedDiff) {
+      args.push('--staged')
+    }
+
     args.push('--', ensureRelativePath(file.path))
   } else {
-    args.push('HEAD', '--', ensureRelativePath(file.path))
+    if (isStagedDiff) {
+      args.push('--staged')
+    }
+
+    args.push('--', ensureRelativePath(file.path))
   }
 
   const { stdout, stderr } = await git(
@@ -634,6 +646,43 @@ export async function getFilesDiffText(
   return outputString
 }
 
+/**
+ * Render the diff for the repository's current staged changes without
+ * modifying the index.
+ */
+export async function getStagedFilesDiffText(
+  repository: Repository,
+  commitish?: string
+): Promise<string> {
+  const args = [
+    'diff',
+    '--no-ext-diff',
+    '--patch-with-raw',
+    '--no-color',
+    '--staged',
+    ...(commitish ? [commitish] : []),
+  ]
+  const successExitCodes = new Set([0])
+
+  const { stdout } = await git(
+    args,
+    repository.path,
+    'getStagedFilesDiffText',
+    {
+      successExitCodes,
+      encoding: 'buffer',
+    }
+  )
+
+  // No more than 10MB
+  if (stdout.length > 10 * 1024 * 1024) {
+    throw new Error('Diff is too large to render')
+  }
+
+  const outputString = await (async () => stdout.toString('utf8'))()
+  return outputString
+}
+
 async function getImageDiff(
   repository: Repository,
   file: FileChange,
@@ -652,9 +701,15 @@ async function getImageDiff(
       return { kind: DiffType.Image }
     }
 
+    const isStagedDiff =
+      file.diffType === WorkingDirectoryFileChangeDiffType.Staged
+    const baseCommitish = isStagedDiff ? 'HEAD' : ''
+
     // Does it even exist in the working directory?
     if (file.status.kind !== AppFileStatusKind.Deleted) {
-      current = await getWorkingDirectoryImage(repository, file)
+      current = isStagedDiff
+        ? await getBlobImage(repository, file.path, '')
+        : await getWorkingDirectoryImage(repository, file)
     }
 
     if (
@@ -666,7 +721,7 @@ async function getImageDiff(
       previous = await getBlobImage(
         repository,
         getOldPathOrDefault(file),
-        'HEAD'
+        baseCommitish
       )
     }
   } else {

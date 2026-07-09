@@ -9,6 +9,7 @@ import {
   UnmergedEntry,
   ConflictedFileStatus,
   UnmergedEntrySummary,
+  WorkingDirectoryFileChangeDiffType,
 } from '../../models/status'
 import {
   parsePorcelainStatus,
@@ -179,6 +180,159 @@ function convertToAppStatus(
   return fatalError(`Unknown file status ${status}`)
 }
 
+function statusEntryToAppFileStatus(
+  status: GitStatusEntry | undefined,
+  submoduleStatus: AppFileStatus['submoduleStatus']
+): AppFileStatus | null {
+  switch (status) {
+    case GitStatusEntry.Added:
+      return { kind: AppFileStatusKind.New, submoduleStatus }
+    case GitStatusEntry.Modified:
+      return { kind: AppFileStatusKind.Modified, submoduleStatus }
+    case GitStatusEntry.Deleted:
+      return { kind: AppFileStatusKind.Deleted, submoduleStatus }
+    default:
+      return null
+  }
+}
+
+function convertToAppStatusForSide(
+  path: string,
+  entry: FileEntry,
+  conflictDetails: ConflictFilesDetails,
+  side: WorkingDirectoryFileChangeDiffType,
+  oldPath?: string
+): AppFileStatus | null {
+  if (entry.kind === 'untracked') {
+    return side === WorkingDirectoryFileChangeDiffType.Unstaged
+      ? convertToAppStatus(path, entry, conflictDetails, oldPath)
+      : null
+  }
+
+  if (entry.kind === 'conflicted') {
+    return side === WorkingDirectoryFileChangeDiffType.Unstaged
+      ? convertToAppStatus(path, entry, conflictDetails, oldPath)
+      : null
+  }
+
+  const sideStatus =
+    side === WorkingDirectoryFileChangeDiffType.Staged
+      ? entry.index
+      : entry.workingTree
+
+  if (sideStatus === undefined || sideStatus === GitStatusEntry.Unchanged) {
+    return null
+  }
+
+  if (entry.kind === 'ordinary') {
+    return statusEntryToAppFileStatus(sideStatus, entry.submoduleStatus)
+  }
+
+  if (
+    (entry.kind === 'renamed' || entry.kind === 'copied') &&
+    side === WorkingDirectoryFileChangeDiffType.Staged &&
+    oldPath !== undefined
+  ) {
+    return convertToAppStatus(path, entry, conflictDetails, oldPath)
+  }
+
+  if (
+    entry.kind === 'renamed' &&
+    side === WorkingDirectoryFileChangeDiffType.Unstaged &&
+    sideStatus === GitStatusEntry.Renamed &&
+    oldPath !== undefined
+  ) {
+    return convertToAppStatus(path, entry, conflictDetails, oldPath)
+  }
+
+  if (
+    entry.kind === 'copied' &&
+    side === WorkingDirectoryFileChangeDiffType.Unstaged &&
+    sideStatus === GitStatusEntry.Copied &&
+    oldPath !== undefined
+  ) {
+    return convertToAppStatus(path, entry, conflictDetails, oldPath)
+  }
+
+  return statusEntryToAppFileStatus(sideStatus, entry.submoduleStatus)
+}
+
+function getStatusSides(
+  entry: FileEntry
+): ReadonlyArray<WorkingDirectoryFileChangeDiffType> {
+  if (entry.kind === 'untracked' || entry.kind === 'conflicted') {
+    return [WorkingDirectoryFileChangeDiffType.Unstaged]
+  }
+
+  const sides = new Array<WorkingDirectoryFileChangeDiffType>()
+
+  if (entry.index !== undefined && entry.index !== GitStatusEntry.Unchanged) {
+    sides.push(WorkingDirectoryFileChangeDiffType.Staged)
+  }
+
+  if (
+    entry.workingTree !== undefined &&
+    entry.workingTree !== GitStatusEntry.Unchanged
+  ) {
+    sides.push(WorkingDirectoryFileChangeDiffType.Unstaged)
+  }
+
+  if (sides.length === 0) {
+    return [WorkingDirectoryFileChangeDiffType.Unstaged]
+  }
+
+  return sides
+}
+
+function isStagedSide(side: WorkingDirectoryFileChangeDiffType): boolean {
+  return side === WorkingDirectoryFileChangeDiffType.Staged
+}
+
+function getStatusMapKey(file: WorkingDirectoryFileChange): string {
+  return file.id
+}
+
+function getInitialSelectionType(
+  appStatus: AppFileStatus
+): DiffSelectionType.All | DiffSelectionType.None {
+  return appStatus.kind === AppFileStatusKind.Modified &&
+    appStatus.submoduleStatus !== undefined &&
+    !appStatus.submoduleStatus.commitChanged
+    ? DiffSelectionType.None
+    : DiffSelectionType.All
+}
+
+function createWorkingDirectoryFileChange(
+  path: string,
+  appStatus: AppFileStatus,
+  side: WorkingDirectoryFileChangeDiffType
+): WorkingDirectoryFileChange {
+  const selection = DiffSelection.fromInitialSelection(
+    getInitialSelectionType(appStatus)
+  )
+
+  return new WorkingDirectoryFileChange(
+    path,
+    appStatus,
+    selection,
+    isStagedSide(side),
+    side
+  )
+}
+
+function shouldReplaceUntrackedEntry(
+  existing: WorkingDirectoryFileChange | undefined
+): boolean {
+  if (existing === undefined) {
+    return false
+  }
+
+  return (
+    existing.status.kind === AppFileStatusKind.Untracked &&
+    existing.diffType === WorkingDirectoryFileChangeDiffType.Unstaged
+  )
+}
+
 // List of known conflicted index entries for a file, extracted from mapStatus
 // inside `app/src/lib/status-parser.ts` for convenience
 const conflictStatusCodes = ['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']
@@ -305,47 +459,29 @@ function buildStatusMap(
     entry.renameOrCopyScore
   )
 
-  if (status.kind === 'ordinary') {
-    // when a file is added in the index but then removed in the working
-    // directory, the file won't be part of the commit, so we can skip
-    // displaying this entry in the changes list
-    if (
-      status.index === GitStatusEntry.Added &&
-      status.workingTree === GitStatusEntry.Deleted
-    ) {
-      return files
+  for (const side of getStatusSides(status)) {
+    const appStatus = convertToAppStatusForSide(
+      entry.path,
+      status,
+      conflictDetails,
+      side,
+      entry.oldPath
+    )
+
+    if (appStatus === null) {
+      continue
     }
+
+    const file = createWorkingDirectoryFileChange(entry.path, appStatus, side)
+    const key = getStatusMapKey(file)
+
+    if (shouldReplaceUntrackedEntry(files.get(key))) {
+      files.delete(key)
+    }
+
+    files.set(key, file)
   }
 
-  if (status.kind === 'untracked') {
-    // when a delete has been staged, but an untracked file exists with the
-    // same path, we should ensure that we only draw one entry in the
-    // changes list - see if an entry already exists for this path and
-    // remove it if found
-    files.delete(entry.path)
-  }
-
-  // for now we just poke at the existing summary
-  const appStatus = convertToAppStatus(
-    entry.path,
-    status,
-    conflictDetails,
-    entry.oldPath
-  )
-
-  const initialSelectionType =
-    appStatus.kind === AppFileStatusKind.Modified &&
-    appStatus.submoduleStatus !== undefined &&
-    !appStatus.submoduleStatus.commitChanged
-      ? DiffSelectionType.None
-      : DiffSelectionType.All
-
-  const selection = DiffSelection.fromInitialSelection(initialSelectionType)
-
-  files.set(
-    entry.path,
-    new WorkingDirectoryFileChange(entry.path, appStatus, selection)
-  )
   return files
 }
 

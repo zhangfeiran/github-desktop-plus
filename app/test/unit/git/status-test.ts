@@ -230,6 +230,48 @@ describe('git/status', () => {
         const file = files[0]
         assert.equal(file.path, 'README.md')
         assert.equal(file.status.kind, AppFileStatusKind.Modified)
+        assert.equal(file.isStaged, false)
+      })
+
+      it('marks staged files', async t => {
+        const testRepoPath = await setupFixtureRepository(t, 'test-repo')
+        const repository = new Repository(testRepoPath, -1, null, false)
+
+        await writeFile(path.join(repository.path, 'README.md'), 'Hi world\n')
+        await exec(['add', 'README.md'], repository.path)
+
+        const status = await getStatusOrThrow(repository)
+        const files = status.workingDirectory.files
+        assert.equal(files.length, 1)
+
+        const file = files[0]
+        assert.equal(file.path, 'README.md')
+        assert.equal(file.status.kind, AppFileStatusKind.Modified)
+        assert.equal(file.isStaged, true)
+      })
+
+      it('splits files with staged and unstaged modifications', async t => {
+        const testRepoPath = await setupFixtureRepository(t, 'test-repo')
+        const repository = new Repository(testRepoPath, -1, null, false)
+        const readme = path.join(repository.path, 'README.md')
+
+        await writeFile(readme, 'staged\n')
+        await exec(['add', 'README.md'], repository.path)
+        await writeFile(readme, 'staged\nunstaged\n')
+
+        const status = await getStatusOrThrow(repository)
+        const files = status.workingDirectory.files
+        assert.equal(files.length, 2)
+
+        const stagedFile = files.find(f => f.isStaged)
+        assert(stagedFile !== undefined)
+        assert.equal(stagedFile.path, 'README.md')
+        assert.equal(stagedFile.status.kind, AppFileStatusKind.Modified)
+
+        const unstagedFile = files.find(f => !f.isStaged)
+        assert(unstagedFile !== undefined)
+        assert.equal(unstagedFile.path, 'README.md')
+        assert.equal(unstagedFile.status.kind, AppFileStatusKind.Modified)
       })
 
       it('returns an empty array when there are no changes', async t => {

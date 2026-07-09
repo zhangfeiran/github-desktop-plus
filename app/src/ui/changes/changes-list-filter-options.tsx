@@ -69,10 +69,10 @@ export class ChangesListFilterOptions extends React.Component<
           if (file.isDeleted()) {
             counts.deletedFilesCount++
           }
-          if (file.isIncludedInCommit()) {
+          if (file.isStaged) {
             counts.includedFilesCount++
           }
-          if (file.isExcludedFromCommit()) {
+          if (!file.isStaged) {
             counts.excludedFilesCount++
           }
         }
@@ -176,7 +176,7 @@ export class ChangesListFilterOptions extends React.Component<
                 : CheckboxValue.Off
             }
             onChange={this.onFilterToIncludedInCommit}
-            label={`Included in commit (${includedFilesCount})`}
+            label={`Staged for commit (${includedFilesCount})`}
           />
           <Checkbox
             value={
@@ -185,7 +185,7 @@ export class ChangesListFilterOptions extends React.Component<
                 : CheckboxValue.Off
             }
             onChange={this.onFilterExcludedFiles}
-            label={`Excluded from commit (${excludedFilesCount})`}
+            label={`Unstaged changes (${excludedFilesCount})`}
           />
           <Checkbox
             value={

@@ -66,16 +66,16 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
       filePadding -
       statusWidth
 
-    const includedText =
+    const stagingText =
       this.props.include === true
-        ? 'included'
-        : this.props.include === undefined
-        ? 'partially included'
-        : 'not included'
+        ? 'staged'
+        : this.props.include === null
+        ? 'partially staged'
+        : 'unstaged'
 
     const pathScreenReaderMessage = `${path} ${mapStatus(
       status
-    )} ${includedText}`
+    )} ${stagingText}`
 
     return (
       <div className="file">

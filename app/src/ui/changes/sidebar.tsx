@@ -189,11 +189,16 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
       return false
     }
 
+    const stagedFiles = workingDirectory.files.filter(f => f.isStaged)
+    const isUsingStagedFiles = stagedFiles.length > 0
+    const isFileSelectedForCommit = (file: WorkingDirectoryFileChange) =>
+      isUsingStagedFiles
+        ? file.isStaged
+        : file.selection.getSelectionType() !== DiffSelectionType.None
+
     // are any conflicted files left?
     const conflictedFilesLeft = workingDirectory.files.filter(
-      f =>
-        isConflictedFile(f.status) &&
-        f.selection.getSelectionType() === DiffSelectionType.None
+      f => isConflictedFile(f.status) && !isFileSelectedForCommit(f)
     )
 
     if (conflictedFilesLeft.length === 0) {
@@ -208,7 +213,7 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
       f =>
         isConflictedFile(f.status) &&
         hasUnresolvedConflicts(f.status) &&
-        f.selection.getSelectionType() !== DiffSelectionType.None
+        isFileSelectedForCommit(f)
     )
 
     if (conflictedFilesSelected.length > 0) {
@@ -322,12 +327,10 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
       return
     }
 
-    const currentSelection = file.selection.getSelectionType()
-
     this.props.dispatcher.changeFileIncluded(
       this.props.repository,
       file,
-      currentSelection === DiffSelectionType.None
+      !file.isStaged
     )
   }
 

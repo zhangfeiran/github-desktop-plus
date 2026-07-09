@@ -173,6 +173,59 @@
     // will be overlapped by the commit message form.
     min-height: 0;
   }
+
+  .changes-list-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing);
+    height: 100%;
+    border-bottom: var(--base-border);
+    background: var(--box-alt-background-color);
+    color: var(--text-secondary-color);
+    font-size: var(--font-size-sm);
+    text-transform: uppercase;
+
+    .label {
+      @include ellipsis;
+      min-width: 0;
+    }
+
+    .group-actions {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: var(--spacing-half);
+    }
+
+    .count {
+      font-weight: var(--font-weight-normal);
+    }
+
+    .group-action-button {
+      &.button-component {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 21px;
+        padding: 0;
+        border-color: transparent;
+        background: transparent;
+        color: var(--text-secondary-color);
+        text-transform: none;
+
+        &:not([aria-disabled='true']):hover {
+          border-color: var(--secondary-button-hover-border-color);
+          background-color: var(--secondary-button-hover-background);
+          color: var(--text-color);
+        }
+
+        &:focus {
+          outline-offset: 2px;
+        }
+      }
+    }
+  }
 }
 
 .stashed-changes-button {

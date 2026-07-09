@@ -103,6 +103,25 @@ branch tip, so it does not modify the working tree or create a real commit.
 Conflict previews still load as selectable virtual rows and mark conflicted
 files in the right-hand file list.
 
+## Changes view staging
+
+The Changes view preserves Git's real index state and splits the working
+directory file list into **Staged changes** and **Unstaged changes** sections.
+File checkboxes and the file context menu stage or unstage paths through Git
+instead of only changing Desktop's in-memory include state.
+
+When a path has both staged and unstaged changes, it appears once in each
+section. Selecting the staged row shows the staged diff (`git diff --staged`);
+selecting the unstaged row shows the remaining worktree diff (`git diff`).
+Each section header also exposes a one-click selection action for the visible
+staged or unstaged rows in that section. The unstaged section header can stage
+its visible rows, and the staged section header can unstage its visible rows.
+
+When staged files exist, creating a commit uses the existing index directly so
+partially staged changes from Git are preserved. If no files are staged, the
+older include/partial-selection commit path remains available as a compatibility
+fallback.
+
 ## History author and committer search
 
 History search supports advanced text syntax for matching commit identity
@@ -145,5 +164,6 @@ Focused unit coverage was added or updated for:
 - Gitee and GitCode endpoint mapping and remote parsing.
 - WSL-aware worktree path translation and operations.
 - Compare merge preview selection.
+- Changes view staging.
 - History author/committer search parsing and matching.
 - Progress parsing and model type guards.

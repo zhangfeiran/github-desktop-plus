@@ -44,6 +44,10 @@ export function updateChangedFiles(
     .map(file => {
       const existingFile = filesByID.get(file.id)
       if (existingFile) {
+        if (existingFile.isStaged !== file.isStaged) {
+          return file
+        }
+
         if (clearPartialState) {
           if (
             existingFile.selection.getSelectionType() ===

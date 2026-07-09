@@ -251,7 +251,8 @@ describe('git/diff', () => {
       const file = new WorkingDirectoryFileChange(
         'staged-file.md',
         { kind: AppFileStatusKind.Modified },
-        diffSelection
+        diffSelection,
+        true
       )
       const diff = await getTextDiff(repository, file)
 
@@ -278,6 +279,29 @@ describe('git/diff', () => {
         )
       )
       assert(second.lines[7].text.includes('+vel sagittis nisl rutrum.'))
+    })
+
+    it('shows staged and unstaged diffs separately for the same file', async t => {
+      const testRepoPath = await setupFixtureRepository(t, 'test-repo')
+      const repository = new Repository(testRepoPath, -1, null, false)
+      const readme = path.join(repository.path, 'README.md')
+
+      await writeFile(readme, 'staged\n')
+      await exec(['add', 'README.md'], repository.path)
+      await writeFile(readme, 'staged\nunstaged\n')
+
+      const status = await getStatusOrThrow(repository)
+      const stagedFile = status.workingDirectory.files.find(f => f.isStaged)
+      const unstagedFile = status.workingDirectory.files.find(f => !f.isStaged)
+      assert(stagedFile !== undefined)
+      assert(unstagedFile !== undefined)
+
+      const stagedDiff = await getTextDiff(repository, stagedFile)
+      const unstagedDiff = await getTextDiff(repository, unstagedFile)
+
+      assert(stagedDiff.text.includes('+staged'))
+      assert(!stagedDiff.text.includes('+unstaged'))
+      assert(unstagedDiff.text.includes('+unstaged'))
     })
 
     it('displays a binary diff for a docx file', async t => {
@@ -313,7 +337,7 @@ describe('git/diff', () => {
 
       const diff = await getTextDiff(repo, files[0])
 
-      assert.equal(diff.hunks.length, 0)
+      assert.equal(diff.hunks.length, 1)
     })
 
     // A renamed file in the working directory is just two staged files
@@ -334,9 +358,11 @@ describe('git/diff', () => {
       const status = await getStatusOrThrow(repo)
       const files = status.workingDirectory.files
 
-      assert.equal(files.length, 1)
+      assert.equal(files.length, 2)
+      const file = files.find(f => !f.isStaged)
+      assert(file !== undefined)
 
-      const diff = await getTextDiff(repo, files[0])
+      const diff = await getTextDiff(repo, file)
 
       assert.equal(diff.hunks.length, 1)
 
@@ -358,15 +384,24 @@ describe('git/diff', () => {
       const status = await getStatusOrThrow(repo)
       const files = status.workingDirectory.files
 
-      assert.equal(files.length, 1)
+      assert.equal(files.length, 2)
+      const stagedFile = files.find(f => f.isStaged)
+      const unstagedFile = files.find(f => !f.isStaged)
+      assert(stagedFile !== undefined)
+      assert(unstagedFile !== undefined)
 
-      const diff = await getTextDiff(repo, files[0])
+      const stagedDiff = await getTextDiff(repo, stagedFile)
+      assert.equal(stagedDiff.hunks.length, 1)
+      assert.equal(stagedDiff.hunks[0].lines.length, 2)
+      assert.equal(stagedDiff.hunks[0].lines[1].text, '+WRITING THE FIRST LINE')
 
+      const diff = await getTextDiff(repo, unstagedFile)
       assert.equal(diff.hunks.length, 1)
 
       const first = diff.hunks[0]
-      assert.equal(first.lines.length, 2)
-      assert.equal(first.lines[1].text, '+WRITING OVER THE TOP')
+      assert.equal(first.lines.length, 3)
+      assert.equal(first.lines[1].text, '-WRITING THE FIRST LINE')
+      assert.equal(first.lines[2].text, '+WRITING OVER THE TOP')
     })
   })
 

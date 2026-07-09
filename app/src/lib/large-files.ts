@@ -21,9 +21,11 @@ export async function getLargeFilePaths(
 ) {
   const fileNames = new Array<string>()
   const workingDirectoryFiles = workingDirectory.files
-  const includedFiles = workingDirectoryFiles.filter(
+  const stagedFiles = workingDirectoryFiles.filter(file => file.isStaged)
+  const selectedFiles = workingDirectoryFiles.filter(
     file => file.selection.getSelectionType() !== DiffSelectionType.None
   )
+  const includedFiles = stagedFiles.length > 0 ? stagedFiles : selectedFiles
 
   for (const file of includedFiles) {
     const filePath = join(repository.path, file.path)

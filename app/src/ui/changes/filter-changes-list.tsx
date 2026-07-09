@@ -82,6 +82,14 @@ export interface IChangesListItem extends IFilterListItem {
   readonly change: WorkingDirectoryFileChange
 }
 
+type ChangesListGroupIdentifier = 'staged-changes' | 'unstaged-changes'
+
+function isChangesListGroupIdentifier(
+  identifier: string
+): identifier is ChangesListGroupIdentifier {
+  return identifier === 'staged-changes' || identifier === 'unstaged-changes'
+}
+
 const RowHeight = 29
 const StashIcon: OcticonSymbolVariant = {
   w: 16,
@@ -268,7 +276,9 @@ interface IFilterChangesListState {
   readonly filteredItems: Map<string, IChangesListItem>
   readonly selectedItems: ReadonlyArray<IChangesListItem>
   readonly focusedRow: string | null
-  readonly groups: ReadonlyArray<IFilterListGroup<IChangesListItem>>
+  readonly groups: ReadonlyArray<
+    IFilterListGroup<IChangesListItem, ChangesListGroupIdentifier>
+  >
 }
 
 function getSelectedItemsFromProps(
@@ -296,21 +306,6 @@ function getSelectedItemsFromProps(
   return selectedItems
 }
 
-/** Get checkbox value from includeAll status */
-function getCheckBoxValueFromIncludeAll(
-  includeAll: boolean | null
-): CheckboxValue {
-  if (includeAll === true) {
-    return CheckboxValue.On
-  }
-
-  if (includeAll === false) {
-    return CheckboxValue.Off
-  }
-
-  return CheckboxValue.Mixed
-}
-
 export class FilterChangesList extends React.Component<
   IFilterChangesListProps,
   IFilterChangesListState
@@ -328,13 +323,6 @@ export class FilterChangesList extends React.Component<
       rebaseConflictState: RebaseConflictState | null,
       filteredItems: Map<string, IChangesListItem>
     ): CheckboxValue => {
-      if (
-        filteredItems.size === workingDirectory.files.length &&
-        rebaseConflictState === null
-      ) {
-        return getCheckBoxValueFromIncludeAll(workingDirectory.includeAll)
-      }
-
       const files = workingDirectory.files.filter(f => filteredItems.has(f.id))
 
       if (files.length === 0) {
@@ -361,21 +349,29 @@ export class FilterChangesList extends React.Component<
         return onlyTrackedFilesFound ? CheckboxValue.On : CheckboxValue.Mixed
       }
 
-      const filteredStatus = WorkingDirectoryStatus.fromFiles(files)
+      const allStaged = files.every(f => f.isStaged)
+      const noneStaged = files.every(f => !f.isStaged)
 
-      return getCheckBoxValueFromIncludeAll(filteredStatus.includeAll)
+      if (allStaged) {
+        return CheckboxValue.On
+      }
+
+      if (noneStaged) {
+        return CheckboxValue.Off
+      }
+
+      return CheckboxValue.Mixed
     }
   )
 
   public constructor(props: IFilterChangesListProps) {
     super(props)
 
-    const listItems = this.createListItems(props.workingDirectory.files)
-    const groups = [listItems]
+    const groups = this.createListGroups(props.workingDirectory.files)
 
     this.state = {
       filteredItems: new Map<string, IChangesListItem>(
-        listItems.items.map(i => [i.id, i])
+        groups.flatMap(g => g.items).map(i => [i.id, i])
       ),
       selectedItems: getSelectedItemsFromProps(props),
       focusedRow: null,
@@ -395,33 +391,48 @@ export class FilterChangesList extends React.Component<
     ) {
       this.setState({
         selectedItems: getSelectedItemsFromProps(nextProps),
-        groups: [this.createListItems(nextProps.workingDirectory.files)],
+        groups: this.createListGroups(nextProps.workingDirectory.files),
       })
     }
   }
 
   private createListItems(
     files: ReadonlyArray<WorkingDirectoryFileChange>
-  ): IFilterListGroup<IChangesListItem> {
-    const items = files.map(file => ({
+  ): ReadonlyArray<IChangesListItem> {
+    return files.map(file => ({
       text: [file.path],
       id: file.id,
       change: file,
     }))
+  }
 
-    return {
-      identifier: 'changed-files',
-      items,
-    }
+  private createListGroups(
+    files: ReadonlyArray<WorkingDirectoryFileChange>
+  ): ReadonlyArray<
+    IFilterListGroup<IChangesListItem, ChangesListGroupIdentifier>
+  > {
+    const staged = files.filter(file => file.isStaged)
+    const unstaged = files.filter(file => !file.isStaged)
+
+    return [
+      {
+        identifier: 'staged-changes',
+        items: this.createListItems(staged),
+      },
+      {
+        identifier: 'unstaged-changes',
+        items: this.createListItems(unstaged),
+      },
+    ]
   }
 
   private onIncludeAllChanged = (event: React.FormEvent<HTMLInputElement>) => {
     const include = event.currentTarget.checked
-    const filteredItemPaths = Array.from(
-      this.state.filteredItems,
-      ([, v]) => v.change
-    )
-    this.props.onIncludeChanged(filteredItemPaths, include)
+    const filteredFiles = Array.from(this.state.filteredItems.keys())
+      .map(id => this.props.workingDirectory.findFileWithID(id))
+      .filter((file): file is WorkingDirectoryFileChange => file !== null)
+
+    this.props.onIncludeChanged(filteredFiles, include)
   }
 
   private renderChangedFile = (
@@ -436,7 +447,6 @@ export class FilterChangesList extends React.Component<
     } = this.props
 
     const file = changeListItem.change
-    const selection = file.selection.getSelectionType()
     const { submoduleStatus } = file.status
 
     const isUncommittableSubmodule =
@@ -450,18 +460,11 @@ export class FilterChangesList extends React.Component<
         file.status.kind === AppFileStatusKind.New) &&
       (submoduleStatus.modifiedChanges || submoduleStatus.untrackedChanges)
 
-    const includeAll =
-      selection === DiffSelectionType.All
-        ? true
-        : selection === DiffSelectionType.None
-        ? false
-        : null
-
     const include = isUncommittableSubmodule
       ? false
       : rebaseConflictState !== null
       ? file.status.kind !== AppFileStatusKind.Untracked
-      : includeAll
+      : file.isStaged
 
     const disableSelection =
       isCommitting || rebaseConflictState !== null || isUncommittableSubmodule
@@ -832,19 +835,17 @@ export class FilterChangesList extends React.Component<
       items.push(
         { type: 'separator' },
         {
-          label: __DARWIN__
-            ? 'Include Selected Files'
-            : 'Include selected files',
+          label: __DARWIN__ ? 'Stage Selected Files' : 'Stage selected files',
           action: () => {
-            selectedFiles.map(file => this.props.onIncludeChanged(file, true))
+            this.props.onIncludeChanged(selectedFiles, true)
           },
         },
         {
           label: __DARWIN__
-            ? 'Exclude Selected Files'
-            : 'Exclude selected files',
+            ? 'Unstage Selected Files'
+            : 'Unstage selected files',
           action: () => {
-            selectedFiles.map(file => this.props.onIncludeChanged(file, false))
+            this.props.onIncludeChanged(selectedFiles, false)
           },
         },
         { type: 'separator' },
@@ -853,6 +854,19 @@ export class FilterChangesList extends React.Component<
       )
     } else {
       items.push(
+        { type: 'separator' },
+        {
+          label: file.isStaged
+            ? __DARWIN__
+              ? 'Unstage File'
+              : 'Unstage file'
+            : __DARWIN__
+            ? 'Stage File'
+            : 'Stage file',
+          action: () => {
+            this.props.onIncludeChanged(file, !file.isStaged)
+          },
+        },
         { type: 'separator' },
         this.getCopyPathMenuItem(file),
         this.getCopyRelativePathMenuItem(file)
@@ -994,9 +1008,12 @@ export class FilterChangesList extends React.Component<
     const fileCount = workingDirectory.files.length
 
     // Files selected to commit (to be committed) (not selected to see in diff)
-    const filesSelected = workingDirectory.files.filter(
+    const filesSelectedBySelection = workingDirectory.files.filter(
       f => f.selection.getSelectionType() !== DiffSelectionType.None
     )
+    const stagedFiles = workingDirectory.files.filter(f => f.isStaged)
+    const filesSelected =
+      stagedFiles.length > 0 ? stagedFiles : filesSelectedBySelection
 
     const anyFilesSelected = filesSelected.length > 0
 
@@ -1337,6 +1354,68 @@ export class FilterChangesList extends React.Component<
     this.props.onFileSelectionChanged(rows)
   }
 
+  private getGroupItems = (
+    identifier: ChangesListGroupIdentifier
+  ): ReadonlyArray<IChangesListItem> => {
+    return (
+      this.state.groups.find(group => group.identifier === identifier)?.items ??
+      []
+    )
+  }
+
+  private getVisibleGroupItems = (
+    identifier: ChangesListGroupIdentifier
+  ): ReadonlyArray<IChangesListItem> => {
+    return this.getGroupItems(identifier).filter(item =>
+      this.state.filteredItems.has(item.id)
+    )
+  }
+
+  private selectGroup = (identifier: ChangesListGroupIdentifier) => {
+    const selectedItems = this.getVisibleGroupItems(identifier)
+
+    if (selectedItems.length === 0) {
+      return
+    }
+
+    this.setState({ selectedItems })
+    this.onFileSelectionChanged(selectedItems)
+  }
+
+  private onSelectGroupClick = (
+    identifier: ChangesListGroupIdentifier,
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    this.selectGroup(identifier)
+  }
+
+  private setGroupIncluded = (
+    identifier: ChangesListGroupIdentifier,
+    include: boolean
+  ) => {
+    const files = this.getVisibleGroupItems(identifier).map(item => item.change)
+
+    if (files.length === 0) {
+      return
+    }
+
+    this.props.onIncludeChanged(files, include)
+  }
+
+  private onSetGroupIncludedClick = (
+    identifier: ChangesListGroupIdentifier,
+    include: boolean,
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    this.setGroupIncluded(identifier, include)
+  }
+
   private onFilesToCommitNotVisible = (onCommitAnyway: () => void) => {
     this.props.dispatcher.showPopup({
       type: PopupType.ConfirmCommitFilteredChanges,
@@ -1360,11 +1439,13 @@ export class FilterChangesList extends React.Component<
     this.props.dispatcher.setFilterModifiedFiles(this.props.repository, false)
     this.props.dispatcher.setFilterDeletedFiles(this.props.repository, false)
 
-    // Then apply only the "Included in commit" filter to show only files being committed
-    this.props.dispatcher.setIncludedChangesInCommitFilter(
-      this.props.repository,
-      true
-    )
+    if (this.props.workingDirectory.files.some(f => f.isStaged)) {
+      // Then apply only the staged-for-commit filter to show only files being committed
+      this.props.dispatcher.setIncludedChangesInCommitFilter(
+        this.props.repository,
+        true
+      )
+    }
   }
 
   private onTextBoxRef = (component: TextBox | null) => {
@@ -1471,6 +1552,68 @@ export class FilterChangesList extends React.Component<
     return `${formatNumber(files.length)} changed file${plural(files.length)}`
   }
 
+  private renderGroupHeader = (identifier: string) => {
+    if (!isChangesListGroupIdentifier(identifier)) {
+      return null
+    }
+
+    const groupItems = this.getGroupItems(identifier)
+    const count = groupItems.length
+    const visibleItems = this.getVisibleGroupItems(identifier)
+    const visibleCount = visibleItems.length
+    const label =
+      identifier === 'staged-changes' ? 'Staged changes' : 'Unstaged changes'
+    const selectLabel =
+      visibleCount === count
+        ? `Select all ${label.toLowerCase()}`
+        : `Select visible ${label.toLowerCase()}`
+    const include = identifier === 'unstaged-changes'
+    const includeLabel = `${include ? 'Stage' : 'Unstage'} ${
+      visibleCount === count ? 'all' : 'visible'
+    } ${label.toLowerCase()}`
+    const countLabel =
+      visibleCount === count
+        ? formatNumber(count)
+        : `${formatNumber(visibleCount)} of ${formatNumber(count)}`
+    const disableGroupActions =
+      visibleCount === 0 ||
+      this.props.isCommitting ||
+      this.props.rebaseConflictState !== null
+
+    return (
+      <div className="changes-list-group-header filter-list-group-header">
+        <span className="label">{label}</span>
+        <span className="group-actions">
+          <span className="count">{countLabel}</span>
+          <Button
+            className="group-action-button select-group-button"
+            size="small"
+            onClick={event => this.onSelectGroupClick(identifier, event)}
+            disabled={visibleCount === 0}
+            tooltip={selectLabel}
+            ariaLabel={selectLabel}
+            applyTooltipAriaDescribedBy={false}
+          >
+            <Octicon symbol={octicons.checklist} />
+          </Button>
+          <Button
+            className="group-action-button stage-group-button"
+            size="small"
+            onClick={event =>
+              this.onSetGroupIncludedClick(identifier, include, event)
+            }
+            disabled={disableGroupActions}
+            tooltip={includeLabel}
+            ariaLabel={includeLabel}
+            applyTooltipAriaDescribedBy={false}
+          >
+            <Octicon symbol={include ? octicons.plus : octicons.dash} />
+          </Button>
+        </span>
+      </div>
+    )
+  }
+
   public render() {
     const { workingDirectory, isCommitting } = this.props
 
@@ -1513,6 +1656,7 @@ export class FilterChangesList extends React.Component<
               workingDirectory: workingDirectory,
               isCommitting: isCommitting,
               focusedRow: this.state.focusedRow,
+              groups: this.state.groups,
               showChangesFilter: this.props.showChangesFilter,
               filterNewFiles: this.props.fileListFilter.isNewFile,
               filterModifiedFiles: this.props.fileListFilter.isModifiedFile,
@@ -1521,6 +1665,7 @@ export class FilterChangesList extends React.Component<
                 this.props.fileListFilter.isExcludedFromCommit,
             }}
             onItemContextMenu={this.onItemContextMenu}
+            renderGroupHeader={this.renderGroupHeader}
             renderCustomFilterRow={this.renderFilterRow}
             getGroupAriaLabel={this.getListAriaLabel}
             renderNoItems={this.renderNoChanges}
@@ -1538,9 +1683,14 @@ export class FilterChangesList extends React.Component<
 
   private renderHiddenChangesWarning = () => {
     const { files } = this.props.workingDirectory
-    const filesSelected = files.filter(
+    const filesSelectedBySelection = files.filter(
       f => f.selection.getSelectionType() !== DiffSelectionType.None
     )
+    const stagedFiles = files.filter(f => f.isStaged)
+    const isUsingStagedFiles = stagedFiles.length > 0
+    const filesSelected = isUsingStagedFiles
+      ? stagedFiles
+      : filesSelectedBySelection
 
     if (
       !isCommittingFileHiddenByFilter(
@@ -1557,10 +1707,12 @@ export class FilterChangesList extends React.Component<
       <div className="hidden-changes-warning" id="hidden-changes-warning">
         <Octicon symbol={octicons.alert} />
         <span className="sr-only">Warning:</span>
-        <span>Hidden changes will be committed. </span>
+        <span>
+          Hidden {isUsingStagedFiles ? 'staged ' : ''}changes will be committed.{' '}
+        </span>
         <LinkButton onClick={this.showFilesToBeCommitted}>
           Adjust the filters to see all {formatNumber(filesSelected.length)}{' '}
-          changes
+          {isUsingStagedFiles ? 'staged changes' : 'changes'}
         </LinkButton>
       </div>
     )

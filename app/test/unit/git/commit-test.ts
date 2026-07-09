@@ -12,6 +12,7 @@ import {
   getChangedFiles,
   getWorkingDirectoryDiff,
   createMergeCommit,
+  createStagedCommit,
 } from '../../../src/lib/git'
 
 import {
@@ -152,6 +153,29 @@ describe('git/commit', () => {
       const statusAfter = await getStatusOrThrow(repo)
 
       assert.equal(statusAfter.workingDirectory.files.length, 0)
+    })
+
+    it('commits the current index without including unstaged changes', async t => {
+      const testRepoPath = await setupFixtureRepository(t, 'test-repo')
+      const repository = new Repository(testRepoPath, -1, null, false)
+      const readme = path.join(repository.path, 'README.md')
+
+      await writeFile(readme, 'staged\n')
+      await exec(['add', 'README.md'], repository.path)
+      await writeFile(readme, 'staged\nunstaged\n')
+
+      const sha = await createStagedCommit(repository, 'Staged commit')
+      assert.equal(sha.length, 7)
+
+      const headReadme = await exec(['show', 'HEAD:README.md'], repository.path)
+      assert.equal(headReadme.stdout, 'staged\n')
+
+      const worktreeReadme = await readFile(readme, 'utf8')
+      assert.equal(worktreeReadme, 'staged\nunstaged\n')
+
+      const status = await getStatusOrThrow(repository)
+      assert.equal(status.workingDirectory.files.length, 1)
+      assert.equal(status.workingDirectory.files[0].isStaged, false)
     })
   })
 
@@ -423,11 +447,13 @@ describe('git/commit', () => {
       const status = await getStatusOrThrow(repo)
       const files = status.workingDirectory.files
 
-      assert.equal(files.length, 1)
+      assert.equal(files.length, 2)
 
-      const sha = await createCommit(repo, 'renamed a file', [
-        files[0].withIncludeAll(true),
-      ])
+      const sha = await createCommit(
+        repo,
+        'renamed a file',
+        files.map(f => f.withIncludeAll(true))
+      )
       assert.equal(sha.length, 7)
 
       const statusAfter = await getStatusOrThrow(repo)
@@ -454,15 +480,27 @@ describe('git/commit', () => {
       const status = await getStatusOrThrow(repo)
       const files = status.workingDirectory.files
 
-      assert.equal(files.length, 1)
-      assert(files[0].path.includes('bar'))
-      assert.equal(files[0].status.kind, AppFileStatusKind.Renamed)
+      assert.equal(files.length, 2)
+      const renamedFile = files.find(
+        f => f.status.kind === AppFileStatusKind.Renamed
+      )
+      const modifiedFile = files.find(
+        f => f.status.kind === AppFileStatusKind.Modified
+      )
+      assert(renamedFile !== undefined)
+      assert(modifiedFile !== undefined)
+      assert(renamedFile.path.includes('bar'))
+      assert(modifiedFile.path.includes('bar'))
 
-      const selection = files[0].selection
+      const selection = modifiedFile.selection
         .withSelectNone()
         .withLineSelection(2, true)
 
-      const partiallySelectedFile = files[0].withSelection(selection)
+      const partiallySelectedFile = new WorkingDirectoryFileChange(
+        renamedFile.path,
+        renamedFile.status,
+        selection
+      )
 
       const sha = await createCommit(repo, 'renamed a file', [
         partiallySelectedFile,
@@ -767,18 +805,25 @@ describe('git/commit', () => {
       status = await getStatusOrThrow(repo)
       files = status.workingDirectory.files
 
-      assert.equal(files.length, 1)
-      assert(files[0].path.includes('second'))
-      assert.equal(files[0].status.kind, AppFileStatusKind.New)
+      assert.equal(files.length, 3)
+      const stagedFiles = files.filter(f => f.isStaged)
+      const unstagedFiles = files.filter(f => !f.isStaged)
+      assert.equal(stagedFiles.length, 2)
+      assert.equal(unstagedFiles.length, 1)
+      assert(stagedFiles.some(f => f.path.includes('first')))
+      assert(stagedFiles.some(f => f.path.includes('second')))
+      assert(unstagedFiles[0].path.includes('first'))
+      assert.equal(unstagedFiles[0].status.kind, AppFileStatusKind.Deleted)
 
-      const toCommit = status.workingDirectory.withIncludeAllFiles(true)
-
-      const sha = await createCommit(repo, 'commit everything', toCommit.files)
+      const sha = await createStagedCommit(repo, 'commit everything')
       assert.equal(sha, '(root-commit)')
 
       status = await getStatusOrThrow(repo)
       files = status.workingDirectory.files
-      assert.equal(files.length, 0)
+      assert.equal(files.length, 1)
+      assert.equal(files[0].path, 'first')
+      assert.equal(files[0].status.kind, AppFileStatusKind.Deleted)
+      assert.equal(files[0].isStaged, false)
 
       const commit = await getCommit(repo, 'HEAD')
       assert(commit !== null)
@@ -804,18 +849,25 @@ describe('git/commit', () => {
       status = await getStatusOrThrow(repo)
       files = status.workingDirectory.files
 
-      assert.equal(files.length, 1)
-      assert(files[0].path.includes('first'))
-      assert.equal(files[0].status.kind, AppFileStatusKind.Untracked)
+      assert.equal(files.length, 2)
+      const stagedDelete = files.find(f => f.isStaged)
+      const untrackedFile = files.find(f => !f.isStaged)
+      assert(stagedDelete !== undefined)
+      assert(untrackedFile !== undefined)
+      assert(stagedDelete.path.includes('first'))
+      assert.equal(stagedDelete.status.kind, AppFileStatusKind.Deleted)
+      assert(untrackedFile.path.includes('first'))
+      assert.equal(untrackedFile.status.kind, AppFileStatusKind.Untracked)
 
-      const toCommit = status.workingDirectory.withIncludeAllFiles(true)
-
-      const sha = await createCommit(repo, 'commit again!', toCommit.files)
+      const sha = await createStagedCommit(repo, 'commit again!')
       assert.equal(sha.length, 7)
 
       status = await getStatusOrThrow(repo)
       files = status.workingDirectory.files
-      assert.equal(files.length, 0)
+      assert.equal(files.length, 1)
+      assert.equal(files[0].path, 'first')
+      assert.equal(files[0].status.kind, AppFileStatusKind.Untracked)
+      assert.equal(files[0].isStaged, false)
 
       const commit = await getCommit(repo, 'HEAD')
       assert(commit !== null)

@@ -6,30 +6,18 @@ import { unstageAll } from './reset'
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
 import { stageManualConflictResolution } from './stage'
 
-/**
- * @param repository repository to execute merge in
- * @param message commit message
- * @param files files to commit
- * @returns the commit SHA
- */
-export async function createCommit(
+type CreateCommitOptions = {
+  amend?: boolean
+  noVerify?: boolean
+  signOff?: boolean
+  allowEmpty?: boolean
+} & HookCallbackOptions
+
+async function createCommitFromCurrentIndex(
   repository: Repository,
   message: string,
-  files: ReadonlyArray<WorkingDirectoryFileChange>,
-  options?: {
-    amend?: boolean
-    noVerify?: boolean
-    signOff?: boolean
-    allowEmpty?: boolean
-  } & HookCallbackOptions
+  options?: CreateCommitOptions
 ): Promise<string> {
-  // Clear the staging area, our diffs reflect the difference between the
-  // working directory and the last commit (if any) so our commits should
-  // do the same thing.
-  await unstageAll(repository)
-
-  await stageFiles(repository, files)
-
   const args = ['-F', '-']
 
   if (options?.amend) {
@@ -69,6 +57,42 @@ export async function createCommit(
     }
   )
   return parseCommitSHA(result)
+}
+
+/**
+ * @param repository repository to execute merge in
+ * @param message commit message
+ * @param files files to commit
+ * @returns the commit SHA
+ */
+export async function createCommit(
+  repository: Repository,
+  message: string,
+  files: ReadonlyArray<WorkingDirectoryFileChange>,
+  options?: CreateCommitOptions
+): Promise<string> {
+  // Clear the staging area, our diffs reflect the difference between the
+  // working directory and the last commit (if any) so our commits should
+  // do the same thing.
+  await unstageAll(repository)
+
+  await stageFiles(repository, files)
+
+  return createCommitFromCurrentIndex(repository, message, options)
+}
+
+/**
+ * Creates a commit from the repository's existing Git index.
+ *
+ * This preserves staged changes exactly as they currently exist instead of
+ * rebuilding the index from Desktop's file selection.
+ */
+export async function createStagedCommit(
+  repository: Repository,
+  message: string,
+  options?: CreateCommitOptions
+): Promise<string> {
+  return createCommitFromCurrentIndex(repository, message, options)
 }
 
 /**

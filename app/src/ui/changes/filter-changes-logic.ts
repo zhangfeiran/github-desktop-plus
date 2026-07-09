@@ -18,11 +18,11 @@ export function applyFilterOptions(
 
   const { change } = item
 
-  if (filters.isIncludedInCommit && !change.isIncludedInCommit()) {
+  if (filters.isIncludedInCommit && !change.isStaged) {
     return false
   }
 
-  if (filters.isExcludedFromCommit && !change.isExcludedFromCommit()) {
+  if (filters.isExcludedFromCommit && change.isStaged) {
     return false
   }
 
@@ -88,11 +88,11 @@ export function getNoResultsMessage(
   }
 
   if (filters.isIncludedInCommit) {
-    activeFilters.push('Included in commit')
+    activeFilters.push('Staged for commit')
   }
 
   if (filters.isExcludedFromCommit) {
-    activeFilters.push('Excluded from commit')
+    activeFilters.push('Unstaged changes')
   }
 
   if (filters.isNewFile) {

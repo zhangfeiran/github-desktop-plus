@@ -262,15 +262,16 @@ export class FileChange {
    */
   public constructor(
     public readonly path: string,
-    public readonly status: AppFileStatus
+    public readonly status: AppFileStatus,
+    idSuffix: string = ''
   ) {
     if (
       status.kind === AppFileStatusKind.Renamed ||
       status.kind === AppFileStatusKind.Copied
     ) {
-      this.id = `${status.kind}+${path}+${status.oldPath}`
+      this.id = `${status.kind}+${path}+${status.oldPath}${idSuffix}`
     } else {
-      this.id = `${status.kind}+${path}`
+      this.id = `${status.kind}+${path}${idSuffix}`
     }
   }
 
@@ -291,6 +292,11 @@ export class FileChange {
   }
 }
 
+export const enum WorkingDirectoryFileChangeDiffType {
+  Staged = 'staged',
+  Unstaged = 'unstaged',
+}
+
 /** encapsulate the changes to a file in the working directory */
 export class WorkingDirectoryFileChange extends FileChange {
   /**
@@ -302,10 +308,21 @@ export class WorkingDirectoryFileChange extends FileChange {
   public constructor(
     path: string,
     status: AppFileStatus,
-    public readonly selection: DiffSelection
+    public readonly selection: DiffSelection,
+    isStaged: boolean = false,
+    public readonly diffType: WorkingDirectoryFileChangeDiffType = isStaged
+      ? WorkingDirectoryFileChangeDiffType.Staged
+      : WorkingDirectoryFileChangeDiffType.Unstaged
   ) {
-    super(path, status)
+    super(
+      path,
+      status,
+      diffType === WorkingDirectoryFileChangeDiffType.Staged ? '+staged' : ''
+    )
+    this.isStaged = isStaged
   }
+
+  public readonly isStaged: boolean
 
   /** Create a new WorkingDirectoryFileChange with the given includedness. */
   public withIncludeAll(include: boolean): WorkingDirectoryFileChange {
@@ -318,7 +335,13 @@ export class WorkingDirectoryFileChange extends FileChange {
 
   /** Create a new WorkingDirectoryFileChange with the given diff selection. */
   public withSelection(selection: DiffSelection): WorkingDirectoryFileChange {
-    return new WorkingDirectoryFileChange(this.path, this.status, selection)
+    return new WorkingDirectoryFileChange(
+      this.path,
+      this.status,
+      selection,
+      this.isStaged,
+      this.diffType
+    )
   }
 
   public isIncludedInCommit(): boolean {

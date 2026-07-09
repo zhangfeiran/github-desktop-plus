@@ -229,6 +229,26 @@ export function mapStatus(
     }
   }
 
+  if (statusCode === 'MM') {
+    return {
+      kind: 'ordinary',
+      type: 'modified',
+      index: GitStatusEntry.Modified,
+      workingTree: GitStatusEntry.Modified,
+      submoduleStatus,
+    }
+  }
+
+  if (statusCode === 'MD') {
+    return {
+      kind: 'ordinary',
+      type: 'modified',
+      index: GitStatusEntry.Modified,
+      workingTree: GitStatusEntry.Deleted,
+      submoduleStatus,
+    }
+  }
+
   if (statusCode === '.A') {
     return {
       kind: 'ordinary',
@@ -265,6 +285,16 @@ export function mapStatus(
       type: 'deleted',
       index: GitStatusEntry.Deleted,
       workingTree: GitStatusEntry.Unchanged,
+      submoduleStatus,
+    }
+  }
+
+  if (statusCode === 'DM') {
+    return {
+      kind: 'ordinary',
+      type: 'deleted',
+      index: GitStatusEntry.Deleted,
+      workingTree: GitStatusEntry.Modified,
       submoduleStatus,
     }
   }
