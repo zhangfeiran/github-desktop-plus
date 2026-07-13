@@ -16,6 +16,7 @@ import { Options as FocusTrapOptions } from 'focus-trap'
 import { TooltipTarget } from '../lib/tooltip'
 import { AriaHasPopupType } from '../lib/aria-types'
 import { enableResizingToolbarButtons } from '../../lib/feature-flag'
+import { Resizable } from '../resizable'
 
 export type DropdownState = 'open' | 'closed'
 
@@ -33,6 +34,15 @@ export enum ToolbarDropdownStyle {
    * When expanded, it only takes the height of the content.
    */
   MultiOption,
+}
+
+export interface IToolbarDropdownFoldoutResizeProps {
+  readonly width: number
+  readonly minimumWidth?: number
+  readonly maximumWidth?: number
+  readonly description: string
+  readonly onResize: (newWidth: number) => void
+  readonly onReset: () => void
 }
 
 export interface IToolbarDropdownProps {
@@ -146,6 +156,9 @@ export interface IToolbarDropdownProps {
    * Note: If `foldoutStyle` is set, this property is ignored.
    */
   readonly foldoutStyleOverrides?: React.CSSProperties
+
+  /** Makes the open foldout horizontally resizable from its right edge. */
+  readonly foldoutResize?: IToolbarDropdownFoldoutResizeProps
 
   /**
    * Whether the button should displays its disclosure arrow. Defaults to true.
@@ -413,6 +426,28 @@ export class ToolbarDropdown extends React.Component<
     }
   }
 
+  private renderFoldoutContents = (): JSX.Element | null => {
+    const contents = this.props.dropdownContentRenderer()
+    const resize = this.props.foldoutResize
+
+    if (resize === undefined) {
+      return contents
+    }
+
+    return (
+      <Resizable
+        width={resize.width}
+        minimumWidth={resize.minimumWidth}
+        maximumWidth={resize.maximumWidth}
+        description={resize.description}
+        onResize={resize.onResize}
+        onReset={resize.onReset}
+      >
+        {contents}
+      </Resizable>
+    )
+  }
+
   private renderDropdownContents = (): JSX.Element | null => {
     if (this.props.dropdownState !== 'open') {
       return null
@@ -439,7 +474,7 @@ export class ToolbarDropdown extends React.Component<
             tabIndex={-1}
             onKeyDown={this.onFoldoutKeyDown}
           >
-            {this.props.dropdownContentRenderer()}
+            {this.renderFoldoutContents()}
           </div>
         </div>
       </FocusTrap>

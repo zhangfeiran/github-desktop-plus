@@ -247,6 +247,14 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
       maxWidth: this.props.branchDropdownWidth.max,
       minWidth: 365,
     }
+    const foldoutResize = {
+      width: this.props.branchDropdownWidth.value,
+      maximumWidth: this.props.branchDropdownWidth.max,
+      minimumWidth: 365,
+      description: 'Branch dropdown list',
+      onResize: this.onResize,
+      onReset: this.onReset,
+    }
 
     return (
       <>
@@ -265,6 +273,7 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
             title={title}
             description={description}
             foldoutStyleOverrides={foldoutStyleOverrides}
+            foldoutResize={foldoutResize}
             onContextMenu={this.onBranchToolbarButtonContextMenu}
             tooltip={isOpen ? undefined : tooltip}
             onDropdownStateChanged={this.onDropDownStateChanged}
