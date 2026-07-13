@@ -13,11 +13,13 @@ import { openRepositoryInNewWindow } from '../main-process-proxy'
 import { PopupType } from '../../models/popup'
 import { Resizable } from '../resizable'
 import { enableResizingToolbarButtons } from '../../lib/feature-flag'
+import { Branch } from '../../models/branch'
 
 interface IWorktreeDropdownProps {
   readonly dispatcher: Dispatcher
   readonly repository: Repository
   readonly worktrees: ReadonlyArray<WorktreeEntry>
+  readonly allBranches: ReadonlyArray<Branch>
   readonly isOpen: boolean
   readonly onDropDownStateChanged: (state: DropdownState) => void
   readonly enableFocusTrap: boolean
@@ -126,6 +128,7 @@ export class WorktreeDropdown extends React.Component<
     return (
       <WorktreeList
         worktrees={worktrees}
+        allBranches={this.props.allBranches}
         currentWorktree={this.getCurrentWorktree()}
         onWorktreeClick={this.onWorktreeClick}
         filterText={this.state.filterText}

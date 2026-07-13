@@ -96,6 +96,48 @@ export const GitUserAgent = memoizeOne((path: string, cacheKey: string) =>
 const fatalPromptsDisabledRe =
   /^fatal: could not read .*?: terminal prompts disabled\n$/
 
+export function createTrampolineEnvironment(
+  token: string,
+  port: number,
+  gitUserAgent: string,
+  existingGitEnvConfig: string,
+  sshEnv: Record<string, string | undefined>,
+  useDesktopCredentialEnvironment: boolean
+): Record<string, string | undefined> {
+  if (!useDesktopCredentialEnvironment) {
+    return { GIT_USER_AGENT: gitUserAgent }
+  }
+
+  const gitEnvConfigPrefix =
+    existingGitEnvConfig.length > 0 ? `${existingGitEnvConfig} ` : ''
+
+  return {
+    DESKTOP_PORT: port.toString(),
+    DESKTOP_TRAMPOLINE_TOKEN: token,
+    GIT_ASKPASS: '',
+    // This warrants some explanation. We're configuring the credential helper
+    // using environment variables rather than arguments (i.e. -c
+    // credential.helper=) because we want commands invoked by filters (i.e. Git
+    // LFS) to be able to pick up our configuration. Arguments passed to git
+    // commands are not passed down to filters.
+    //
+    // We're using the undocumented GIT_CONFIG_PARAMETERS environment variable
+    // over the documented GIT_CONFIG_{COUNT,KEY,VALUE} due to an apparent bug
+    // either in a Windows Python runtime dependency or in a Python project
+    // commonly used to manage hooks which isn't able to handle the blank
+    // environment variables we need when using GIT_CONFIG_*.
+    //
+    // See https://github.com/desktop/desktop/issues/18945
+    // See https://github.com/git/git/blob/ed155187b429a/config.c#L664
+    GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=${formatCredentialHelperPathForGitConfig(
+      getDesktopCredentialHelperTrampolinePath()
+    )}'`,
+
+    GIT_USER_AGENT: gitUserAgent,
+    ...sshEnv,
+  }
+}
+
 /**
  * Allows invoking a function with a set of environment variables to use when
  * invoking a Git subcommand that needs to use the trampoline (mainly git
@@ -113,7 +155,11 @@ export async function withTrampolineEnv<T>(
   isBackgroundTask = false,
   customEnv?: Record<string, string | undefined>
 ): Promise<T> {
-  const sshEnv = await getSSHEnvironment()
+  const source = getRepositoryGitSource(path)
+  const useDesktopCredentialEnvironment = source.kind !== 'ssh'
+  const sshEnv = useDesktopCredentialEnvironment
+    ? await getSSHEnvironment()
+    : {}
 
   return withTrampolineToken(async token => {
     isBackgroundTaskEnvironment.set(token, isBackgroundTask)
@@ -123,9 +169,6 @@ export async function withTrampolineEnv<T>(
       customEnv?.['GIT_CONFIG_PARAMETERS'] ??
       process.env['GIT_CONFIG_PARAMETERS'] ??
       ''
-
-    const gitEnvConfigPrefix =
-      existingGitEnvConfig.length > 0 ? `${existingGitEnvConfig} ` : ''
 
     // The code below assumes a few things in order to manage SSH key passphrases
     // correctly:
@@ -137,33 +180,18 @@ export async function withTrampolineEnv<T>(
     // `fn` has been invoked, we can store the SSH key passphrase for this git
     // operation if there was one pending to be stored.
     try {
-      return await fn({
-        DESKTOP_PORT: await trampolineServer.getPort(),
-        DESKTOP_TRAMPOLINE_TOKEN: token,
-        GIT_ASKPASS: '',
-        // This warrants some explanation. We're configuring the
-        // credential helper using environment variables rather than
-        // arguments (i.e. -c credential.helper=) because we want commands
-        // invoked by filters (i.e. Git LFS) to be able to pick up our
-        // configuration. Arguments passed to git commands are not passed
-        // down to filters.
-        //
-        // We're using the undocumented GIT_CONFIG_PARAMETERS environment
-        // variable over the documented GIT_CONFIG_{COUNT,KEY,VALUE} due
-        // to an apparent bug either in a Windows Python runtime
-        // dependency or in a Python project commonly used to manage hooks
-        // which isn't able to handle the blank environment variables we
-        // need when using GIT_CONFIG_*.
-        //
-        // See https://github.com/desktop/desktop/issues/18945
-        // See https://github.com/git/git/blob/ed155187b429a/config.c#L664
-        GIT_CONFIG_PARAMETERS: `${gitEnvConfigPrefix}'credential.helper=' 'credential.helper=${formatCredentialHelperPathForGitConfig(
-          getDesktopCredentialHelperTrampolinePath()
-        )}'`,
-
-        GIT_USER_AGENT: await GitUserAgent(path, getGitUserAgentCacheKey(path)),
-        ...sshEnv,
-      })
+      return await fn(
+        createTrampolineEnvironment(
+          token,
+          useDesktopCredentialEnvironment
+            ? (await trampolineServer.getPort()) ?? 0
+            : 0,
+          await GitUserAgent(path, getGitUserAgentCacheKey(path)),
+          existingGitEnvConfig,
+          sshEnv,
+          useDesktopCredentialEnvironment
+        )
+      )
     } catch (e) {
       if (!getIsBackgroundTaskEnvironment(token)) {
         // If the operation fails with an SSHAuthenticationFailed error, we

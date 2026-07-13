@@ -34,7 +34,10 @@ command is `ssh frz@127.0.0.1 -p 20022` and the default remote executable is
 `/usr/bin/git`. The remote executable can be changed to paths such as
 `~/miniforge3/bin/git`. By default SSH Git uses the same Windows/WSL path
 translation as WSL Git, so Windows paths such as `E:\repo` are executed as
-`/mnt/e/repo` on the SSH host.
+`/mnt/e/repo` on the SSH host. Remote operations for SSH Git do not inject
+Desktop's local credential helper or local hook proxy into the remote shell, so
+push, fetch, and pull use the SSH host's own Git credential and hook
+configuration.
 
 SSHFS-Win mapped repositories can also be added through **Add local
 repository**. When the selected repository path is on the `X:`, `Y:`, or `Z:`
@@ -61,6 +64,13 @@ When enabled, the preference is saved in the repository workflow preferences as
 
 Fetch and pull commands include `--no-recurse-submodules`. This keeps routine
 repository network updates from recursively touching submodules.
+
+## Worktree dropdown details
+
+The toolbar worktree dropdown groups the main and linked worktrees and exposes
+the full worktree details on row hover or keyboard focus. The detail tooltip
+includes the branch, full path, last branch-tip modification time, HEAD SHA,
+worktree type, and locked or prunable state when applicable.
 
 ## Gitee and GitCode remotes
 

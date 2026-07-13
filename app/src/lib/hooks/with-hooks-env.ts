@@ -14,6 +14,7 @@ import {
   getHooksEnvEnabled,
   SupportedHooksEnvShell,
 } from './config'
+import { getRepositoryGitSource } from '../git/source'
 
 const memoizedGetShellEnv = memoizeOne(
   async (shellKind: SupportedHooksEnvShell, cwd: string, cacheKey: string) => {
@@ -31,7 +32,13 @@ export async function withHooksEnv<T>(
   path: string,
   opts: IGitExecutionOptions | undefined
 ): Promise<T> {
-  if (!opts?.interceptHooks || !getHooksEnvEnabled()) {
+  // SSH Git executes hooks on the remote host, so a local hooksPath proxy would
+  // hide the remote repository's hooks and inject an unusable Windows path.
+  if (
+    !opts?.interceptHooks ||
+    getRepositoryGitSource(path).kind === 'ssh' ||
+    !getHooksEnvEnabled()
+  ) {
     return fn(opts?.env)
   }
 

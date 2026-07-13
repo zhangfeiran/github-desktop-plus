@@ -70,6 +70,19 @@
   }
 }
 
+.worktree-list-item-tooltip {
+  &.list-item-tooltip {
+    .label {
+      min-width: 90px;
+    }
+
+    .value {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+}
+
 #add-worktree {
   width: 500px;
 

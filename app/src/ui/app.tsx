@@ -3997,7 +3997,7 @@ export class App extends React.Component<IAppProps, IAppState> {
       return null
     }
 
-    const { worktrees } = selection.state
+    const { worktrees, branchesState } = selection.state
 
     const currentFoldout = this.state.currentFoldout
 
@@ -4020,6 +4020,7 @@ export class App extends React.Component<IAppProps, IAppState> {
         dispatcher={this.props.dispatcher}
         repository={repository}
         worktrees={worktrees}
+        allBranches={branchesState.allBranches}
         isOpen={isOpen}
         onDropDownStateChanged={this.onWorktreeDropdownStateChanged}
         enableFocusTrap={enableFocusTrap}

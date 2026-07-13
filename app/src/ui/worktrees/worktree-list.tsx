@@ -3,13 +3,14 @@ import * as Path from 'path'
 import { WorktreeEntry } from '../../models/worktree'
 import { IFilterListGroup, IFilterListItem } from '../lib/filter-list'
 import { SectionFilterList } from '../lib/section-filter-list'
-import { WorktreeListItem } from './worktree-list-item'
+import { renderWorktreeTooltip, WorktreeListItem } from './worktree-list-item'
 import { Button } from '../lib/button'
 import { IMatches } from '../../lib/fuzzy-find'
 import { ClickSource } from '../lib/list'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import memoizeOne from 'memoize-one'
+import { Branch } from '../../models/branch'
 
 const RowHeight = 30
 
@@ -21,6 +22,7 @@ interface IWorktreeListItem extends IFilterListItem {
 
 interface IWorktreeListProps {
   readonly worktrees: ReadonlyArray<WorktreeEntry>
+  readonly allBranches: ReadonlyArray<Branch>
   readonly currentWorktree: WorktreeEntry | null
 
   readonly onWorktreeClick?: (
@@ -84,7 +86,25 @@ export class WorktreeList extends React.Component<IWorktreeListProps> {
           this.props.currentWorktree.path === item.worktree.path
         }
         matches={matches}
+        lastModified={this.getLastModified(item.worktree)}
       />
+    )
+  }
+
+  private getLastModified = (worktree: WorktreeEntry): Date | null => {
+    const matchingBranch =
+      (worktree.branch !== null
+        ? this.props.allBranches.find(branch => branch.ref === worktree.branch)
+        : undefined) ??
+      this.props.allBranches.find(branch => branch.tip.sha === worktree.head)
+
+    return matchingBranch?.tip.author.date ?? null
+  }
+
+  private renderRowFocusTooltip = (item: IWorktreeListItem) => {
+    return renderWorktreeTooltip(
+      item.worktree,
+      this.getLastModified(item.worktree)
     )
   }
 
@@ -140,10 +160,14 @@ export class WorktreeList extends React.Component<IWorktreeListProps> {
         onFilterTextChanged={this.props.onFilterTextChanged}
         selectedItem={null}
         renderItem={this.renderItem}
+        renderRowFocusTooltip={this.renderRowFocusTooltip}
         renderGroupHeader={this.renderGroupHeader}
         onItemClick={this.onItemClick}
         groups={groups}
-        invalidationProps={this.props.worktrees}
+        invalidationProps={{
+          worktrees: this.props.worktrees,
+          allBranches: this.props.allBranches,
+        }}
         renderPostFilter={this.onRenderNewButton}
         renderNoItems={this.onRenderNoItems}
         onItemContextMenu={this.onItemContextMenu}
