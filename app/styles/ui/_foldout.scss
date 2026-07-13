@@ -19,14 +19,5 @@
   .foldout {
     background: var(--background-color);
     color: var(--text-color);
-
-    > .resizable-component {
-      height: 100%;
-
-      > .resize-handle {
-        right: -4px;
-        width: 8px;
-      }
-    }
   }
 }

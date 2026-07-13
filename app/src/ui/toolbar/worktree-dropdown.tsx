@@ -184,18 +184,6 @@ export class WorktreeDropdown extends React.Component<
               }
             : undefined
         }
-        foldoutResize={
-          enableResizingToolbarButtons()
-            ? {
-                width: this.props.worktreeDropdownWidth.value,
-                maximumWidth: this.props.worktreeDropdownWidth.max,
-                minimumWidth: 365,
-                description: 'Worktree dropdown list',
-                onResize: this.onResize,
-                onReset: this.onReset,
-              }
-            : undefined
-        }
       />
     )
 

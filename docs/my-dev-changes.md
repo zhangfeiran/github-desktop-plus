@@ -72,10 +72,6 @@ the full worktree details on row hover or keyboard focus. The detail tooltip
 includes the branch, full path, last branch-tip modification time, HEAD SHA,
 worktree type, and locked or prunable state when applicable.
 
-The branch and worktree dropdown lists can be resized horizontally by dragging
-their right edge. The saved toolbar dropdown width is updated at the same time,
-and double-clicking the resize edge restores the default width.
-
 ## Gitee and GitCode remotes
 
 `my-dev` recognizes `gitee.com` and `gitcode.com` remotes as supported hosting
