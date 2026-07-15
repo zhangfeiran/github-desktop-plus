@@ -216,6 +216,8 @@ function getViewOnBrowserLabel(repoType: RepoType | null) {
       return 'View on Gitee'
     case 'gitcode':
       return 'View on GitCode'
+    case 'codeberg':
+      return 'View on Codeberg'
     default:
       return 'View in your browser'
   }

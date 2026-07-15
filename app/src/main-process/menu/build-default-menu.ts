@@ -726,6 +726,8 @@ function onGithubLabel(gitHubRepositoryType: RepoType | null) {
       return 'on Gitee'
     case 'gitcode':
       return 'on GitCode'
+    case 'codeberg':
+      return 'on Codeberg'
     case null:
       return 'in your browser'
     default:

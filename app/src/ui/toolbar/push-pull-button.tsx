@@ -618,6 +618,8 @@ export class PushPullButton extends React.Component<
         return 'to Gitee'
       case 'gitcode':
         return 'to GitCode'
+      case 'codeberg':
+        return 'to Codeberg'
       case null:
         return 'to the remote'
       default:

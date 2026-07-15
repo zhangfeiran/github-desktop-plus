@@ -119,6 +119,8 @@ function getViewBranchLabel(repoType: RepoType): string {
       return `View ${branch} on Gitee`
     case 'gitcode':
       return `View ${branch} on GitCode`
+    case 'codeberg':
+      return `View ${branch} on Codeberg`
     default:
       return assertNever(repoType, `Unknown repo type: ${repoType}`)
   }
@@ -136,6 +138,8 @@ function getViewPullRequestLabel(repoType: RepoType): string {
       return 'View Pull Request on Gitee'
     case 'gitcode':
       return 'View Pull Request on GitCode'
+    case 'codeberg':
+      return 'View Pull Request on Codeberg'
     default:
       return assertNever(repoType, `Unknown repo type: ${repoType}`)
   }

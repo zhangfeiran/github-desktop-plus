@@ -108,6 +108,9 @@ class TrampolineUIHelper {
           log.warn(`Unexpected sign-in prompt for ${repositoryType}`)
           resolve(undefined)
           return
+        case 'codeberg':
+          this.dispatcher.beginCodebergSignIn(cb)
+          break
         default:
           assertNever(repositoryType, `Unexpected repo type: ${repositoryType}`)
       }

@@ -16,13 +16,16 @@ import {
   getBitbucketAPIEndpoint,
   getBitbucketOAuthAuthorizationURL,
   requestOAuthTokenBitbucket,
+  getCodebergAPIEndpoint,
+  getCodebergOAuthAuthorizationURL,
   getGitLabAPIEndpoint,
   getGitLabOAuthAuthorizationURL,
-  getGitLabOAuthRedirectUri,
+  requestOAuthTokenCodeberg,
   requestOAuthTokenGitLab,
 } from '../../lib/api'
 
 import { TypedBaseStore } from './base-store'
+import { generatePKCEParameters } from '../pkce'
 import { IOAuthAction } from '../parse-app-url'
 import { shell } from '../app-shell'
 import noop from 'lodash/noop'
@@ -132,6 +135,7 @@ export interface IAuthenticationState extends ISignInState {
 
   readonly oauthState?: {
     state: string
+    codeVerifier: string
     endpoint: string
     oauthProvider: OAuthProvider
     onAuthCompleted: (account: Account) => void
@@ -154,7 +158,10 @@ interface IAuthenticationEvent {
   readonly account: Account
 }
 
-type OAuthProvider = Extract<RepoType, 'github' | 'bitbucket' | 'gitlab'>
+type OAuthProvider = Extract<
+  RepoType,
+  'github' | 'bitbucket' | 'gitlab' | 'codeberg'
+>
 
 export type SignInResult =
   | { kind: 'success'; account: Account }
@@ -280,6 +287,7 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
     }
 
     const csrfToken = crypto.randomUUID()
+    const { codeVerifier, codeChallenge } = await generatePKCEParameters()
 
     new Promise<Account>((resolve, reject) => {
       const { endpoint, resultCallback } = currentState
@@ -294,19 +302,20 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
         oauthState: {
           oauthProvider,
           state: csrfToken,
+          codeVerifier,
           endpoint,
           onAuthCompleted: resolve,
           onAuthError: reject,
         },
       })
-      if (oauthProvider === 'bitbucket') {
-        shell.openExternal(getBitbucketOAuthAuthorizationURL())
-      } else if (oauthProvider === 'gitlab') {
-        const redirectUri = getGitLabOAuthRedirectUri()
-        shell.openExternal(getGitLabOAuthAuthorizationURL(redirectUri))
-      } else {
-        shell.openExternal(getOAuthAuthorizationURL(endpoint, csrfToken))
-      }
+      shell.openExternal(
+        this.getOauthAuthorizationURL(
+          oauthProvider,
+          endpoint,
+          csrfToken,
+          codeChallenge
+        )
+      )
     })
       .then(account => {
         if (!this.state || this.state.kind !== SignInStep.Authentication) {
@@ -336,11 +345,33 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       })
   }
 
+  private getOauthAuthorizationURL(
+    oauthProvider: OAuthProvider,
+    endpoint: string,
+    csrfToken: string,
+    codeChallenge: string
+  ): string {
+    switch (oauthProvider) {
+      case 'github':
+        return getOAuthAuthorizationURL(endpoint, csrfToken, codeChallenge)
+      case 'bitbucket':
+        return getBitbucketOAuthAuthorizationURL(csrfToken, codeChallenge)
+      case 'gitlab':
+        return getGitLabOAuthAuthorizationURL(csrfToken, codeChallenge)
+      case 'codeberg':
+        return getCodebergOAuthAuthorizationURL(csrfToken, codeChallenge)
+      default:
+        assertNever(oauthProvider, 'Unexpected oauth provider')
+    }
+  }
+
   private getOAuthProvider(endpoint: string): OAuthProvider {
     if (endpoint === getBitbucketAPIEndpoint()) {
       return 'bitbucket'
     } else if (endpoint === getGitLabAPIEndpoint()) {
       return 'gitlab'
+    } else if (endpoint === getCodebergAPIEndpoint()) {
+      return 'codeberg'
     } else {
       return 'github'
     }
@@ -355,10 +386,7 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       return
     }
 
-    if (
-      this.state.oauthState.oauthProvider === 'github' &&
-      this.state.oauthState.state !== action.state
-    ) {
+    if (this.state.oauthState.state !== action.state) {
       log.warn(
         'requestAuthenticatedUser was not called with valid OAuth state. This is likely due to a browser reloading the callback URL. Contact GitHub Support if you believe this is an error'
       )
@@ -369,7 +397,8 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
     const tokenData = await this.getOauthTokenData(
       this.state.oauthState.oauthProvider,
       endpoint,
-      action.code
+      action.code,
+      this.state.oauthState.codeVerifier
     )
 
     if (tokenData) {
@@ -392,15 +421,18 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
   private async getOauthTokenData(
     oauthProvider: OAuthProvider,
     endpoint: string,
-    code: string
+    code: string,
+    codeVerifier: string
   ) {
     switch (oauthProvider) {
       case 'github':
-        return await requestOAuthToken(endpoint, code)
+        return await requestOAuthToken(endpoint, code, codeVerifier)
       case 'bitbucket':
-        return await requestOAuthTokenBitbucket(code)
+        return await requestOAuthTokenBitbucket(code, codeVerifier)
       case 'gitlab':
-        return await requestOAuthTokenGitLab(code, getGitLabOAuthRedirectUri())
+        return await requestOAuthTokenGitLab(code, codeVerifier)
+      case 'codeberg':
+        return await requestOAuthTokenCodeberg(code, codeVerifier)
       default:
         assertNever(oauthProvider, 'Unexpected oauth provider')
     }
@@ -447,6 +479,21 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
     }
 
     const endpoint = getGitLabAPIEndpoint()
+    this.setState({
+      kind: SignInStep.Authentication,
+      endpoint,
+      error: null,
+      loading: false,
+      resultCallback: resultCallback ?? noop,
+    })
+  }
+
+  public beginCodebergSignIn(resultCallback?: (result: SignInResult) => void) {
+    if (this.state !== null) {
+      this.reset()
+    }
+
+    const endpoint = getCodebergAPIEndpoint()
     this.setState({
       kind: SignInStep.Authentication,
       endpoint,

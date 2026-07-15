@@ -708,6 +708,8 @@ function getViewOnGitHubLabel(gitHubRepository: GitHubRepository) {
       return 'View on Gitee'
     case 'gitcode':
       return 'View on GitCode'
+    case 'codeberg':
+      return 'View on Codeberg'
     default:
       assertNever(
         gitHubRepository.type,
