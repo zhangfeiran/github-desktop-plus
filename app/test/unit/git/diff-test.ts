@@ -20,6 +20,7 @@ import {
 import {
   setupFixtureRepository,
   setupEmptyRepository,
+  setupConflictedRepoWithMultipleFiles,
 } from '../../helpers/repositories'
 
 import {
@@ -302,6 +303,20 @@ describe('git/diff', () => {
       assert(stagedDiff.text.includes('+staged'))
       assert(!stagedDiff.text.includes('+unstaged'))
       assert(unstagedDiff.text.includes('+unstaged'))
+    })
+
+    it('shows the working tree diff for an unstaged conflicted file', async t => {
+      const repository = await setupConflictedRepoWithMultipleFiles(t)
+      const status = await getStatusOrThrow(repository)
+      const file = status.workingDirectory.files.find(f => f.path === 'foo')
+
+      assert(file !== undefined)
+      assert.equal(file.isStaged, false)
+
+      const diff = await getTextDiff(repository, file)
+
+      assert(diff.hunks.length > 0)
+      assert(diff.text.includes('<<<<<<<'))
     })
 
     it('displays a binary diff for a docx file', async t => {
