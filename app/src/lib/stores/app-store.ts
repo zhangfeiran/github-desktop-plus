@@ -120,6 +120,7 @@ import {
   WorkingDirectoryStatus,
   AppFileStatus,
   AppFileStatusKind,
+  isConflictedFileStatus,
   GitStatusEntry,
   UnmergedEntrySummary,
 } from '../../models/status'
@@ -363,6 +364,7 @@ import {
   popStashEntry,
   dropDesktopStashEntry,
   moveStashEntry,
+  renameStashEntry,
 } from '../git/stash'
 import {
   UncommittedChangesStrategy,
@@ -379,7 +381,11 @@ import {
   isValidTutorialStep,
 } from '../../models/tutorial-step'
 import { OnboardingTutorialAssessor } from './helpers/tutorial-assessor'
-import { getConflictedFiles, getUntrackedFiles } from '../status'
+import {
+  getConflictedFiles,
+  getUntrackedFiles,
+  hasUnresolvedConflicts,
+} from '../status'
 import { isBranchPushable } from '../helpers/push-control'
 import {
   findAssociatedPullRequest,
@@ -473,6 +479,7 @@ import {
   IConflictResolutionProgress,
   ICopilotResolutionSummary,
   IFileResolution,
+  ICopilotSkippedFile,
 } from '../copilot-conflict-resolution'
 import {
   buildConflictContext,
@@ -7816,6 +7823,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<{
     readonly resolutions: ReadonlyArray<IFileResolution>
     readonly summary: ICopilotResolutionSummary
+    readonly skippedFiles: ReadonlyArray<ICopilotSkippedFile>
   } | null> {
     if (!enableCopilotConflictResolution()) {
       return null
@@ -7900,6 +7908,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
         const references =
           cited.length > 0 ? cited : fallbackReferencedContext(context)
 
+        // Files Copilot declined to resolve (too large, unreadable, no
+        // parseable markers, etc.) so the result dialog can surface them for
+        // manual resolution.
+        const skippedFiles = context.files.flatMap(f =>
+          f.skippedReason !== undefined
+            ? [{ path: f.path, reason: f.skippedReason }]
+            : []
+        )
+
         return {
           resolutions: result.resolutions,
           summary: {
@@ -7908,6 +7925,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
             theirLabel: labels.theirLabel,
             references,
           },
+          skippedFiles,
         }
       } finally {
         resolveTimer.done()
@@ -7918,8 +7936,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
         log.info('AppStore: Copilot conflict resolution aborted by user')
         return null
       }
+      // Propagate real failures so the caller can surface the underlying error
+      // instead of a generic "no results" message.
       log.warn('AppStore: Copilot conflict resolution failed', e)
-      return null
+      throw e
     } finally {
       totalTimer.done()
     }
@@ -7947,15 +7967,24 @@ export class AppStore extends TypedBaseStore<IAppState> {
       readonly ourRef: string | undefined
       readonly theirRef: string | undefined
     },
-    conflictedFiles: ReadonlyArray<{ readonly path: string }>,
+    conflictedFiles: ReadonlyArray<WorkingDirectoryFileChange>,
     state: IRepositoryState
   ): Promise<IConflictResolutionContext> {
+    // Enrich file entries with delete-vs-modify metadata so
+    // buildConflictContext includes them instead of skipping.
+    const filesWithDeleteInfo = conflictedFiles.map(f => {
+      const deletedSide = getDeletedSideFromStatus(f)
+      return deletedSide !== undefined
+        ? { path: f.path, deletedSide }
+        : { path: f.path }
+    })
+
     const contextTimer = startTimer('build conflict context', repository)
     const fileContext = await buildConflictContext(
       labels.ourLabel,
       labels.theirLabel,
       repository.path,
-      conflictedFiles
+      filesWithDeleteInfo
     )
     contextTimer.done()
 
@@ -8334,6 +8363,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
             },
             copilotResolutions: result.resolutions,
             copilotResolutionSummary: result.summary,
+            copilotSkippedFiles: result.skippedFiles,
             copilotResolutionProgress: null,
             copilotResolutionAbortController: null,
           })
@@ -8355,6 +8385,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
           },
           copilotResolutions: result.resolutions,
           copilotResolutionSummary: result.summary,
+          copilotSkippedFiles: result.skippedFiles,
           copilotResolutionProgress: null,
           copilotResolutionAbortController: null,
         })
@@ -8402,6 +8433,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
           useCopilotConflictResolution: false,
           copilotResolutions: null,
           copilotResolutionSummary: null,
+          copilotSkippedFiles: null,
           copilotResolutionProgress: null,
           copilotResolutionAbortController: null,
         })
@@ -8469,11 +8501,60 @@ export class AppStore extends TypedBaseStore<IAppState> {
         continue
       }
 
+      // Delete-vs-modify conflicts are resolved by setting a manual
+      // resolution (ours/theirs) rather than writing file content.
+      // The existing stageManualConflictResolution flow handles the
+      // actual git checkout --ours/--theirs and staging at commit time.
+      if (resolution.deleteConflictAction !== undefined) {
+        const file = state.changesState.workingDirectory.files.find(
+          f => f.path === resolution.path
+        )
+        if (file === undefined) {
+          continue
+        }
+        const deletedSide = getDeletedSideFromStatus(file)
+        if (deletedSide === undefined) {
+          continue
+        }
+        // "keep" → choose the non-deleted side, "delete" → choose the deleted side
+        const manualChoice =
+          resolution.deleteConflictAction === 'keep'
+            ? deletedSide === 'ours'
+              ? ManualConflictResolution.theirs
+              : ManualConflictResolution.ours
+            : deletedSide === 'ours'
+            ? ManualConflictResolution.ours
+            : ManualConflictResolution.theirs
+        this._updateManualConflictResolution(
+          repository,
+          resolution.path,
+          manualChoice
+        )
+        continue
+      }
+
       const absolutePath = await resolveWithin(repository.path, resolution.path)
       if (absolutePath === null) {
         log.warn(
           `Copilot resolution skipped: path outside repository: ${resolution.path}`
         )
+        continue
+      }
+
+      // If the user resolved this file externally (e.g. in their editor) while
+      // the result dialog was open, git status will report it with no remaining
+      // conflict markers. Overwriting it with Copilot's stored content would
+      // silently clobber their work, so skip it and let their resolution stand.
+      // This mirrors how the manual conflicts dialog determines a file is
+      // resolved (`hasUnresolvedConflicts`).
+      const onDiskFile = state.changesState.workingDirectory.files.find(
+        f => f.path === resolution.path
+      )
+      if (
+        onDiskFile !== undefined &&
+        isConflictedFileStatus(onDiskFile.status) &&
+        !hasUnresolvedConflicts(onDiskFile.status)
+      ) {
         continue
       }
 
@@ -10478,6 +10559,36 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _renameStashEntry(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    newName: string | null
+  ) {
+    const gitStore = this.gitStoreCache.get(repository)
+    const renamedEntry = await gitStore.performFailableOperation(() => {
+      return renameStashEntry(repository, stashEntry, newName)
+    })
+
+    // Renaming recreates the stash entry with a new sha, point the selection at the
+    // new entry before reloading.
+    if (renamedEntry !== undefined) {
+      this.repositoryStateCache.updateChangesState(repository, state => {
+        const { selection } = state
+        if (
+          selection.kind !== ChangesSelectionKind.Stash ||
+          selection.selectedStashEntry?.stashSha !== stashEntry.stashSha
+        ) {
+          return { selection }
+        }
+        return { selection: { ...selection, selectedStashEntry: renamedEntry } }
+      })
+      this.emitUpdate()
+    }
+
+    await gitStore.loadStashEntries()
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
   public _setStashedFilesWidth(width: number): Promise<void> {
     this.stashedFilesWidth = { ...this.stashedFilesWidth, value: width }
     setNumber(stashedFilesWidthConfigKey, width)
@@ -11311,6 +11422,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       useCopilotConflictResolution: false,
       copilotResolutions: null,
       copilotResolutionSummary: null,
+      copilotSkippedFiles: null,
       copilotResolutionProgress: null,
       copilotResolutionAbortController: null,
       copilotResolutionModel: null,
@@ -12360,4 +12472,31 @@ function constrain(
     min,
     max: constrainedMax,
   }
+}
+
+/**
+ * For a conflicted file, determine which side deleted the file (if any).
+ * Returns `'ours'` or `'theirs'` for delete-vs-modify conflicts, or
+ * `undefined` for other conflict types.
+ */
+function getDeletedSideFromStatus(
+  file: WorkingDirectoryFileChange
+): 'ours' | 'theirs' | undefined {
+  if (!isConflictedFileStatus(file.status)) {
+    return undefined
+  }
+  const { entry } = file.status
+  if (
+    entry.us === GitStatusEntry.Deleted &&
+    entry.them !== GitStatusEntry.Deleted
+  ) {
+    return 'ours'
+  }
+  if (
+    entry.them === GitStatusEntry.Deleted &&
+    entry.us !== GitStatusEntry.Deleted
+  ) {
+    return 'theirs'
+  }
+  return undefined
 }
