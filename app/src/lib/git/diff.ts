@@ -507,6 +507,18 @@ export async function getWorkingDirectoryDiff(
 }
 
 /**
+ * The result of {@link getResolutionDiff}: the computed diff together with the
+ * exact old (base) and new (target) content strings it was generated from.
+ */
+export interface IResolutionDiff {
+  readonly diff: IDiff
+  /** The full content of the base (old) side the diff was generated from. */
+  readonly oldContents: string
+  /** The full content of the target (new) side the diff was generated from. */
+  readonly newContents: string
+}
+
+/**
  * Compute a diff between the working-tree file and either Copilot's
  * resolved content string or the content from a specific merge index stage.
  *
@@ -532,13 +544,18 @@ export async function getWorkingDirectoryDiff(
  * the on-disk content as entirely deleted.
  *
  * Uses `git diff --no-index` with temp files.
+ *
+ * Returns the computed diff alongside the exact old (base) and new (target)
+ * content strings the diff was generated from. Callers can use these to feed
+ * syntax highlighting and context expansion, since the diff sides don't
+ * correspond to any addressable git revision.
  */
 export async function getResolutionDiff(
   repository: Repository,
   filePath: string,
   options: { content: string } | { stage: 'ours' | 'theirs' },
   hideWhitespaceInDiff: boolean = false
-): Promise<IDiff> {
+): Promise<IResolutionDiff> {
   const gitStage =
     'stage' in options ? (options.stage === 'ours' ? ':2' : ':3') : undefined
 
@@ -555,7 +572,11 @@ export async function getResolutionDiff(
   if (gitStage === undefined) {
     // Direct content mode (e.g. Copilot's resolved text).
     if (!('content' in options)) {
-      return { kind: DiffType.Unrenderable }
+      return {
+        diff: { kind: DiffType.Unrenderable },
+        oldContents: baseContent,
+        newContents: '',
+      }
     }
     targetContent = options.content
   } else {
@@ -596,27 +617,39 @@ export async function getResolutionDiff(
     })
 
     if (!isValidBuffer(stdout)) {
-      return { kind: DiffType.Unrenderable }
+      return {
+        diff: { kind: DiffType.Unrenderable },
+        oldContents: baseContent,
+        newContents: targetContent,
+      }
     }
 
     const diff = diffFromRawDiffOutput(stdout)
 
     if (isDiffTooLarge(diff)) {
       return {
-        kind: DiffType.LargeText,
-        text: diff.contents,
-        hunks: diff.hunks,
-        maxLineNumber: diff.maxLineNumber,
-        hasHiddenBidiChars: diff.hasHiddenBidiChars,
+        diff: {
+          kind: DiffType.LargeText,
+          text: diff.contents,
+          hunks: diff.hunks,
+          maxLineNumber: diff.maxLineNumber,
+          hasHiddenBidiChars: diff.hasHiddenBidiChars,
+        },
+        oldContents: baseContent,
+        newContents: targetContent,
       }
     }
 
     return {
-      kind: DiffType.Text,
-      text: diff.contents,
-      hunks: diff.hunks,
-      maxLineNumber: diff.maxLineNumber,
-      hasHiddenBidiChars: diff.hasHiddenBidiChars,
+      diff: {
+        kind: DiffType.Text,
+        text: diff.contents,
+        hunks: diff.hunks,
+        maxLineNumber: diff.maxLineNumber,
+        hasHiddenBidiChars: diff.hasHiddenBidiChars,
+      },
+      oldContents: baseContent,
+      newContents: targetContent,
     }
   } finally {
     await unlink(tempBase).catch(() => {})
