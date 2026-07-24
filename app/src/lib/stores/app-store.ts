@@ -201,6 +201,7 @@ import {
   CommitOptions,
   IChangesState,
   IMergePreviewSelection,
+  BranchPreviewKind,
 } from '../app-state'
 import {
   findEditorOrDefault,
@@ -266,6 +267,7 @@ import {
   getCommitRangeDiff,
   getTreeDiff,
   getCommitRangeChangedFiles,
+  getBranchDiffChangedFiles,
   updateRemoteHEAD,
   getBranchMergeBaseChangedFiles,
   getBranchMergeBaseDiff,
@@ -2571,6 +2573,40 @@ export class AppStore extends TypedBaseStore<IAppState> {
     mergePreviewSelection: IMergePreviewSelection
   ): Promise<void> {
     const gitStore = this.gitStoreCache.get(repository)
+    if (mergePreviewSelection.kind === BranchPreviewKind.Diff) {
+      const changesetData = await gitStore.performFailableOperation(() =>
+        getBranchDiffChangedFiles(
+          repository,
+          mergePreviewSelection.targetSHA,
+          mergePreviewSelection.sourceSHA
+        )
+      )
+      if (!changesetData) {
+        return
+      }
+
+      const latest =
+        this.repositoryStateCache.get(repository).commitSelection.mergePreview
+      if (
+        latest === null ||
+        !mergePreviewSelectionsEqual(latest, mergePreviewSelection)
+      ) {
+        return
+      }
+
+      const firstFileOrDefault = changesetData.files[0] ?? null
+      this.repositoryStateCache.updateCommitSelection(repository, () => ({
+        file: firstFileOrDefault,
+        changesetData,
+        diff: null,
+      }))
+      this.emitUpdate()
+      if (firstFileOrDefault !== null) {
+        this._changeFileSelection(repository, firstFileOrDefault)
+      }
+      return
+    }
+
     const preview = await gitStore.performFailableOperation(() =>
       getMergePreview(
         repository,
@@ -12344,6 +12380,7 @@ function mergePreviewSelectionsEqual(
   b: IMergePreviewSelection
 ) {
   return (
+    a.kind === b.kind &&
     a.comparisonMode === b.comparisonMode &&
     a.targetBranchName === b.targetBranchName &&
     a.sourceBranchName === b.sourceBranchName &&

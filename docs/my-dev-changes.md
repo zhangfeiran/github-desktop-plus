@@ -98,13 +98,18 @@ diff mode toggle:
 If remerge diff loading fails, the app falls back to first-parent mode. Image
 diff rendering is disabled for remerge diffs.
 
-## Compare merge preview selection
+## Compare diff and merge preview selection
 
 After selecting a branch in the Compare tab, the selected comparison view shows
-a fixed merge preview row above the commit list. Selecting that row behaves like
-selecting a virtual merge commit: the right-hand history pane shows the files
-that would change, the added/removed line totals, and lets each file's diff be
-opened.
+fixed diff and merge preview rows above the commit list. The diff preview shows
+the direct tree difference between the two branch tips. The merge preview shows
+the result of virtually merging one tip into the other. Selecting either row
+shows the files that would change, the added/removed line totals, and lets each
+file's diff be opened in the right-hand history pane.
+
+The diff row follows the active comparison direction: it compares the current
+branch tip to the selected branch on **Behind**, and the selected branch tip to
+the current branch on **Ahead**.
 
 - On the **Behind** tab, the virtual row shows the files that would change if the
   compared branch were merged into the current branch.

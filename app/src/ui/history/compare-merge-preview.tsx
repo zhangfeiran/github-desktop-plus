@@ -3,6 +3,7 @@ import classNames from 'classnames'
 
 import type { Disposable } from 'event-kit'
 import {
+  BranchPreviewKind,
   ComparisonMode,
   ICompareBranch,
   IMergePreviewSelection,
@@ -187,6 +188,7 @@ export class CompareMergePreview extends React.Component<
       summary: `${summary}${conflictSummary}`,
       hasConflicts: preview.kind === ComputedAction.Conflicts,
       selection: {
+        kind: BranchPreviewKind.Merge,
         comparisonMode: this.props.view.comparisonMode,
         targetBranchName: targetBranch.name,
         sourceBranchName: sourceBranch.name,
@@ -278,6 +280,7 @@ function mergePreviewSelectionsEqual(
   b: IMergePreviewSelection
 ) {
   return (
+    a.kind === b.kind &&
     a.comparisonMode === b.comparisonMode &&
     a.targetBranchName === b.targetBranchName &&
     a.sourceBranchName === b.sourceBranchName &&

@@ -29,6 +29,7 @@ import {
   getBlobImage,
   getBinaryPaths,
   getBranchMergeBaseChangedFiles,
+  getBranchDiffChangedFiles,
   getBranchMergeBaseDiff,
   getChangedFiles,
   getCommitDiff,
@@ -722,6 +723,35 @@ describe('git/diff', () => {
       )
 
       assert(changesetData === null)
+    })
+  })
+
+  describe('getBranchDiffChangedFiles', () => {
+    it('loads the direct tree difference between two branch tips', async t => {
+      const repoPath = await setupFixtureRepository(t, 'submodule-basic-setup')
+      const repository = new Repository(repoPath, -1, null, false)
+
+      await exec(['branch', 'feature-branch'], repository.path)
+      await makeCommit(repository, {
+        entries: [{ path: 'master.md', contents: 'master' }],
+      })
+      await switchTo(repository, 'feature-branch')
+      await makeCommit(repository, {
+        entries: [{ path: 'feature.md', contents: 'feature' }],
+      })
+
+      const changesetData = await getBranchDiffChangedFiles(
+        repository,
+        'master',
+        'feature-branch'
+      )
+
+      assert.deepEqual(changesetData.files.map(file => file.path).sort(), [
+        'feature.md',
+        'master.md',
+      ])
+      assert.equal(changesetData.files[0].commitish, 'feature-branch')
+      assert.equal(changesetData.files[0].parentCommitish, 'master')
     })
   })
 

@@ -352,6 +352,35 @@ export async function getBranchMergeBaseChangedFiles(
   )
 }
 
+/** Get the direct tree diff between two branch tips. */
+export async function getBranchDiffChangedFiles(
+  repository: Repository,
+  baseCommitRef: string,
+  comparisonCommitRef: string
+): Promise<IChangesetData> {
+  const result = await git(
+    [
+      'diff',
+      baseCommitRef,
+      comparisonCommitRef,
+      '-C',
+      '-M',
+      '-z',
+      '--raw',
+      '--numstat',
+      '--',
+    ],
+    repository.path,
+    'getBranchDiffChangedFiles'
+  )
+
+  return parseRawLogWithNumstat(
+    result.stdout,
+    comparisonCommitRef,
+    baseCommitRef
+  )
+}
+
 export async function getCommitRangeChangedFiles(
   repository: Repository,
   shas: ReadonlyArray<string>,

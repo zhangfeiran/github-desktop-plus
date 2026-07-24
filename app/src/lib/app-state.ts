@@ -858,11 +858,17 @@ export interface ICommitSelection {
 }
 
 export interface IMergePreviewSelection {
+  readonly kind: BranchPreviewKind
   readonly comparisonMode: ComparisonMode.Ahead | ComparisonMode.Behind
   readonly targetBranchName: string
   readonly sourceBranchName: string
   readonly targetSHA: string
   readonly sourceSHA: string
+}
+
+export enum BranchPreviewKind {
+  Diff = 'Diff',
+  Merge = 'Merge',
 }
 
 export enum ChangesSelectionKind {

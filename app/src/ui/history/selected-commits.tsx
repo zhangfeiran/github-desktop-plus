@@ -31,7 +31,11 @@ import { SeamlessDiffSwitcher } from '../diff/seamless-diff-switcher'
 import { getDotComAPIEndpoint } from '../../lib/api'
 import { IMenuItem } from '../../lib/menu-item'
 import { IChangesetData } from '../../lib/git'
-import { IConstrainedValue, IMergePreviewSelection } from '../../lib/app-state'
+import {
+  BranchPreviewKind,
+  IConstrainedValue,
+  IMergePreviewSelection,
+} from '../../lib/app-state'
 import { clamp } from '../../lib/clamp'
 import { pathExists } from '../../lib/path-exists'
 import { UnreachableCommitsTab } from './unreachable-commits-dialog'
@@ -304,18 +308,21 @@ export class SelectedCommits extends DiffPresentationStateComponent<
   private renderMergePreviewCommitSummary(
     mergePreview: IMergePreviewSelection
   ) {
+    const isDiffPreview = mergePreview.kind === BranchPreviewKind.Diff
     return (
       <div
         id="expandable-commit-summary"
         className="merge-preview-commit-summary"
       >
         <div className="ecs-title">
-          <span>Merge preview</span>
+          <span>{isDiffPreview ? 'Diff preview' : 'Merge preview'}</span>
           {this.renderMergePreviewLinesChanged()}
         </div>
         <div className="beneath-summary">
           <div className="merge-preview-commit-summary-details">
-            Merging <Ref>{mergePreview.sourceBranchName}</Ref> into{' '}
+            {isDiffPreview ? 'Comparing ' : 'Merging '}
+            <Ref>{mergePreview.sourceBranchName}</Ref>{' '}
+            {isDiffPreview ? 'against' : 'into'}{' '}
             <Ref>{mergePreview.targetBranchName}</Ref>
           </div>
         </div>
@@ -683,6 +690,7 @@ function getHistorySelectionKey(
   if (mergePreviewSelection !== null) {
     return [
       'merge-preview',
+      mergePreviewSelection.kind,
       mergePreviewSelection.comparisonMode,
       mergePreviewSelection.targetBranchName,
       mergePreviewSelection.sourceBranchName,

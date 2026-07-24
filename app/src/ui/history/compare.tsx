@@ -39,6 +39,7 @@ import { Emoji } from '../../lib/emoji'
 import { syncClockwise } from '../octicons'
 import { formatNumber } from '../../lib/format-number'
 import { CompareMergePreview } from './compare-merge-preview'
+import { CompareDiffPreview } from './compare-diff-preview'
 
 interface ICompareSidebarProps {
   readonly isCompareView: boolean
@@ -410,6 +411,14 @@ export class CompareSidebar extends React.Component<
   private renderActiveTab(view: ICompareBranch) {
     return (
       <div className="compare-commit-list">
+        <CompareDiffPreview
+          repository={this.props.repository}
+          mergePreviewStore={this.props.mergePreviewStore}
+          currentBranch={this.props.currentBranch}
+          view={view}
+          selectedPreview={this.props.selectedMergePreview}
+          onSelected={this.onMergePreviewSelected}
+        />
         <CompareMergePreview
           repository={this.props.repository}
           mergePreviewStore={this.props.mergePreviewStore}
