@@ -3,8 +3,12 @@ import { IGitAccount } from '../../models/git-account'
 import { deduceRepositoryType } from '../../models/github-repository'
 import { PopupType } from '../../models/popup'
 import { Dispatcher } from '../../ui/dispatcher'
+import {
+  findRegisteredEndpointForHost,
+  tryGetHost,
+} from '../endpoint-api-type-registry'
 import { assertNever } from '../fatal-error'
-import { SignInResult } from '../stores'
+import { SelfHostedApiType, SignInResult } from '../stores'
 
 type PromptSSHSecretResponse = {
   readonly secret: string | undefined
@@ -108,9 +112,19 @@ class TrampolineUIHelper {
           log.warn(`Unexpected sign-in prompt for ${repositoryType}`)
           resolve(undefined)
           return
-        case 'codeberg':
-          this.dispatcher.beginCodebergSignIn(cb)
+        case 'forgejo':
+        case 'gitea': {
+          // A registered host is a self-hosted instance, so sign in to that
+          // instance rather than to the provider's cloud offering.
+          const registered = findRegisteredEndpointForHost(tryGetHost(endpoint))
+          if (registered?.apiType === repositoryType) {
+            this.dispatcher.beginSelfHostedSignIn(repositoryType, cb)
+            await this.dispatcher.setSignInEndpoint(registered.webBaseUrl)
+          } else {
+            this.beginCloudSignIn(repositoryType, cb)
+          }
           break
+        }
         default:
           assertNever(repositoryType, `Unexpected repo type: ${repositoryType}`)
       }
@@ -124,6 +138,26 @@ class TrampolineUIHelper {
       log.error(`Could not prompt for GitHub sign in`, e)
       return undefined
     })
+  }
+
+  /** Sign in to the cloud offering of a third-party provider. */
+  private beginCloudSignIn(
+    apiType: SelfHostedApiType,
+    cb: (result: SignInResult) => void
+  ) {
+    switch (apiType) {
+      case 'gitlab':
+        this.dispatcher.beginGitLabSignIn(cb)
+        break
+      case 'forgejo':
+        this.dispatcher.beginCodebergSignIn(cb)
+        break
+      case 'gitea':
+        this.dispatcher.beginGiteaSignIn(cb)
+        break
+      default:
+        assertNever(apiType, `Unexpected API type: ${apiType}`)
+    }
   }
 
   public async getLoginForRepositoryPath(path: string): Promise<string | null> {

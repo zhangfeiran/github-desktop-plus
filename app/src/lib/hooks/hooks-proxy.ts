@@ -5,13 +5,13 @@ import type { HookCallbackOptions } from '../git'
 import { ShellEnvResult } from './get-shell-env'
 import { shellFriendlyNames } from './config'
 import { Writable } from 'stream'
+import { pipeline } from 'stream/promises'
 import { promisify } from 'util'
 import memoizeOne from 'memoize-one'
 import which from 'which'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
 import { spawnGitProcess } from '../git/process'
 import { getRepositoryGitSource, isPosixGitSource } from '../git/source'
+import { createWriteStream } from 'fs'
 
 const execFileAsync = promisify(execFile)
 
@@ -71,29 +71,6 @@ const exitWithMessage = (conn: Connection, msg: string, exitCode = 0) =>
 
 const exitWithError = (conn: Connection, msg: string, exitCode = 1) =>
   exitWithMessage(conn, msg, exitCode)
-
-const readStdin = (stream: NodeJS.ReadableStream) =>
-  new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = []
-
-    stream.on('data', chunk => {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-    })
-    stream.on('end', () => resolve(Buffer.concat(chunks)))
-    stream.on('error', reject)
-  })
-
-const createStdinFile = async (content: Buffer) => {
-  const dir = await mkdtemp(join(tmpdir(), 'desktop-plus-hooks-'))
-  const filePath = join(dir, 'stdin.txt')
-
-  await writeFile(filePath, content)
-
-  return {
-    filePath,
-    cleanup: () => rm(dir, { recursive: true, force: true }),
-  }
-}
 
 const memoizedGetExecPathFromGit = memoizeOne(
   (systemGitPath: string, env: Record<string, string | undefined>) =>
@@ -167,6 +144,7 @@ const ensureGitExecPathEnv = async (shellEnv: ShellEnvResult) => {
 
 export const createHooksProxy = (
   getShellEnv: (cwd: string) => Promise<ShellEnvResult>,
+  tmpHooksDir: string,
   onHookProgress?: HookCallbackOptions['onHookProgress'],
   onHookFailure?: HookCallbackOptions['onHookFailure']
 ) => {
@@ -181,6 +159,7 @@ export const createHooksProxy = (
 
     const abortController = new AbortController()
     const abort = () => abortController.abort()
+    conn.on('close', abort)
 
     await writeline(conn.stderr, `Running ${hookName} hook...`)
     onHookProgress?.({ hookName, status: 'started', abort })
@@ -203,9 +182,12 @@ export const createHooksProxy = (
       return
     }
 
-    const stdinFile = hasStdin
-      ? await createStdinFile(await readStdin(conn.stdin))
-      : null
+    const stdinPath = hasStdin
+      ? join(
+          tmpHooksDir,
+          `${hookName}-${crypto.randomUUID().slice(0, 8)}.stdin`
+        )
+      : undefined
 
     const args = [
       ...['hook', 'run', hookName],
@@ -215,7 +197,7 @@ export const createHooksProxy = (
       // pre-auto-gc hook configured themselves, so we tell Git to ignore
       // missing hooks here.
       ...(hookName === 'pre-auto-gc' ? ['--ignore-missing'] : []),
-      ...(stdinFile ? [`--to-stdin=${stdinFile.filePath}`] : []),
+      ...(hasStdin ? [`--to-stdin=${stdinPath}`] : []),
       '--',
       ...proxyArgs.slice(1),
     ]
@@ -248,12 +230,29 @@ export const createHooksProxy = (
       return exitWithError(conn, errMsg)
     }
 
+    if (hasStdin && stdinPath) {
+      try {
+        await pipeline(conn.stdin, createWriteStream(stdinPath), {
+          signal: abortController.signal,
+        })
+      } catch (error) {
+        const message = abortController.signal.aborted
+          ? `hook ${hookName} aborted`
+          : `Failed to buffer stdin for ${hookName} hook: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+
+        debug(message, error instanceof Error ? error : undefined)
+        await exitWithError(conn, message)
+        onHookProgress?.({ hookName, status: 'failed' })
+        return
+      }
+    }
+
     const { code, signal } = await new Promise<{
       code: number | null
       signal: NodeJS.Signals | null
     }>((resolve, reject) => {
-      conn.on('close', abort)
-
       const child = spawnGitProcess(args, proxyCwd, {
         env: {
           ...shellEnv.env,
@@ -274,10 +273,8 @@ export const createHooksProxy = (
       // https://github.com/git/git/blob/4cf919bd7b946477798af5414a371b23fd68bf93/hook.c#L73C6-L73C22
       child.stderr.pipe(conn.stderr, { end: false }).on('error', reject)
       child.stderr.on('data', data => terminalOutput.push(data))
-      child.stdin.end()
+      conn.stdin.pipe(child.stdin).on('error', reject)
     })
-
-    stdinFile?.cleanup()
 
     const dur = `after ${((Date.now() - startTime) / 1000).toFixed(2)}s`
     const prefix = `${hookName} hook`

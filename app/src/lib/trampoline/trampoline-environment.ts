@@ -16,6 +16,7 @@ import {
 import { getGitVersionFromSource } from '../git/process'
 import { getRepositoryGitSource } from '../git/source'
 import { formatCredentialHelperPathForGitConfig } from './credential-helper-config'
+import { forgetAccountCredentials } from './third-party-git-auth'
 
 const hasRejectedCredentialsForEndpoint = new Map<string, Set<string>>()
 
@@ -244,6 +245,7 @@ export async function withTrampolineEnv<T>(
       isBackgroundTaskEnvironment.delete(token)
       hasRejectedCredentialsForEndpoint.delete(token)
       trampolineEnvironmentPath.delete(token)
+      forgetAccountCredentials(token)
     }
   })
 }

@@ -81,7 +81,8 @@ export enum PopupType {
   ConfirmDiscardSelection = 'ConfirmDiscardSelection',
   MoveToApplicationsFolder = 'MoveToApplicationsFolder',
   ChangeRepositoryAlias = 'ChangeRepositoryAlias',
-  ChangeRepositoryGroupName = 'ChangeRepositoryGroupName',
+  CreateRepositoryGroup = 'CreateRepositoryGroup',
+  DeleteRepositoryGroup = 'DeleteRepositoryGroup',
   ThankYou = 'ThankYou',
   CommitMessage = 'CommitMessage',
   MultiCommitOperation = 'MultiCommitOperation',
@@ -133,6 +134,7 @@ export enum PopupType {
   ManageRemotes = 'ManageRemotes',
   AddRemote = 'AddRemote',
   DeleteWorktreeFailed = 'DeleteWorktreeFailed',
+  PullBranchDeleted = 'PullBranchDeleted',
 }
 
 interface IBasePopup {
@@ -311,6 +313,7 @@ export type PopupDetail =
       type: PopupType.StashAndSwitchBranch
       repository: Repository
       branchToCheckout: Branch
+      onCheckedOut?: () => Promise<void>
     }
   | {
       type: PopupType.ConfirmDiscardStash
@@ -380,7 +383,16 @@ export type PopupDetail =
     }
   | { type: PopupType.MoveToApplicationsFolder }
   | { type: PopupType.ChangeRepositoryAlias; repository: Repository }
-  | { type: PopupType.ChangeRepositoryGroupName; repository: Repository }
+  | {
+      type: PopupType.CreateRepositoryGroup
+      repositories: ReadonlyArray<Repository>
+      preselectedRepositoryId?: number
+    }
+  | {
+      type: PopupType.DeleteRepositoryGroup
+      groupName: string
+      repositories: ReadonlyArray<Repository>
+    }
   | {
       type: PopupType.ThankYou
       userContributions: ReadonlyArray<ReleaseNote>
@@ -608,5 +620,11 @@ export type PopupDetail =
       worktreePath: string
       error: Error
       originalWorktree: WorktreeEntry | null
+    }
+  | {
+      type: PopupType.PullBranchDeleted
+      repository: Repository
+      /** The name of the branch whose remote branch no longer exists. */
+      branchName: string
     }
 export type Popup = IBasePopup & PopupDetail

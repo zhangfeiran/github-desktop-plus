@@ -1,3 +1,5 @@
+import { UpdateBranchStrategy } from '../lib/update-branch-strategy'
+
 export enum ForkContributionTarget {
   Parent = 'parent',
   Self = 'self',
@@ -16,4 +18,10 @@ export type WorkflowPreferences = {
    * Whether this repository should perform automatic periodic fetches.
    */
   readonly periodicFetchEnabled?: boolean
+
+  /**
+   * How the "Update from <default branch>" action updates the current branch:
+   * by merging the default branch in, or by rebasing onto it.
+   */
+  readonly updateBranchStrategy?: UpdateBranchStrategy
 }

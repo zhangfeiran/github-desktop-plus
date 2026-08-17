@@ -1,5 +1,5 @@
 import { Disposable } from 'event-kit'
-import { Account, UnknownLogin } from '../../models/account'
+import { Account, AccountAPIType, UnknownLogin } from '../../models/account'
 import { assertNever, fatalError } from '../fatal-error'
 import {
   validateURL,
@@ -13,17 +13,27 @@ import {
   getEnterpriseAPIURL,
   requestOAuthToken,
   getOAuthAuthorizationURL,
-  getBitbucketAPIEndpoint,
+  BitbucketCloudAPIEndpoint,
   getBitbucketOAuthAuthorizationURL,
   requestOAuthTokenBitbucket,
-  getCodebergAPIEndpoint,
+  CodebergCloudAPIEndpoint,
   getCodebergOAuthAuthorizationURL,
-  getGitLabAPIEndpoint,
+  GitLabCloudAPIEndpoint,
   getGitLabOAuthAuthorizationURL,
   requestOAuthTokenCodeberg,
   requestOAuthTokenGitLab,
+  GitLabApiPath,
+  ForgejoApiPath,
+  GitLabRequiredScopes,
+  ForgejoRequiredScopes,
+  GiteaCloudAPIEndpoint,
+  getGiteaOAuthAuthorizationURL,
+  requestOAuthTokenGitea,
+  GiteaApiPath,
+  GiteaRequiredScopes,
 } from '../../lib/api'
 
+import { APIError } from '../http'
 import { TypedBaseStore } from './base-store'
 import { generatePKCEParameters } from '../pkce'
 import { IOAuthAction } from '../parse-app-url'
@@ -40,6 +50,7 @@ export enum SignInStep {
   EndpointEntry = 'EndpointEntry',
   ExistingAccountWarning = 'ExistingAccountWarning',
   Authentication = 'Authentication',
+  TokenEntry = 'TokenEntry',
   TwoFactorAuthentication = 'TwoFactorAuthentication',
   Success = 'Success',
 }
@@ -52,6 +63,7 @@ export type SignInState =
   | IEndpointEntryState
   | IExistingAccountWarning
   | IAuthenticationState
+  | ITokenEntryState
   | ISuccessState
 
 /**
@@ -98,6 +110,7 @@ export interface IExistingAccountWarning extends ISignInState {
    */
   readonly existingAccount: Account
   readonly endpoint: string
+  readonly apiType: AccountAPIType
 
   readonly resultCallback: (result: SignInResult) => void
 }
@@ -109,6 +122,28 @@ export interface IExistingAccountWarning extends ISignInState {
  */
 export interface IEndpointEntryState extends ISignInState {
   readonly kind: SignInStep.EndpointEntry
+
+  readonly apiType: 'enterprise' | SelfHostedApiType
+
+  readonly resultCallback: (result: SignInResult) => void
+}
+
+/**
+ * State interface representing the personal access token entry step, the
+ * second step when signing in to a self-hosted instance.
+ */
+export interface ITokenEntryState extends ISignInState {
+  readonly kind: SignInStep.TokenEntry
+
+  /** The API endpoint of the instance, e.g. https://git.example.com/api/v4 */
+  readonly endpoint: string
+
+  /** The web root of the instance, e.g. https://git.example.com */
+  readonly webBaseUrl: string
+
+  /** The provider the instance is running. */
+  readonly apiType: SelfHostedApiType
+
   readonly resultCallback: (result: SignInResult) => void
 }
 
@@ -130,6 +165,7 @@ export interface IAuthenticationState extends ISignInState {
    * instance.
    */
   readonly endpoint: string
+  readonly apiType: AccountAPIType
 
   readonly resultCallback: (result: SignInResult) => void
 
@@ -158,10 +194,186 @@ interface IAuthenticationEvent {
   readonly account: Account
 }
 
-type OAuthProvider = Extract<
-  RepoType,
-  'github' | 'bitbucket' | 'gitlab' | 'codeberg'
->
+/** The third-party providers that users can host on their own instance. */
+export type SelfHostedApiType = 'gitlab' | 'forgejo' | 'gitea'
+
+export const isSelfHostedApiType = (
+  apiType: AccountAPIType
+): apiType is SelfHostedApiType =>
+  apiType === 'gitlab' || apiType === 'forgejo' || apiType === 'gitea'
+
+/** The path each provider serves its REST API at, relative to the web root. */
+const selfHostedApiPaths: Record<SelfHostedApiType, string> = {
+  gitlab: GitLabApiPath,
+  forgejo: ForgejoApiPath,
+  gitea: GiteaApiPath,
+}
+
+/** The name we show users for a self-hosted provider. */
+export function friendlySelfHostedName(apiType: SelfHostedApiType) {
+  switch (apiType) {
+    case 'gitlab':
+      return 'GitLab'
+    case 'forgejo':
+      return 'Forgejo'
+    case 'gitea':
+      return 'Gitea'
+    default:
+      assertNever(apiType, `Unknown self-hosted API type ${apiType}`)
+  }
+}
+
+/** The scopes a personal access token needs, per provider. */
+export const selfHostedTokenScopes: Record<SelfHostedApiType, string[]> = {
+  gitlab: GitLabRequiredScopes,
+  forgejo: ForgejoRequiredScopes,
+  gitea: GiteaRequiredScopes,
+}
+
+/** The page where the user creates a personal access token on their instance. */
+export function getSelfHostedTokenSettingsURL(
+  webBaseUrl: string,
+  apiType: SelfHostedApiType
+) {
+  switch (apiType) {
+    case 'gitlab':
+      return `${webBaseUrl}/-/user_settings/personal_access_tokens/legacy/new`
+    case 'forgejo':
+      return `${webBaseUrl}/user/settings/applications/tokens/new`
+    case 'gitea':
+      return `${webBaseUrl}/user/settings/applications`
+    default:
+      assertNever(apiType, `Unknown self-hosted API type ${apiType}`)
+  }
+}
+
+/**
+ * Validate and normalize the address of a self-hosted instance, returning its
+ * web root (protocol, host and any explicit port, without a trailing slash).
+ */
+function parseSelfHostedInstanceURL(
+  url: string,
+  apiType: SelfHostedApiType
+): string {
+  const name = friendlySelfHostedName(apiType)
+
+  // Assume https when the address doesn't name a scheme
+  const trimmed = url.trim()
+  const address =
+    trimmed === '' || /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(trimmed)
+      ? trimmed
+      : `https://${trimmed}`
+
+  let validUrl: string
+  try {
+    validUrl = validateURL(address)
+  } catch (e) {
+    if (e.name === InvalidURLErrorName) {
+      throw new Error(
+        `The ${name} instance address doesn't appear to be a valid URL. We're expecting something like https://git.example.com.`
+      )
+    } else if (e.name === InvalidProtocolErrorName) {
+      throw new Error(
+        `Unsupported protocol. Only https is supported when signing in to a self-hosted ${name} instance.`
+      )
+    }
+    throw e
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(validUrl)
+  } catch {
+    throw new Error(
+      `The ${name} instance address doesn't appear to be a valid URL. We're expecting something like https://git.example.com.`
+    )
+  }
+
+  if (parsed.username !== '' || parsed.password !== '') {
+    throw new Error(
+      `The ${name} instance address must not contain a username or a password.`
+    )
+  }
+
+  if (parsed.search !== '' || parsed.hash !== '') {
+    throw new Error(
+      `The ${name} instance address must not contain a query string or a fragment.`
+    )
+  }
+
+  if (parsed.pathname.replace(/\/+/g, '') !== '') {
+    throw new Error(
+      `Only ${name} instances installed at the root of a host are supported, so the address can't contain a path. We're expecting something like https://git.example.com.`
+    )
+  }
+
+  if (isGitHubHostname(parsed.hostname)) {
+    throw new Error(
+      `${parsed.hostname} is a GitHub address. Sign in to GitHub.com or to a GitHub Enterprise instance instead.`
+    )
+  }
+
+  return `${parsed.protocol}//${parsed.host}`
+}
+
+const isGitHubHostname = (hostname: string) =>
+  hostname === 'github.com' || hostname === 'api.github.com'
+
+/** Turn an API failure from the token step into a user-facing message. */
+function toTokenSignInError(
+  e: any,
+  apiType: SelfHostedApiType,
+  endpoint: string,
+  webBaseUrl: string
+): Error {
+  const name = friendlySelfHostedName(apiType)
+
+  if (e instanceof APIError) {
+    switch (e.responseStatus) {
+      case 401:
+        return new Error(
+          `The personal access token was rejected by ${webBaseUrl}. Make sure it hasn't expired and that you copied it correctly.`
+        )
+      case 403: {
+        const scopes = selfHostedTokenScopes[apiType].join(', ')
+        return new Error(
+          `The personal access token doesn't grant enough access. Create one with the scopes ${scopes}.`
+        )
+      }
+      case 404:
+        return new Error(
+          `Couldn't find a ${name} API at ${endpoint}. Make sure the address points to a ${name} instance.`
+        )
+      default:
+        return e
+    }
+  }
+
+  if (e instanceof SyntaxError) {
+    return new Error(
+      `Could not sign in to ${webBaseUrl}. We received an invalid response from the API. Make sure the address is correct and the API is not protected by Anubis, Cloudflare, or similar security mechanisms.`
+    )
+  }
+
+  return new Error(`Could not sign in to ${webBaseUrl}. ${e.message}`)
+}
+
+type OAuthProvider = Exclude<RepoType, 'gitee' | 'gitcode'>
+
+function apiTypeToOAuthProvider(apiType: AccountAPIType): OAuthProvider {
+  switch (apiType) {
+    case 'dotcom':
+    case 'enterprise':
+      return 'github'
+    case 'bitbucket':
+    case 'gitlab':
+    case 'forgejo':
+    case 'gitea':
+      return apiType
+    default:
+      return assertNever(apiType, `Unknown API type ${apiType}`)
+  }
+}
 
 export type SignInResult =
   | { kind: 'success'; account: Account }
@@ -251,6 +463,7 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
     this.setState({
       kind: SignInStep.Authentication,
       endpoint,
+      apiType: 'dotcom',
       error: null,
       loading: false,
       resultCallback: resultCallback ?? noop,
@@ -290,12 +503,13 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
     const { codeVerifier, codeChallenge } = await generatePKCEParameters()
 
     new Promise<Account>((resolve, reject) => {
-      const { endpoint, resultCallback } = currentState
+      const { endpoint, apiType, resultCallback } = currentState
       log.info('[SignInStore] initializing OAuth flow')
-      const oauthProvider = this.getOAuthProvider(endpoint)
+      const oauthProvider = apiTypeToOAuthProvider(apiType)
       this.setState({
         kind: SignInStep.Authentication,
         endpoint,
+        apiType,
         resultCallback,
         error: null,
         loading: true,
@@ -358,22 +572,12 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
         return getBitbucketOAuthAuthorizationURL(csrfToken, codeChallenge)
       case 'gitlab':
         return getGitLabOAuthAuthorizationURL(csrfToken, codeChallenge)
-      case 'codeberg':
+      case 'forgejo':
         return getCodebergOAuthAuthorizationURL(csrfToken, codeChallenge)
+      case 'gitea':
+        return getGiteaOAuthAuthorizationURL(csrfToken, codeChallenge)
       default:
         assertNever(oauthProvider, 'Unexpected oauth provider')
-    }
-  }
-
-  private getOAuthProvider(endpoint: string): OAuthProvider {
-    if (endpoint === getBitbucketAPIEndpoint()) {
-      return 'bitbucket'
-    } else if (endpoint === getGitLabAPIEndpoint()) {
-      return 'gitlab'
-    } else if (endpoint === getCodebergAPIEndpoint()) {
-      return 'codeberg'
-    } else {
-      return 'github'
     }
   }
 
@@ -393,7 +597,7 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       return
     }
 
-    const { endpoint } = this.state
+    const { endpoint, apiType } = this.state
     const tokenData = await this.getOauthTokenData(
       this.state.oauthState.oauthProvider,
       endpoint,
@@ -405,6 +609,7 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       const [token, refreshToken, expiresAt] = tokenData
       const account = await fetchUser(
         endpoint,
+        apiType,
         token,
         refreshToken,
         expiresAt,
@@ -431,8 +636,10 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
         return await requestOAuthTokenBitbucket(code, codeVerifier)
       case 'gitlab':
         return await requestOAuthTokenGitLab(code, codeVerifier)
-      case 'codeberg':
+      case 'forgejo':
         return await requestOAuthTokenCodeberg(code, codeVerifier)
+      case 'gitea':
+        return await requestOAuthTokenGitea(code, codeVerifier)
       default:
         assertNever(oauthProvider, 'Unexpected oauth provider')
     }
@@ -452,6 +659,29 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
 
     this.setState({
       kind: SignInStep.EndpointEntry,
+      apiType: 'enterprise',
+      error: null,
+      loading: false,
+      resultCallback: resultCallback ?? noop,
+    })
+  }
+
+  /**
+   * Initiate a sign in flow for a self-hosted instance of a third-party
+   * provider. This will put the store in the EndpointEntry step ready to
+   * receive the address of the instance.
+   */
+  public beginSelfHostedSignIn(
+    apiType: SelfHostedApiType,
+    resultCallback?: (result: SignInResult) => void
+  ) {
+    if (this.state !== null) {
+      this.reset()
+    }
+
+    this.setState({
+      kind: SignInStep.EndpointEntry,
+      apiType,
       error: null,
       loading: false,
       resultCallback: resultCallback ?? noop,
@@ -463,10 +693,10 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       this.reset()
     }
 
-    const endpoint = getBitbucketAPIEndpoint()
     this.setState({
       kind: SignInStep.Authentication,
-      endpoint,
+      endpoint: BitbucketCloudAPIEndpoint,
+      apiType: 'bitbucket',
       error: null,
       loading: false,
       resultCallback: resultCallback ?? noop,
@@ -478,10 +708,10 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       this.reset()
     }
 
-    const endpoint = getGitLabAPIEndpoint()
     this.setState({
       kind: SignInStep.Authentication,
-      endpoint,
+      endpoint: GitLabCloudAPIEndpoint,
+      apiType: 'gitlab',
       error: null,
       loading: false,
       resultCallback: resultCallback ?? noop,
@@ -493,10 +723,25 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       this.reset()
     }
 
-    const endpoint = getCodebergAPIEndpoint()
     this.setState({
       kind: SignInStep.Authentication,
-      endpoint,
+      endpoint: CodebergCloudAPIEndpoint,
+      apiType: 'forgejo',
+      error: null,
+      loading: false,
+      resultCallback: resultCallback ?? noop,
+    })
+  }
+
+  public beginGiteaSignIn(resultCallback?: (result: SignInResult) => void) {
+    if (this.state !== null) {
+      this.reset()
+    }
+
+    this.setState({
+      kind: SignInStep.Authentication,
+      endpoint: GiteaCloudAPIEndpoint,
+      apiType: 'gitea',
       error: null,
       loading: false,
       resultCallback: resultCallback ?? noop,
@@ -527,6 +772,10 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
       return fatalError(
         `Sign in step '${stepText}' not compatible with endpoint entry`
       )
+    }
+
+    if (isSelfHostedApiType(currentState.apiType)) {
+      return this.setSelfHostedEndpoint(url, currentState.apiType, currentState)
     }
 
     /**
@@ -564,9 +813,113 @@ export class SignInStore extends TypedBaseStore<SignInState | null> {
     this.setState({
       kind: SignInStep.Authentication,
       endpoint,
+      apiType: 'enterprise',
       error: null,
       loading: false,
       resultCallback: currentState.resultCallback,
     })
+  }
+
+  /**
+   * Advance from the EndpointEntry step to the TokenEntry step for a
+   * self-hosted instance, deriving the API endpoint from the address the user
+   * entered and rejecting hosts that are already used by another provider.
+   */
+  private async setSelfHostedEndpoint(
+    url: string,
+    apiType: SelfHostedApiType,
+    currentState: IEndpointEntryState | IExistingAccountWarning
+  ): Promise<void> {
+    this.setState({ ...currentState, loading: true, error: null })
+    const loadingState = this.state
+
+    let webBaseUrl: string
+    try {
+      webBaseUrl = parseSelfHostedInstanceURL(url, apiType)
+    } catch (e) {
+      this.setState({ ...currentState, loading: false, error: e })
+      return
+    }
+
+    const endpoint = `${webBaseUrl}${selfHostedApiPaths[apiType]}`
+
+    // Surface a host conflict here rather than after the user has gone and
+    // created a token for us.
+    const conflict = await this.accountStore.findApiTypeConflict(
+      endpoint,
+      apiType
+    )
+
+    if (this.state !== loadingState) {
+      log.warn('[SignInStore] endpoint resolved but session has changed')
+      return
+    }
+
+    if (conflict !== null) {
+      this.setState({ ...currentState, loading: false, error: conflict })
+      return
+    }
+
+    this.setState({
+      kind: SignInStep.TokenEntry,
+      endpoint,
+      webBaseUrl,
+      apiType,
+      error: null,
+      loading: false,
+      resultCallback: currentState.resultCallback,
+    })
+  }
+
+  /**
+   * Attempt to complete a self-hosted sign in using the given personal access
+   * token. This method must only be called when the store is in the token
+   * entry step or an error will be thrown.
+   */
+  public async setToken(token: string): Promise<void> {
+    const currentState = this.state
+
+    if (currentState?.kind !== SignInStep.TokenEntry) {
+      const stepText = currentState ? currentState.kind : 'null'
+      return fatalError(
+        `Sign in step '${stepText}' not compatible with token entry`
+      )
+    }
+
+    const { endpoint, webBaseUrl, apiType, resultCallback } = currentState
+
+    this.setState({ ...currentState, loading: true, error: null })
+    const loadingState = this.state
+
+    let account: Account
+    try {
+      account = await fetchUser(
+        endpoint,
+        apiType,
+        token,
+        '',
+        0,
+        UnknownLogin.InitialAuthFetch
+      )
+    } catch (e) {
+      log.info('[SignInStore] personal access token sign in failed', e)
+
+      if (this.state === loadingState) {
+        this.setState({
+          ...currentState,
+          loading: false,
+          error: toTokenSignInError(e, apiType, endpoint, webBaseUrl),
+        })
+      }
+      return
+    }
+
+    if (this.state !== loadingState) {
+      log.warn('[SignInStore] account resolved but session has changed')
+      return
+    }
+
+    this.emitAuthenticate(account)
+    this.setState({ kind: SignInStep.Success, resultCallback })
   }
 }

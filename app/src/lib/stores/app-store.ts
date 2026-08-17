@@ -43,6 +43,7 @@ import {
   IssuesStore,
   PullRequestCoordinator,
   RepositoriesStore,
+  SelfHostedApiType,
   SignInResult,
   SignInStore,
   UpstreamRemoteName,
@@ -75,7 +76,12 @@ import type {
   CopilotModelRequest,
   CopilotProviderConfig,
 } from './copilot-store'
-import { Account, isDotComAccount, UnknownLogin } from '../../models/account'
+import {
+  Account,
+  CopilotLicenseTypeNoAccess,
+  isDotComAccount,
+  UnknownLogin,
+} from '../../models/account'
 import { AppMenu, IMenu } from '../../models/app-menu'
 import { Author } from '../../models/author'
 import { Branch, BranchType, IAheadBehind } from '../../models/branch'
@@ -271,10 +277,9 @@ import {
   getRepositoryType,
   RepositoryType,
   listWorktrees,
-  listWorktreesFromGitDir,
+  resolveMainWorktreePath,
   removeWorktree,
   moveWorktree,
-  translateWorktreePathForRepository,
   getCommitRangeDiff,
   getTreeDiff,
   getCommitRangeChangedFiles,
@@ -294,7 +299,6 @@ import {
   IConfigValueOrigin,
   unstageAll,
   git,
-  listWorktreesFromGitDirFallback,
 } from '../git'
 import {
   installGlobalLFSFilters,
@@ -671,7 +675,6 @@ export const showChangesFilterKey = 'show-changes-filter'
 // per account, not globally.
 const selectedCopilotModelsKey = 'selected-copilot-models'
 const selectedCopilotModelsByAccountKey = 'selected-copilot-models-by-account'
-const CopilotLicenseTypeNoAccess = 'NO_ACCESS'
 export const showChangesFilterDefault = true
 
 export class AppStore extends TypedBaseStore<IAppState> {
@@ -1209,7 +1212,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.updateCopilotModelsForCurrentAccount()
       this.updateCopilotQuotaSnapshotsForCurrentAccount()
       const endpointTokens = accounts.map<EndpointToken>(
-        ({ endpoint, token }) => ({ endpoint, token })
+        ({ endpoint, token, apiType }) => ({ endpoint, token, apiType })
       )
 
       updateAccounts(endpointTokens)
@@ -2108,11 +2111,15 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this.emitUpdate()
       }
       if (filteredCommits.length < MinimumFilteredCommitsToLoad) {
-        return this._loadNextCommitBatch(
+        await this._loadNextCommitBatch(
           repository,
           filteredCommits.length,
           commitSearch
         )
+      }
+      if (action.kind === HistoryTabMode.Compare) {
+        // A branch comparison is active, recompute
+        return this.updateCompareToBranch(repository, action)
       }
       return
     }
@@ -3759,6 +3766,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       gitHubRepositoryType: isGitHub
         ? selectedRepository.gitHubRepository.type
         : null,
+      gitHubRepositoryEndpoint: isGitHub
+        ? selectedRepository.gitHubRepository.endpoint
+        : null,
     }
 
     if (state === null) {
@@ -4912,32 +4922,33 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return repository
   }
 
+  /**
+   * Ask a worktree that exists on disk which worktree is the main one, or
+   * undefined if git can't tell us.
+   */
+  private findMainWorktreePath(
+    path: string,
+    repository?: Repository
+  ): Promise<string | undefined> {
+    return listWorktrees(repository ?? path)
+      .then(worktrees => worktrees.find(wt => wt.type === 'main')?.path)
+      .catch(e => {
+        log.error(`Could not list worktrees in '${path}'`, e)
+        return undefined
+      })
+  }
+
   private async recoverMissingWorktree(
     repository: Repository
   ): Promise<Repository | null> {
-    if (repository.gitDir === undefined) {
-      return null
-    }
-    const repositoryGitDir = repository.gitDir
-
-    const worktrees = await listWorktreesFromGitDir(repository.gitDir).catch(
+    const mainWorktreePath = await resolveMainWorktreePath(repository).catch(
       e => {
-        log.error('Could not list worktrees from git dir', e)
-        return listWorktreesFromGitDirFallback(repositoryGitDir)
+        log.error('Could not resolve the main worktree path', e)
+        return null
       }
     )
-    const mainWorktree = worktrees.find(wt => wt.type === 'main')
 
-    if (mainWorktree === undefined) {
-      return null
-    }
-
-    const mainWorktreePath = translateWorktreePathForRepository(
-      repository,
-      mainWorktree.path
-    )
-
-    if (mainWorktreePath === repository.path) {
+    if (mainWorktreePath === null) {
       return null
     }
 
@@ -4961,15 +4972,27 @@ export class AppStore extends TypedBaseStore<IAppState> {
       repository,
       worktreePath,
       false,
-      gitDir
+      gitDir,
+      worktreePath
     )
 
     if (!result.existingRepository) {
-      this.repositoryStateCache.seedFromWorktree(
-        result.repository,
-        repository,
-        { ...mainWorktree, path: worktreePath }
-      )
+      // The main worktree exists, so its own worktree list is readable even
+      // when the metadata belonging to the removed worktree isn't.
+      const mainWorktree = await listWorktrees(result.repository)
+        .then(worktrees => worktrees.find(wt => wt.type === 'main'))
+        .catch(e => {
+          log.error('Could not list worktrees from the main worktree', e)
+          return undefined
+        })
+
+      if (mainWorktree !== undefined) {
+        this.repositoryStateCache.seedFromWorktree(
+          result.repository,
+          repository,
+          mainWorktree
+        )
+      }
     }
 
     return result.repository
@@ -5080,9 +5103,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.updateCurrentTutorialStep(repository)
 
     if (!repository.defaultBranch && gitStore.defaultBranch) {
-      this._updateRepositoryDefaultBranch(
+      // Don't call _updateRepositoryDefaultBranch, it refreshes the repository
+      // and we're in the middle of doing exactly that.
+      await this.repositoriesStore.updateRepositoryDefaultBranch(
         repository,
-        gitStore.defaultBranch.name
+        gitStore.defaultBranch.nameWithoutRemote
       )
     }
   }
@@ -5715,12 +5740,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
    * strategy are dialogs and other confirmation constructs where the user
    * has made an explicit choice about how to proceed.
    *
+   * When provided, `onCheckedOut` runs once the branch has actually been
+   * checked out in this repository.
+   *
    * Note: This shouldn't be called directly. See `Dispatcher`.
    */
   public async _checkoutBranch(
     repository: Repository,
     branch: Branch,
-    explicitStrategy?: UncommittedChangesStrategy
+    explicitStrategy?: UncommittedChangesStrategy,
+    onCheckedOut?: () => Promise<void>
   ): Promise<Repository> {
     const repositoryState = this.repositoryStateCache.get(repository)
     const { changesState, branchesState } = repositoryState
@@ -5730,6 +5759,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     // No point in checking out the currently checked out branch.
     if (tip.kind === TipState.Valid && tip.branch.name === branch.name) {
+      await onCheckedOut?.()
       return repository
     }
 
@@ -5752,7 +5782,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
     if (strategy === UncommittedChangesStrategy.AskForConfirmation) {
       if (hasChanges) {
         const type = PopupType.StashAndSwitchBranch
-        this._showPopup({ type, branchToCheckout: branch, repository })
+        this._showPopup({
+          type,
+          branchToCheckout: branch,
+          repository,
+          onCheckedOut,
+        })
         return repository
       }
     }
@@ -5766,16 +5801,25 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
 
     return this.withRefreshedGitHubRepository(repository, repository => {
+      let checkedOut = true
+
       // We always want to end with refreshing the repository regardless of
       // whether the checkout succeeded or not in order to present the most
       // up-to-date information to the user.
       return this.checkoutImplementation(repository, branch, strategy)
         .then(() => this.onSuccessfulCheckout(repository, branch))
         .catch(async e => {
+          checkedOut = false
           this.emitError(new CheckoutError(e, repository, branch))
         })
         .then(() => this.refreshAfterCheckout(repository, branch.name))
         .finally(() => this.updateCheckoutProgress(repository, null))
+        .then(async refreshedRepository => {
+          if (checkedOut) {
+            await onCheckedOut?.()
+          }
+          return refreshedRepository
+        })
     })
   }
 
@@ -6354,8 +6398,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     newGroupName: string | null
   ): Promise<void> {
+    return this._changeRepositoriesGroupName([repository], newGroupName)
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _changeRepositoriesGroupName(
+    repositories: ReadonlyArray<Repository>,
+    newGroupName: string | null
+  ): Promise<void> {
     return this.repositoriesStore.updateRepositoryGroupName(
-      [repository],
+      repositories,
       newGroupName
     )
   }
@@ -6741,6 +6793,62 @@ export class AppStore extends TypedBaseStore<IAppState> {
     })
   }
 
+  /**
+   * Switch the repository to its default branch and pull it.
+   *
+   * Used to recover from a pull that failed because the current branch's
+   * remote branch no longer exists (e.g. it was deleted on the remote).
+   */
+  public async _switchToDefaultBranchAndPull(
+    repository: Repository,
+    staleBranchToDelete: string | null = null
+  ): Promise<void> {
+    const { branchesState } = this.repositoryStateCache.get(repository)
+    const { defaultBranch, tip } = branchesState
+
+    if (defaultBranch === null) {
+      this.emitError(
+        new Error(
+          `Unable to switch '${repository.name}' to its default branch because it could not be determined.`
+        )
+      )
+      return
+    }
+
+    const shouldDeleteStaleBranch =
+      staleBranchToDelete !== null &&
+      tip.kind === TipState.Valid &&
+      tip.branch.name === staleBranchToDelete &&
+      tip.branch.name !== defaultBranch.name
+
+    const branchToDelete = shouldDeleteStaleBranch ? tip.branch : null
+
+    if (staleBranchToDelete !== null && branchToDelete === null) {
+      log.info(
+        `Not deleting branch '${staleBranchToDelete}' in '${repository.name}' because it is no longer the checked out branch.`
+      )
+    }
+
+    // Only pull (and maybe delete) once we've actually switched to the default branch.
+    // When the branch has uncommitted changes the checkout may defer to a "stash and
+    // switch" confirmation and return without switching; pulling then would run
+    // on the branch whose remote branch is gone and fail with the same error.
+    const onSuccessfulCheckout = async () => {
+      if (branchToDelete !== null) {
+        await this._deleteBranch(repository, branchToDelete, false)
+      }
+
+      await this._pull(repository)
+    }
+
+    await this._checkoutBranch(
+      repository,
+      defaultBranch,
+      undefined,
+      onSuccessfulCheckout
+    )
+  }
+
   public async _resetHardToUpstream(repository: Repository): Promise<void> {
     const { branchesState } = this.repositoryStateCache.get(repository)
     const { tip } = branchesState
@@ -6755,12 +6863,20 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   public async _pullAllRepositories(): Promise<void> {
     const repositories = await this.repositoriesStore.getAll()
+    return this._pullRepositories(repositories)
+  }
+
+  public async _pullRepositories(
+    repositories: ReadonlyArray<Repository>
+  ): Promise<void> {
     const nonMissingRepos = repositories.filter(r => !r.missing)
     await Promise.all(
       nonMissingRepos.map(repository =>
-        this.withRepoInfoInError('Error pulling', repository, () =>
-          this._pull(repository)
-        )
+        this.withRepoInfoInError('Error pulling', repository, async () => {
+          // The cached tip of a repository that isn't the selected one can be stale, refresh first.
+          await this.gitStoreCache.get(repository).loadStatus()
+          await this._pull(repository)
+        })
       )
     )
   }
@@ -7487,11 +7603,22 @@ export class AppStore extends TypedBaseStore<IAppState> {
         ? this.getRepositoryStoragePath(repository, type.gitDir)
         : undefined
 
+    // Record the main worktree while the worktree set is still readable.
+    // Removing a worktree can take its git metadata with it, leaving nothing to
+    // resolve it from afterwards. Only attempted for a regular repository —
+    // git won't run at all in one it considers unsafe — and `switchWorktree`
+    // keeps the previously recorded path when this is undefined.
+    const mainWorktreePath =
+      type.kind === 'regular'
+        ? await this.findMainWorktreePath(worktree.path, repository)
+        : undefined
+
     const result = await this.repositoriesStore.switchWorktree(
       repository,
       worktree.path,
       missing,
-      gitDir
+      gitDir,
+      mainWorktreePath
     )
 
     this.repositoryStateCache.seedFromWorktree(
@@ -9499,8 +9626,23 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return this.signInStore.beginCodebergSignIn(resultCallback)
   }
 
+  public _beginGiteaSignIn(resultCallback?: (result: SignInResult) => void) {
+    return this.signInStore.beginGiteaSignIn(resultCallback)
+  }
+
+  public _beginSelfHostedSignIn(
+    apiType: SelfHostedApiType,
+    resultCallback?: (result: SignInResult) => void
+  ) {
+    return this.signInStore.beginSelfHostedSignIn(apiType, resultCallback)
+  }
+
   public _setSignInEndpoint(url: string): Promise<void> {
     return this.signInStore.setEndpoint(url)
+  }
+
+  public _setSignInToken(token: string): Promise<void> {
+    return this.signInStore.setToken(token)
   }
 
   public _requestBrowserAuthentication() {
@@ -9597,6 +9739,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // get to the blankslate.
     if (this.showWelcomeFlow && storedAccount !== null) {
       this.apiRepositoriesStore.loadRepositories(storedAccount)
+    }
+
+    // Only announce the sign in if storing the account succeeded.
+    // In the welcome flow, the banner is not needed as the user is already aware of the sign in
+    if (!this.showWelcomeFlow && storedAccount !== null) {
+      this._setBanner({
+        type: BannerType.SuccessfulSignIn,
+        login: storedAccount.login,
+        friendlyEndpoint: storedAccount.friendlyEndpoint,
+      })
     }
   }
 
@@ -9774,15 +9926,22 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const rt = await getRepositoryType(path)
 
     if (rt.kind === 'regular') {
+      // The repository has moved, so any main worktree we recorded before now
+      // points at where it used to be. Resolve it again from the new location.
       await this.repositoriesStore.updateRepositoryPath(
         repository,
         rt.topLevelWorkingDirectory,
-        rt.gitDir
+        rt.gitDir,
+        await this.findMainWorktreePath(rt.topLevelWorkingDirectory)
       )
     } else if (rt.kind === 'unsafe') {
+      // Git refuses to run in a repository it considers unsafe, so there's no
+      // resolving the main worktree here. Drop the recorded path rather than
+      // keep one we know is stale.
       await this.repositoriesStore.updateRepositoryPath(
         repository,
         path,
+        undefined,
         undefined,
         true
       )
@@ -10069,7 +10228,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
       gitlab: `${baseRepoUrl}/merge_requests/${pr.pullRequestNumber}`,
       gitee: `${baseRepoUrl}/pulls/${pr.pullRequestNumber}`,
       gitcode: `${baseRepoUrl}/pulls/${pr.pullRequestNumber}`,
-      codeberg: `${baseRepoUrl}/pulls/${pr.pullRequestNumber}`,
+      forgejo: `${baseRepoUrl}/pulls/${pr.pullRequestNumber}`,
+      gitea: `${baseRepoUrl}/pulls/${pr.pullRequestNumber}`,
     }
 
     const type = pr.base.gitHubRepository.type
@@ -10198,8 +10358,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
           encodedCompareBranch,
           encodedBaseBranch
         )
-      case 'codeberg':
-        return this.getCodebergPullRequestCreationURL(
+      case 'forgejo':
+      case 'gitea':
+        return this.getForgejoOrGiteaPullRequestCreationURL(
           gitHubRepository,
           isFork,
           encodedCompareBranch,
@@ -10277,7 +10438,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return `${htmlURL}/compare/${base}...${compare}`
   }
 
-  private getCodebergPullRequestCreationURL(
+  private getForgejoOrGiteaPullRequestCreationURL(
     { parent, owner, name, htmlURL }: GitHubRepository,
     isFork: boolean,
     encodedCompareBranch: string,

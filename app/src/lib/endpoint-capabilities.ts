@@ -1,13 +1,15 @@
 import * as semver from 'semver'
 import {
-  getBitbucketAPIEndpoint,
-  getCodebergAPIEndpoint,
+  BitbucketCloudAPIEndpoint,
+  CodebergCloudAPIEndpoint,
   getDotComAPIEndpoint,
-  getGiteeAPIEndpoint,
-  getGitCodeAPIEndpoint,
-  getGitLabAPIEndpoint,
+  GiteeCloudAPIEndpoint,
+  GiteaCloudAPIEndpoint,
+  GitCodeCloudAPIEndpoint,
+  GitLabCloudAPIEndpoint,
 } from './api'
 import { assertNonNullable } from './fatal-error'
+import { getRegisteredApiType } from './endpoint-api-type-registry'
 
 export type VersionConstraint = {
   /**
@@ -65,24 +67,36 @@ export const isGist = (ep: string) => {
   return hostname === 'gist.github.com' || hostname === 'gist.ghe.io'
 }
 
-export const isBitbucket = (ep: string) => {
-  return ep === getBitbucketAPIEndpoint()
+export const isBitbucketCloud = (ep: string) => {
+  return ep === BitbucketCloudAPIEndpoint
 }
 
-export const isGitLab = (ep: string) => {
-  return ep === getGitLabAPIEndpoint()
+export const isGitLabCloud = (ep: string) => {
+  return ep === GitLabCloudAPIEndpoint
 }
 
 export const isGitee = (ep: string) => {
-  return ep === getGiteeAPIEndpoint()
+  return ep === GiteeCloudAPIEndpoint
 }
 
 export const isGitCode = (ep: string) => {
-  return ep === getGitCodeAPIEndpoint()
+  return ep === GitCodeCloudAPIEndpoint
 }
 
-export const isCodeberg = (ep: string) => {
-  return ep === getCodebergAPIEndpoint()
+export const isCodebergCloud = (ep: string) => {
+  return ep === CodebergCloudAPIEndpoint
+}
+
+export const isGiteaCloud = (ep: string) => {
+  return ep === GiteaCloudAPIEndpoint
+}
+
+export const isCodebergCloudOrForgejo = (ep: string) => {
+  return isCodebergCloud(ep) || getRegisteredApiType(ep) === 'forgejo'
+}
+
+export const isGiteaCloudOrSelfHosted = (ep: string) => {
+  return isGiteaCloud(ep) || getRegisteredApiType(ep) === 'gitea'
 }
 
 /** Whether or not the given endpoint URI is under the ghe.com domain */
@@ -95,11 +109,13 @@ export const isGHE = (ep: string) => new URL(ep).hostname.endsWith('.ghe.com')
 export const isGHES = (ep: string) =>
   !isDotCom(ep) &&
   !isGHE(ep) &&
-  !isBitbucket(ep) &&
-  !isGitLab(ep) &&
+  !isBitbucketCloud(ep) &&
+  !isGitLabCloud(ep) &&
   !isGitee(ep) &&
   !isGitCode(ep) &&
-  !isCodeberg(ep)
+  !isCodebergCloud(ep) &&
+  !isGiteaCloud(ep) &&
+  getRegisteredApiType(ep) === undefined
 
 export function getEndpointVersion(endpoint: string) {
   const key = endpointVersionKey(endpoint)

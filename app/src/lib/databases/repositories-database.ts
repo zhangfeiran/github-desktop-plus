@@ -5,6 +5,7 @@ import { assertNonNullable } from '../fatal-error'
 import { GitHubAccountType } from '../api'
 import { EditorOverride } from '../../models/editor-override'
 import { RepositoryGitSource } from '../../models/repository-git-source'
+import type { RepoType } from '../../models/github-repository'
 
 export interface IDatabaseOwner {
   readonly id?: number
@@ -15,6 +16,11 @@ export interface IDatabaseOwner {
   readonly key: string
   readonly login: string
   readonly endpoint: string
+  /**
+   * The provider type of the endpoint.
+   * Persist so that repos on self-hosted third-party instances keep working after the account is gone.
+   */
+  readonly apiType?: RepoType
   readonly type?: GitHubAccountType
 }
 
@@ -60,6 +66,12 @@ export interface IDatabaseRepository {
 
   /** The path to the .git directory for this repository */
   readonly gitDir?: string
+
+  /**
+   * The path to the main worktree of this repository, recorded when switching
+   * onto one of its linked worktrees.
+   */
+  readonly mainWorktreePath?: string
 
   /** The last time the stash entries were checked for the repository */
   readonly lastStashCheckDate?: number | null

@@ -101,11 +101,87 @@
     white-space: nowrap;
   }
 
+  .new-repository-button {
+    flex-shrink: 0;
+
+    .octicon {
+      transform: translateX(4px) translateY(-1px);
+    }
+  }
+
+  .repository-group-header {
+    display: flex;
+    align-items: center;
+
+    .filter-list-group-header {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pull-group-button {
+      flex-shrink: 0;
+      height: 16px;
+      min-width: 0;
+      margin-top: var(--spacing);
+      margin-right: var(--spacing-half);
+      padding: 0 var(--spacing-half);
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      color: var(--text-secondary-color);
+      opacity: 0;
+      transition: opacity 0.1s ease-in-out;
+
+      &:hover,
+      &:focus {
+        background: transparent;
+        color: var(--text-color);
+      }
+
+      .octicon {
+        width: 12px;
+        height: 12px;
+      }
+    }
+
+    .delete-group-button {
+      flex-shrink: 0;
+      height: 16px;
+      min-width: 0;
+      margin-top: var(--spacing);
+      margin-right: var(--spacing-half);
+      padding: 0 var(--spacing-half);
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      color: var(--text-secondary-color);
+      opacity: 0;
+      transition: opacity 0.1s ease-in-out;
+
+      &:hover,
+      &:focus {
+        background: transparent;
+        color: var(--error-color);
+      }
+
+      .octicon {
+        width: 12px;
+        height: 12px;
+      }
+    }
+
+    &:hover .pull-group-button,
+    &:focus-within .pull-group-button,
+    &:hover .delete-group-button,
+    &:focus-within .delete-group-button,
+    // A pull in progress keeps its spinner visible after the pointer leaves
+    .pull-group-button.pulling {
+      opacity: 1;
+    }
+  }
+
   .repo-list-button {
     flex-shrink: 0;
-  }
-  .repo-list-button.new-repository .octicon {
-    transform: translateX(4px) translateY(-1px);
   }
   .repo-list-button.pull-repositories .octicon {
     transform: translateX(-4px) translateY(-1px);
@@ -160,11 +236,15 @@
 }
 
 .list-focus-container {
-  /** Badge colors when list item is selected but not focused */
+  /** Ahead/behind badge colors when list item is selected but not focused */
   .list-item.selected {
     .repository-list-item,
     .repository-list-item-tooltip {
-      .ahead-behind,
+      .ahead-behind {
+        background: var(--list-item-selected-badge-background-color);
+        color: var(--list-item-selected-badge-color);
+      }
+
       .branch-name {
         background: var(--list-item-selected-badge-background-color);
         color: var(--list-item-selected-badge-color);
@@ -173,11 +253,15 @@
   }
 
   &.focus-within {
-    /** Badge colors when list item is selected and focused */
+    /** Ahead/behind badge colors when list item is selected and focused */
     .list-item.selected {
       .repository-list-item,
       .repository-list-item-tooltip {
-        .ahead-behind,
+        .ahead-behind {
+          background: var(--list-item-selected-active-badge-background-color);
+          color: var(--list-item-selected-active-badge-color);
+        }
+
         .branch-name {
           background: var(--list-item-selected-active-badge-background-color);
           color: var(--list-item-selected-active-badge-color);

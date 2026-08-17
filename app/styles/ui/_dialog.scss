@@ -605,6 +605,13 @@ dialog {
     }
   }
 
+  &#delete-repository-group,
+  &#pull-branch-deleted {
+    .checkbox-component {
+      margin-top: var(--spacing);
+    }
+  }
+
   &#change-repository-group-name {
     width: 450px;
 

@@ -7,7 +7,6 @@
 
 
 _pkgname='desktop-plus'
-_old_pkgname='github-desktop-plus'
 pkgname="${_pkgname}"
 pkgver=[[APP_VERSION]]
 pkgrel=1
@@ -15,11 +14,9 @@ pkgdesc="GitHub Desktop fork with extra features and improvements."
 arch=('x86_64' 'aarch64')
 url="https://github.com/desktop-plus/desktop-plus"
 license=('MIT')
-provides=(${_pkgname} ${_old_pkgname})
-conflicts=(${_pkgname} ${_old_pkgname})
-replaces=(${_old_pkgname})
+provides=(${_pkgname})
+conflicts=(${_pkgname})
 depends=(curl
-         libcurl-gnutls
          git
          gtk3
          libsecret
@@ -81,6 +78,8 @@ build() {
     export "$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_SECRET_GITLAB_NAME]]")"="$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_SECRET_GITLAB]]")"
     export "$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_ID_CODEBERG_NAME]]")"="$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_ID_CODEBERG]]")"
     export "$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_SECRET_CODEBERG_NAME]]")"="$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_SECRET_CODEBERG]]")"
+    export "$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_ID_GITEA_NAME]]")"="$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_ID_GITEA]]")"
+    export "$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_SECRET_GITEA_NAME]]")"="$(_deobfuscate "[[DESKTOP_OAUTH_CLIENT_SECRET_GITEA]]")"
     xvfb-run yarn build:prod
 }
 

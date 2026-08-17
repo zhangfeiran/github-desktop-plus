@@ -31,7 +31,8 @@ import { PushPullButtonDropDown } from './push-pull-button-dropdown'
 import { AriaLiveContainer } from '../accessibility/aria-live-container'
 import { enableResizingToolbarButtons } from '../../lib/feature-flag'
 import { assertNever } from '../../lib/fatal-error'
-import { RepoType } from '../../models/github-repository'
+import { GitHubRepository } from '../../models/github-repository'
+import { getForgejoName } from '../../lib/forgejo-name'
 import { formatCompactNumber } from '../../lib/format-number'
 
 export const DropdownItemClassName = 'push-pull-dropdown-item'
@@ -488,7 +489,7 @@ export class PushPullButton extends React.Component<
 
     if (aheadBehind === null) {
       return this.publishBranchButton(
-        repository.gitHubRepository?.type ?? null,
+        repository.gitHubRepository,
         this.push,
         this.props.shouldNudge
       )
@@ -577,11 +578,12 @@ export class PushPullButton extends React.Component<
   }
 
   private publishBranchButton(
-    repoType: RepoType | null,
+    gitHubRepository: GitHubRepository | null,
     onClick: () => void,
     shouldNudge: boolean
   ) {
-    const description = 'Publish this branch ' + this.getToRemoteLabel(repoType)
+    const description =
+      'Publish this branch ' + this.getToRemoteLabel(gitHubRepository)
 
     const className = classNames(
       this.defaultDropdownProps().className,
@@ -606,8 +608,12 @@ export class PushPullButton extends React.Component<
     )
   }
 
-  private getToRemoteLabel(repoType: RepoType | null) {
-    switch (repoType) {
+  private getToRemoteLabel(gitHubRepository: GitHubRepository | null) {
+    if (gitHubRepository === null) {
+      return 'to the remote'
+    }
+
+    switch (gitHubRepository.type) {
       case 'github':
         return 'to GitHub'
       case 'bitbucket':
@@ -618,12 +624,17 @@ export class PushPullButton extends React.Component<
         return 'to Gitee'
       case 'gitcode':
         return 'to GitCode'
-      case 'codeberg':
-        return 'to Codeberg'
+      case 'forgejo':
+        return `to ${getForgejoName(gitHubRepository.endpoint)}`
+      case 'gitea':
+        return 'to Gitea'
       case null:
         return 'to the remote'
       default:
-        assertNever(repoType, `Unknown repo type: ${repoType}`)
+        assertNever(
+          gitHubRepository.type,
+          `Unknown repo type: ${gitHubRepository.type}`
+        )
     }
   }
 

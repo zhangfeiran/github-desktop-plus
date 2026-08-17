@@ -323,7 +323,7 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
 
     const items = generateBranchContextMenuItems({
       branch,
-      repoType: this.props.repository.gitHubRepository?.type,
+      gitHubRepository: this.props.repository.gitHubRepository,
       onRenameBranch: this.onRenameBranch,
       onViewBranchOnGitHub:
         isRepositoryWithGitHubRepository(this.props.repository) &&
@@ -397,7 +397,8 @@ export class BranchDropdown extends React.Component<IBranchDropdownProps> {
       gitlab: `${gitHubRepository.htmlURL}/-/tree/${encodedBranchName}`,
       gitee: `${gitHubRepository.htmlURL}/tree/${encodedBranchName}`,
       gitcode: `${gitHubRepository.htmlURL}/tree/${encodedBranchName}`,
-      codeberg: `${gitHubRepository.htmlURL}/src/branch/${encodedBranchName}`,
+      forgejo: `${gitHubRepository.htmlURL}/src/branch/${encodedBranchName}`,
+      gitea: `${gitHubRepository.htmlURL}/src/branch/${encodedBranchName}`,
     }
     this.props.dispatcher.openInBrowser(VIEW_BRANCH_URL[gitHubRepository.type])
   }

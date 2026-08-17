@@ -1,6 +1,7 @@
 import * as Path from 'path'
 import type { Repository } from '../../models/repository'
 import type { WorktreeEntry, WorktreeType } from '../../models/worktree'
+import { pathExists } from '../path-exists'
 import { git } from './core'
 import { directoryExists } from '../directory-exists'
 import { readFile } from 'fs/promises'
@@ -129,6 +130,15 @@ export async function listWorktreesFromGitDir(
   return parseWorktreePorcelainOutput(result.stdout)
 }
 
+/**
+ * Resolve the path to the main worktree of the repository the given repository
+ * belongs to, or null if it is already the main worktree or cannot be resolved.
+ *
+ * Prefers the path recorded when Desktop switched onto the worktree, falling
+ * back to the worktree's administrative git dir for repositories recorded
+ * before that path was persisted. The fallback only works while that metadata
+ * exists — `git worktree remove` and `git worktree prune` both delete it.
+ */
 export async function listWorktreesFromGitDirFallback(
   gitDir: string
 ): Promise<ReadonlyArray<WorktreeEntry>> {
@@ -138,6 +148,7 @@ export async function listWorktreesFromGitDirFallback(
   if (!(await directoryExists(mainWorktreePath))) {
     return []
   }
+
   try {
     return await listWorktrees(mainWorktreePath)
   } catch {
@@ -146,16 +157,25 @@ export async function listWorktreesFromGitDirFallback(
 }
 
 /**
- * Path to the main worktree's working directory for a repository pointing at a
- * linked worktree, derived from on-disk Git metadata so it still works when the
- * linked worktree's working directory is gone.
- *
- * Returns null when it can't be determined (unknown `gitDir`) or doesn't exist.
+ * Resolve the main worktree path, preferring the persisted path and falling
+ * back to Git metadata for repositories recorded before persistence existed.
  */
-export async function getMainWorktreePath(
+export async function resolveMainWorktreePath(
   repository: Repository
 ): Promise<string | null> {
-  const { gitDir } = repository
+  const { mainWorktreePath, gitDir, path } = repository
+
+  if (mainWorktreePath !== undefined && mainWorktreePath === path) {
+    return null
+  }
+
+  // A recorded path can outlive the location it names, so treat it as a hint
+  // rather than the answer — otherwise a stale one would suppress the lookup
+  // below, which may well still work.
+  if (mainWorktreePath !== undefined && (await pathExists(mainWorktreePath))) {
+    return mainWorktreePath
+  }
+
   if (gitDir === undefined) {
     return null
   }
@@ -169,16 +189,12 @@ export async function getMainWorktreePath(
     return null
   }
 
-  const mainWorktreePath = translateWorktreePathForRepository(
+  const translatedPath = translateWorktreePathForRepository(
     repository,
     mainWorktree.path
   )
 
-  if (!(await directoryExists(mainWorktreePath))) {
-    return null
-  }
-
-  return mainWorktreePath
+  return translatedPath === path ? null : translatedPath
 }
 
 async function resolveCommonGitDir(gitDir: string): Promise<string> {
@@ -186,14 +202,13 @@ async function resolveCommonGitDir(gitDir: string): Promise<string> {
     return gitDir
   }
 
-  // Prefer the `commondir` file, but fall back to the conventional layout (two
-  // levels up) when it's unreadable, e.g. `git worktree remove` deleted the
-  // worktree's admin files too.
+  // Prefer the `commondir` file, but fall back to the conventional layout when
+  // git worktree remove has deleted the linked worktree's admin files.
   const conventionalCommonDir = Path.dirname(Path.dirname(gitDir))
   try {
     const fileContent = await readFile(Path.join(gitDir, 'commondir'), 'utf8')
-    const path = fileContent.replace(/\r?\n$/, '')
-    return path ? Path.resolve(gitDir, path) : conventionalCommonDir
+    const commonDir = fileContent.replace(/\r?\n$/, '')
+    return commonDir ? Path.resolve(gitDir, commonDir) : conventionalCommonDir
   } catch {
     return conventionalCommonDir
   }

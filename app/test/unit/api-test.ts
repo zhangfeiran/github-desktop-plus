@@ -7,7 +7,6 @@ import {
   getHTMLURL,
   getNextPagePathWithIncreasingPageSize,
   isGitHubHost,
-  isTrustedRemoteHost,
 } from '../../src/lib/api'
 import * as URL from 'url'
 
@@ -75,11 +74,6 @@ describe('API', () => {
         getGitCodeAPIEndpoint()
       )
       assert.equal(getHTMLURL(getGitCodeAPIEndpoint()), 'https://gitcode.com')
-    })
-
-    it('trusts Gitee and GitCode HTTPS remotes for browser links', () => {
-      assert(isTrustedRemoteHost('https://gitee.com/owner/repo.git'))
-      assert(isTrustedRemoteHost('https://gitcode.com/owner/repo.git'))
     })
 
     it('does not probe Gitee and GitCode as GitHub hosts', async () => {

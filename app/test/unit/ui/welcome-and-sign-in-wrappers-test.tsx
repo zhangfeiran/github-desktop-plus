@@ -37,6 +37,7 @@ function toDispatcher(dispatcher: TestDispatcher): Dispatcher {
 function createEndpointState(): IEndpointEntryState {
   return {
     kind: SignInStep.EndpointEntry,
+    apiType: 'enterprise',
     error: null,
     loading: false,
     resultCallback: noopResultCallback,
@@ -47,6 +48,7 @@ function createAuthenticationState(endpoint: string): IAuthenticationState {
   return {
     kind: SignInStep.Authentication,
     endpoint,
+    apiType: 'dotcom',
     error: null,
     loading: false,
     resultCallback: noopResultCallback,
@@ -57,9 +59,11 @@ function createExistingAccountWarningState(): IExistingAccountWarning {
   return {
     kind: SignInStep.ExistingAccountWarning,
     endpoint: 'https://api.github.com',
+    apiType: 'dotcom',
     existingAccount: new Account(
       'mona',
       'https://api.github.com',
+      'dotcom',
       'token',
       '',
       0,

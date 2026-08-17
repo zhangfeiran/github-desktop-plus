@@ -20,6 +20,7 @@ import { RepoRulesMetadataFailures } from '../../models/repo-rules'
 import { RepoRulesMetadataFailureList } from '../repository-rules/repo-rules-failure-list'
 import { Account } from '../../models/account'
 import { assertNever } from '../../lib/fatal-error'
+import { getForgejoName } from '../../lib/forgejo-name'
 
 export type CommitMessageAvatarWarningType =
   | 'none'
@@ -486,8 +487,10 @@ export class CommitMessageAvatar extends React.Component<
         return 'Bitbucket account'
       case 'gitlab':
         return 'GitLab account'
-      case 'codeberg':
-        return 'Codeberg account'
+      case 'forgejo':
+        return `${getForgejoName(account.endpoint)} account`
+      case 'gitea':
+        return 'Gitea account'
       default:
         assertNever(account.apiType, 'Unknown account type')
     }

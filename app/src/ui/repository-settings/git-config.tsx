@@ -19,6 +19,7 @@ import {
 import { showItemInFolder } from '../main-process-proxy'
 import memoizeOne from 'memoize-one'
 import { RepositoryGitSource } from '../../models/repository-git-source'
+import { UpdateBranchStrategy } from '../../lib/update-branch-strategy'
 
 interface IGitConfigProps {
   readonly account: Account | null
@@ -27,6 +28,7 @@ interface IGitConfigProps {
   readonly showInvalidExternalGitPathWarning: boolean
 
   readonly gitConfigLocation: GitConfigLocation
+  readonly updateBranchStrategy: UpdateBranchStrategy
   readonly name: string
   readonly email: string
   readonly globalName: string
@@ -44,6 +46,7 @@ interface IGitConfigProps {
   readonly onSshGitCommandChanged: (command: string) => void
   readonly onSshGitPathChanged: (path: string) => void
   readonly onSshGitUseWslPathTranslationChanged: (value: boolean) => void
+  readonly onUpdateBranchStrategyChanged: (value: UpdateBranchStrategy) => void
   readonly onNameChanged: (name: string) => void
   readonly onEmailChanged: (email: string) => void
 }
@@ -68,6 +71,21 @@ export class GitConfig extends React.Component<IGitConfigProps> {
 
   private onGitSourceChanged = (value: RepositoryGitSourceOption) => {
     this.props.onGitSourceChanged(value)
+  }
+
+  private onUpdateBranchStrategyChanged = (value: UpdateBranchStrategy) => {
+    this.props.onUpdateBranchStrategyChanged(value)
+  }
+
+  private renderUpdateBranchStrategyLabel = (key: UpdateBranchStrategy) => {
+    switch (key) {
+      case UpdateBranchStrategy.Merge:
+        return 'Merge the default branch into my current branch'
+      case UpdateBranchStrategy.Rebase:
+        return 'Rebase my current branch onto the default branch'
+      default:
+        return assertNever(key, `Unknown update branch strategy: ${key}`)
+    }
   }
 
   private renderConfigOptionLabel = (key: GitConfigLocation) => {
@@ -109,7 +127,26 @@ export class GitConfig extends React.Component<IGitConfigProps> {
       GitConfigLocation.Global
 
     return (
-      <DialogContent>
+      <DialogContent className="git-config-tab">
+        <div className="advanced-section update-branch-strategy">
+          <h2 id="update-branch-strategy-heading">
+            When updating from the default branch, I wish to
+          </h2>
+          <Row>
+            <RadioGroup<UpdateBranchStrategy>
+              ariaLabelledBy="update-branch-strategy-heading"
+              selectedKey={this.props.updateBranchStrategy}
+              radioButtonKeys={[
+                UpdateBranchStrategy.Merge,
+                UpdateBranchStrategy.Rebase,
+              ]}
+              onSelectionChanged={this.onUpdateBranchStrategyChanged}
+              renderRadioButtonLabelContents={
+                this.renderUpdateBranchStrategyLabel
+              }
+            />
+          </Row>
+        </div>
         <div className="advanced-section">
           <h2 id="git-source-heading">Git source</h2>
           <Row>

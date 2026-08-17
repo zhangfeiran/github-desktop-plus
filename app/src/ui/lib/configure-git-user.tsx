@@ -18,6 +18,7 @@ import { RadioButton } from './radio-button'
 import { Select } from './select'
 import { GitEmailNotFoundWarning } from './git-email-not-found-warning'
 import { assertNever } from '../../lib/fatal-error'
+import { getForgejoName } from '../../lib/forgejo-name'
 
 interface IConfigureGitUserProps {
   /** The logged-in accounts. */
@@ -240,8 +241,10 @@ export class ConfigureGitUser extends React.Component<
         return 'Bitbucket'
       case 'gitlab':
         return 'GitLab'
-      case 'codeberg':
-        return 'Codeberg'
+      case 'forgejo':
+        return getForgejoName(account.endpoint)
+      case 'gitea':
+        return 'Gitea'
       default:
         assertNever(account.apiType, 'Unknown account type')
     }

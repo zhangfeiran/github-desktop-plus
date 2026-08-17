@@ -8,7 +8,14 @@ import { Row } from '../lib/row'
 import { DialogContent, DialogPreferredFocusClassName } from '../dialog'
 import { Avatar } from '../lib/avatar'
 import { CallToAction } from '../lib/call-to-action'
+import { LinkButton } from '../lib/link-button'
 import { getHTMLURL } from '../../lib/api'
+import {
+  isCodebergCloud,
+  isGitLabCloud,
+  isGiteaCloud,
+} from '../../lib/endpoint-capabilities'
+import { SelfHostedApiType } from '../../lib/stores/sign-in-store'
 
 interface IAccountsProps {
   readonly accounts: ReadonlyArray<Account>
@@ -18,6 +25,8 @@ interface IAccountsProps {
   readonly onBitbucketSignIn: () => void
   readonly onGitLabSignIn: () => void
   readonly onCodebergSignIn: () => void
+  readonly onGiteaSignIn: () => void
+  readonly onSelfHostedSignIn: (apiType: SelfHostedApiType) => void
   readonly onLogout: (account: Account) => void
 }
 
@@ -26,7 +35,29 @@ enum SignInType {
   Enterprise,
   Bitbucket,
   GitLab,
-  Codeberg,
+  Forgejo,
+  Gitea,
+}
+
+const isSelfHostedAccount = (account: Account) =>
+  (account.apiType === 'gitlab' && !isGitLabCloud(account.endpoint)) ||
+  (account.apiType === 'forgejo' && !isCodebergCloud(account.endpoint)) ||
+  (account.apiType === 'gitea' && !isGiteaCloud(account.endpoint))
+
+/** The provider a section can add a self-hosted instance of, if any. */
+const selfHostedApiTypeFor = (
+  type: SignInType
+): SelfHostedApiType | undefined => {
+  switch (type) {
+    case SignInType.GitLab:
+      return 'gitlab'
+    case SignInType.Forgejo:
+      return 'forgejo'
+    case SignInType.Gitea:
+      return 'gitea'
+    default:
+      return undefined
+  }
 }
 
 export class Accounts extends React.Component<IAccountsProps, {}> {
@@ -45,8 +76,11 @@ export class Accounts extends React.Component<IAccountsProps, {}> {
         <h2>GitLab</h2>
         {this.renderMultipleGitLabAccounts()}
 
-        <h2>Codeberg</h2>
-        {this.renderMultipleCodebergAccounts()}
+        <h2>Codeberg / Forgejo</h2>
+        {this.renderMultipleForgejoAccounts()}
+
+        <h2>Gitea</h2>
+        {this.renderMultipleGiteaAccounts()}
       </DialogContent>
     )
   }
@@ -97,15 +131,25 @@ export class Accounts extends React.Component<IAccountsProps, {}> {
     )
   }
 
-  private renderMultipleCodebergAccounts() {
-    const codebergAccounts = this.props.accounts.filter(
-      a => a.apiType === 'codeberg'
+  private renderMultipleForgejoAccounts() {
+    const forgejoAccounts = this.props.accounts.filter(
+      a => a.apiType === 'forgejo'
     )
     return this.renderMultipleAccounts(
-      codebergAccounts,
-      SignInType.Codeberg,
+      forgejoAccounts,
+      SignInType.Forgejo,
       'Add Codeberg account',
       this.props.onCodebergSignIn
+    )
+  }
+
+  private renderMultipleGiteaAccounts() {
+    const giteaAccounts = this.props.accounts.filter(a => a.apiType === 'gitea')
+    return this.renderMultipleAccounts(
+      giteaAccounts,
+      SignInType.Gitea,
+      'Add Gitea account',
+      this.props.onGiteaSignIn
     )
   }
 
@@ -123,10 +167,31 @@ export class Accounts extends React.Component<IAccountsProps, {}> {
         {accounts.length === 0 ? (
           this.renderSignIn(type)
         ) : (
-          <Button onClick={onSignIn}>{buttonText}</Button>
+          <div className="add-account-button-row">
+            <Button onClick={onSignIn}>{buttonText}</Button>
+          </div>
         )}
+        {this.renderSelfHostedSignIn(type)}
       </>
     )
+  }
+
+  private renderSelfHostedSignIn(type: SignInType) {
+    const apiType = selfHostedApiTypeFor(type)
+
+    return apiType === undefined ? null : (
+      <Row>
+        <LinkButton onClick={this.getOnSelfHostedSignIn(apiType)}>
+          Add self-hosted instance…
+        </LinkButton>
+      </Row>
+    )
+  }
+
+  private getOnSelfHostedSignIn = (apiType: SelfHostedApiType) => {
+    return () => {
+      this.props.onSelfHostedSignIn(apiType)
+    }
   }
 
   private renderAccount(account: Account, type: SignInType) {
@@ -150,7 +215,8 @@ export class Accounts extends React.Component<IAccountsProps, {}> {
         <div className="user-info-container">
           <Avatar accounts={this.props.accounts} user={avatarUser} />
           <div className="user-info">
-            {account.apiType === 'enterprise' ? (
+            {account.apiType === 'enterprise' ||
+            isSelfHostedAccount(account) ? (
               <>
                 <div className="account-title">
                   {account.name === account.login
@@ -192,6 +258,10 @@ export class Accounts extends React.Component<IAccountsProps, {}> {
 
   private onCodebergSignIn = () => {
     this.props.onCodebergSignIn()
+  }
+
+  private onGiteaSignIn = () => {
+    this.props.onGiteaSignIn()
   }
 
   private renderSignIn(type: SignInType) {
@@ -246,7 +316,7 @@ export class Accounts extends React.Component<IAccountsProps, {}> {
             </div>
           </CallToAction>
         )
-      case SignInType.Codeberg:
+      case SignInType.Forgejo:
         return (
           <CallToAction
             actionTitle={signInTitle + ' Codeberg'}
@@ -254,6 +324,17 @@ export class Accounts extends React.Component<IAccountsProps, {}> {
           >
             <div>
               Sign in to your Codeberg account to access your repositories.
+            </div>
+          </CallToAction>
+        )
+      case SignInType.Gitea:
+        return (
+          <CallToAction
+            actionTitle={signInTitle + ' Gitea'}
+            onAction={this.onGiteaSignIn}
+          >
+            <div>
+              Sign in to your Gitea account to access your repositories.
             </div>
           </CallToAction>
         )

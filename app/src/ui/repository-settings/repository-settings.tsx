@@ -10,6 +10,7 @@ import {
   Repository,
   getForkContributionTarget,
   isPeriodicFetchEnabled,
+  getUpdateBranchStrategy,
   isRepositoryWithForkedGitHubRepository,
 } from '../../models/repository'
 import { Dialog, DialogError, DialogFooter } from '../dialog'
@@ -51,6 +52,7 @@ import {
 import { isWslRepositoryPath } from '../../lib/git/source'
 import { validateExternalGitExecutablePath } from '../../lib/git/validate-git-executable'
 import { showOpenDialog } from '../main-process-proxy'
+import { UpdateBranchStrategy } from '../../lib/update-branch-strategy'
 
 interface IRepositorySettingsProps {
   readonly initialSelectedTab?: RepositorySettingsTab
@@ -79,6 +81,7 @@ interface IRepositorySettingsState {
   readonly disabled: boolean
   readonly saveDisabled: boolean
   readonly gitConfigLocation: GitConfigLocation
+  readonly updateBranchStrategy: UpdateBranchStrategy
   readonly committerName: string
   readonly committerEmail: string
   readonly globalCommitterName: string
@@ -131,6 +134,7 @@ export class RepositorySettings extends React.Component<
       periodicFetchEnabled: isPeriodicFetchEnabled(props.repository),
       saveDisabled: false,
       gitConfigLocation: GitConfigLocation.Global,
+      updateBranchStrategy: getUpdateBranchStrategy(props.repository),
       committerName: '',
       committerEmail: '',
       globalCommitterName: '',
@@ -202,7 +206,6 @@ export class RepositorySettings extends React.Component<
       'user.email',
       true
     )
-
     const editors = await getAvailableEditors()
     const availableEditors = editors.map(e => e.editor) ?? null
 
@@ -404,6 +407,7 @@ export class RepositorySettings extends React.Component<
               this.state.showInvalidExternalGitPathWarning
             }
             gitConfigLocation={this.state.gitConfigLocation}
+            updateBranchStrategy={this.state.updateBranchStrategy}
             onGitConfigLocationChanged={this.onGitConfigLocationChanged}
             onGitSourceChanged={this.onGitSourceChanged}
             onExternalGitPathChanged={this.onExternalGitPathChanged}
@@ -413,6 +417,7 @@ export class RepositorySettings extends React.Component<
             onSshGitUseWslPathTranslationChanged={
               this.onSshGitUseWslPathTranslationChanged
             }
+            onUpdateBranchStrategyChanged={this.onUpdateBranchStrategyChanged}
             name={this.state.committerName}
             email={this.state.committerEmail}
             globalName={this.state.globalCommitterName}
@@ -533,7 +538,9 @@ export class RepositorySettings extends React.Component<
       this.state.forkContributionTarget !==
         this.props.repository.workflowPreferences.forkContributionTarget ||
       this.state.periodicFetchEnabled !==
-        isPeriodicFetchEnabled(this.props.repository)
+        isPeriodicFetchEnabled(this.props.repository) ||
+      this.state.updateBranchStrategy !==
+        getUpdateBranchStrategy(this.props.repository)
     ) {
       const workflowPreferences = {
         ...this.props.repository.workflowPreferences,
@@ -548,6 +555,7 @@ export class RepositorySettings extends React.Component<
           ...(this.state.periodicFetchEnabled
             ? { periodicFetchEnabled: true }
             : {}),
+          updateBranchStrategy: this.state.updateBranchStrategy,
         }
       )
     }
@@ -693,6 +701,10 @@ export class RepositorySettings extends React.Component<
           ? this.state.showInvalidExternalGitPathWarning
           : false,
     })
+  }
+
+  private onUpdateBranchStrategyChanged = (value: UpdateBranchStrategy) => {
+    this.setState({ updateBranchStrategy: value })
   }
 
   private onCommitterNameChanged = (committerName: string) => {

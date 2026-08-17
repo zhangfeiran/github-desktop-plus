@@ -83,9 +83,6 @@ const DefaultMinimapWidth = 7.5
 const MinMinimapWidth = 4
 const MaxMinimapWidth = 20
 
-let oldWidth = 0
-let oldHeight = 0
-
 export interface ISelection {
   /// Initial diff line number in the selection
   readonly from: number
@@ -245,11 +242,6 @@ interface ISideBySideDiffState {
   } | null
 }
 
-const listRowsHeightCache = new CellMeasurerCache({
-  defaultHeight: DefaultRowHeight,
-  fixedWidth: true,
-})
-
 export class SideBySideDiff extends React.Component<
   ISideBySideDiffProps,
   ISideBySideDiffState
@@ -264,10 +256,26 @@ export class SideBySideDiff extends React.Component<
   private horizontalScrollRef = React.createRef<HTMLDivElement>()
 
   /**
-   * Widest measured horizontal overflow (in pixels) across the diff rows that
-   * have been rendered so far due to virtualization.
+   * Measured row heights. Kept per instance because several diffs can be
+   * mounted at once.
    */
-  private maxContentOverflow = 0
+  private readonly listRowsHeightCache = new CellMeasurerCache({
+    defaultHeight: DefaultRowHeight,
+    fixedWidth: true,
+  })
+
+  /** Size of the diff list as of the last `checkOnResize` call. */
+  private lastListWidth = 0
+  private lastListHeight = 0
+
+  /**
+   * Width (in pixels) of the widest line across the diff rows that have been
+   * rendered so far due to virtualization.
+   */
+  private maxContentWidth = 0
+
+  /** Horizontal overflow (in pixels) currently applied to the scrollbar. */
+  private appliedContentOverflow = 0
 
   /** Pending animation frame handle used to coalesce overflow measurements. */
   private pendingWidthMeasurement: number | null = null
@@ -712,9 +720,13 @@ export class SideBySideDiff extends React.Component<
   }
 
   private onHorizontalScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    this.setHorizontalScrollOffset(event.currentTarget.scrollLeft)
+  }
+
+  private setHorizontalScrollOffset(offset: number) {
     this.containerRef.current?.style.setProperty(
       '--diff-horizontal-scroll-offset',
-      `${event.currentTarget.scrollLeft}px`
+      `${offset}px`
     )
   }
 
@@ -749,11 +761,9 @@ export class SideBySideDiff extends React.Component<
       this.horizontalScrollRef.current.scrollLeft = 0
     }
 
-    this.maxContentOverflow = 0
-    this.containerRef.current?.style.setProperty(
-      '--diff-horizontal-scroll-offset',
-      '0px'
-    )
+    this.maxContentWidth = 0
+    this.appliedContentOverflow = 0
+    this.setHorizontalScrollOffset(0)
     this.containerRef.current?.style.setProperty(
       '--diff-unwrapped-width',
       '100%'
@@ -761,11 +771,9 @@ export class SideBySideDiff extends React.Component<
   }
 
   /**
-   * Measures the widest horizontal overflow of the rendered diff rows and, if
-   * it exceeds the previously measured maximum, widens the shared horizontal
-   * scrollbar to match. A content wrapper clips its line, so its
-   * `scrollWidth - clientWidth` is exactly the distance that line must be
-   * panned to fully reveal it.
+   * Measures the widest line of the rendered diff rows and sizes the shared
+   * horizontal scrollbar so that it can pan the content by the part of it that
+   * doesn't fit in the viewport.
    */
   private scheduleUnwrappedWidthUpdate() {
     if (this.props.wrapDiffLines || this.pendingWidthMeasurement !== null) {
@@ -783,26 +791,42 @@ export class SideBySideDiff extends React.Component<
       return
     }
 
-    let maxOverflow = this.maxContentOverflow
     const wrappers =
       this.diffContainer.querySelectorAll<HTMLElement>('.content-wrapper')
+    let viewportWidth = Infinity
 
-    for (const wrapper of wrappers) {
-      if (wrapper.clientWidth === 0) {
+    for (const { clientWidth, scrollWidth } of wrappers) {
+      if (clientWidth === 0) {
         continue
       }
-      maxOverflow = Math.max(
-        maxOverflow,
-        wrapper.scrollWidth - wrapper.clientWidth
-      )
+      viewportWidth = Math.min(viewportWidth, clientWidth)
+
+      // A content wrapper clips its line, so an overflowing one reports the
+      // full width of that line. Lines that fit report the viewport width
+      // instead, which says nothing about the line, but they need no panning.
+      if (scrollWidth > clientWidth) {
+        this.maxContentWidth = Math.max(this.maxContentWidth, scrollWidth)
+      }
     }
 
-    if (maxOverflow !== this.maxContentOverflow) {
-      this.maxContentOverflow = maxOverflow
-      this.containerRef.current?.style.setProperty(
-        '--diff-unwrapped-width',
-        `calc(100% + ${maxOverflow}px)`
-      )
+    if (viewportWidth === Infinity) {
+      return
+    }
+
+    const overflow = Math.max(0, this.maxContentWidth - viewportWidth)
+    if (overflow === this.appliedContentOverflow) {
+      return
+    }
+
+    this.appliedContentOverflow = overflow
+    this.containerRef.current?.style.setProperty(
+      '--diff-unwrapped-width',
+      `calc(100% + ${overflow}px)`
+    )
+
+    const scrollbar = this.horizontalScrollRef.current
+    if (scrollbar !== null) {
+      this.setHorizontalScrollOffset(scrollbar.scrollLeft)
     }
   }
 
@@ -826,6 +850,8 @@ export class SideBySideDiff extends React.Component<
       }
 
       this.lastDiffStyleKey = newKey
+      this.maxContentWidth = 0
+      this.scheduleUnwrappedWidthUpdate()
       this.invalidateMeasurements()
     })
 
@@ -908,7 +934,7 @@ export class SideBySideDiff extends React.Component<
                 {({ height, width }) =>
                   this.checkOnResize(height, width) && (
                     <List
-                      deferredMeasurementCache={listRowsHeightCache}
+                      deferredMeasurementCache={this.listRowsHeightCache}
                       width={width}
                       height={height}
                       rowCount={rows.length}
@@ -978,10 +1004,16 @@ export class SideBySideDiff extends React.Component<
   }
 
   private checkOnResize = (height: number, width: number) => {
-    if (height !== oldHeight || width !== oldWidth) {
-      oldHeight = height
-      oldWidth = width
+    const widthChanged = width !== this.lastListWidth
+    const heightChanged = height !== this.lastListHeight
+    if (widthChanged || heightChanged) {
+      this.lastListWidth = width
+      this.lastListHeight = height
       this.clearListRowsHeightCache()
+
+      if (widthChanged) {
+        this.scheduleUnwrappedWidthUpdate()
+      }
     }
     return true
   }
@@ -1225,7 +1257,7 @@ export class SideBySideDiff extends React.Component<
 
     return (
       <CellMeasurer
-        cache={listRowsHeightCache}
+        cache={this.listRowsHeightCache}
         columnIndex={0}
         key={key}
         parent={parent}
@@ -1304,11 +1336,11 @@ export class SideBySideDiff extends React.Component<
   }
 
   private getRowHeight = (row: { index: number }) => {
-    return listRowsHeightCache.rowHeight(row) ?? DefaultRowHeight
+    return this.listRowsHeightCache.rowHeight(row) ?? DefaultRowHeight
   }
 
   private getMinimapRowHeight = (index: number): number => {
-    return listRowsHeightCache.getHeight(index, 0) ?? DefaultRowHeight
+    return this.listRowsHeightCache.getHeight(index, 0) ?? DefaultRowHeight
   }
 
   // Drives the minimap-width drag without React state so the diff list
@@ -1372,7 +1404,7 @@ export class SideBySideDiff extends React.Component<
   }
 
   private clearListRowsHeightCache = () => {
-    listRowsHeightCache.clearAll()
+    this.listRowsHeightCache.clearAll()
   }
 
   private async initDiffSyntaxMode() {
@@ -1682,10 +1714,11 @@ export class SideBySideDiff extends React.Component<
     // contains the mouse, we scroll to it and update the temporary selection.
     for (let index = 0; index < totalRows; index++) {
       // Use row height cache in order to do the math faster
-      let height = listRowsHeightCache.getHeight(index, 0)
+      let height = this.listRowsHeightCache.getHeight(index, 0)
       if (height === undefined) {
         list.recomputeRowHeights(index)
-        height = listRowsHeightCache.getHeight(index, 0) ?? DefaultRowHeight
+        height =
+          this.listRowsHeightCache.getHeight(index, 0) ?? DefaultRowHeight
       }
 
       if (

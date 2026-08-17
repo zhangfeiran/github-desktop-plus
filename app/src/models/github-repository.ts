@@ -1,3 +1,12 @@
+import {
+  BitbucketCloudDomain,
+  CodebergCloudDomain,
+  GiteeCloudDomain,
+  GiteaCloudDomain,
+  GitCodeCloudDomain,
+  GitLabCloudDomain,
+} from '../lib/api'
+import { findRegisteredEndpointForHost } from '../lib/endpoint-api-type-registry'
 import { createEqualityHash } from './equality-hash'
 import { Owner } from './owner'
 
@@ -9,7 +18,8 @@ export type RepoType =
   | 'gitlab'
   | 'gitee'
   | 'gitcode'
-  | 'codeberg'
+  | 'forgejo'
+  | 'gitea'
 
 /** A GitHub repository. */
 export class GitHubRepository {
@@ -101,17 +111,25 @@ export function hasWritePermission(
 
 export function deduceRepositoryType(url: string): RepoType {
   try {
-    const host = new URL(url).hostname
-    if (host === 'bitbucket.org') {
+    const parsed = new URL(url)
+    // The SSH port says nothing about the port the instance serves its web UI and API on
+    const host = parsed.protocol === 'ssh:' ? parsed.hostname : parsed.host
+    if (host === BitbucketCloudDomain) {
       return 'bitbucket'
-    } else if (host === 'gitlab.com') {
+    } else if (host === GitLabCloudDomain) {
       return 'gitlab'
-    } else if (host === 'gitee.com') {
+    } else if (host === GiteeCloudDomain) {
       return 'gitee'
-    } else if (host === 'gitcode.com') {
+    } else if (host === GitCodeCloudDomain) {
       return 'gitcode'
-    } else if (host === 'codeberg.org') {
-      return 'codeberg'
+    } else if (host === CodebergCloudDomain) {
+      return 'forgejo'
+    } else if (host === GiteaCloudDomain) {
+      return 'gitea'
+    }
+    const registered = findRegisteredEndpointForHost(host)
+    if (registered !== undefined) {
+      return registered.apiType
     }
     return 'github'
   } catch (e) {

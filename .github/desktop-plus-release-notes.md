@@ -1,27 +1,15 @@
-Desktop Plus v3.6.3
+Desktop Plus v3.6.4
 
-Upstream: [GitHub Desktop 3.6.3 release notes](https://github.com/desktop/desktop/releases/tag/release-3.6.3)
-
----
-
-## **Changes and improvements:**
-
-- [#178] We now support **Codeberg** accounts in Desktop Plus! Thank you @fl-f for your contribution!  
-  You can now sign in using your Codeberg account and:
-  - Clone repositories from within the app.
-  - Preview and create pull requests.
-  - View pull request status, including checks.
-  - Enjoy other minor UI improvements that make your experience with Codeberg better.
-
-- You can now rename stashes to make them easier to identify.  
-  Simply click the edit (pencil) icon next to the stash title, or right-click on a stash in the Changes list and select "Rename...".
-
-- All OAuth providers (GitHub, Bitbucket, GitLab, and Codeberg) now use PKCE (Proof Key for Code Exchange) for improved security. You shouldn't notice any difference in your sign-in experience, but if you encounter any problems, please [open an issue](https://github.com/desktop-plus/desktop-plus/issues/new/choose).
+Upstream: [GitHub Desktop 3.6.4 release notes](https://github.com/desktop/desktop/releases/tag/release-3.6.4)
 
 ## Fixes:
 
-- [#213] Handle autosquash prefixes properly when rendering conventional commit badges.
+- Fixed parsing of SSH remotes for repositories that belong to GitLab subgroups. For example: `git@gitlab.com:my-org/subgroup/my-repo.git`.
+  Please note that SSH remote parsing remains a best-effort implementation and may not work on [some edge cases](https://github.com/desktop-plus/desktop-plus/issues/233). I recommend cloning repositories inside the app, which will use HTTPS instead of SSH.
 
-- [#215] Avoid showing the developer tools panel when quickly hovering over PRs in the PR list.
+- Fixed an inconsistent User-Agent sent by the app when making API requests.
 
-- The native title bar now shows the correct Desktop Plus logo instead of the upstream (GitHub Desktop) logo.
+- Replaced some fork-specific patches with proper upstream fixes. You should not notice any difference in behavior, but if you find any regressions please [open an issue](https://github.com/desktop-plus/desktop-plus/issues/new/choose). Functionality that could be affected by these changes includes:
+  - Running Git Hooks that read from `stdin`.
+  - Returning to the main worktree after the currently selected worktree has been deleted outside of the app.
+  - Linux: Git operations using HTTPS now use `libcurl` instead of `libcurl-gnutls`.

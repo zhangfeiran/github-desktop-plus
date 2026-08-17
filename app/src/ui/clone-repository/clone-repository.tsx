@@ -1,16 +1,21 @@
 import * as Path from 'path'
 import * as React from 'react'
 import { Dispatcher } from '../dispatcher'
-import { getDefaultDir, setDefaultDir } from '../lib/default-dir'
+import {
+  getDefaultDirForAccount,
+  setDefaultDirForAccount,
+} from '../lib/default-dir'
 import { Account, AccountAPIType } from '../../models/account'
 import { FoldoutType } from '../../lib/app-state'
 import {
   IRepositoryIdentifier,
   parseRepositoryIdentifier,
   parseRemote,
+  sanitizeCloneName,
 } from '../../lib/remote-parsing'
 import { findAccountForRemoteURL } from '../../lib/find-account'
 import { API, IAPIRepository, IAPIRepositoryCloneInfo } from '../../lib/api'
+import { getForgejoNameForAccounts } from '../../lib/forgejo-name'
 import { Dialog, DialogError, DialogFooter, DialogContent } from '../dialog'
 import { TabBar } from '../tab-bar'
 import {
@@ -73,17 +78,6 @@ interface ICloneRepositoryProps {
 }
 
 interface ICloneRepositoryState {
-  /** A copy of the path state field which is set when the component initializes.
-   *
-   *  This value, as opposed to the path state variable, doesn't change for the
-   *  lifetime of the component. Used to keep track of whether the user has
-   *  modified the path state field which influences whether we show a
-   *  warning about the directory already existing or not.
-   *
-   *  See the onWindowFocus method for more information.
-   */
-  readonly initialPath: string | null
-
   /** Are we currently trying to load the entered repository? */
   readonly loading: boolean
 
@@ -113,9 +107,15 @@ interface ICloneRepositoryState {
 
   /**
    * The persisted state of the CloneGitHubRepository component for
-   * the Codeberg account.
+   * the Forgejo account.
    */
-  readonly codebergTabState: IGitHubTabState
+  readonly forgejoTabState: IGitHubTabState
+
+  /**
+   * The persisted state of the CloneGitHubRepository component for
+   * the Gitea account.
+   */
+  readonly giteaTabState: IGitHubTabState
 
   /**
    * The persisted state of the CloneGenericRepository component.
@@ -207,7 +207,6 @@ export class CloneRepository extends React.Component<
     }
 
     this.state = {
-      initialPath: defaultDirectory,
       loading: false,
       dotComTabState: {
         kind: 'dotcom',
@@ -249,15 +248,24 @@ export class CloneRepository extends React.Component<
             .filter(account => account.apiType === 'gitlab')
             .at(0) || null,
       },
-      codebergTabState: {
-        kind: 'codeberg',
+      forgejoTabState: {
+        kind: 'forgejo',
         filterText: '',
         selectedItem: null,
         ...initialBaseTabState,
         selectedAccount:
           props.accounts
-            .filter(account => account.apiType === 'codeberg')
+            .filter(account => account.apiType === 'forgejo')
             .at(0) || null,
+      },
+      giteaTabState: {
+        kind: 'gitea',
+        filterText: '',
+        selectedItem: null,
+        ...initialBaseTabState,
+        selectedAccount:
+          props.accounts.filter(account => account.apiType === 'gitea').at(0) ||
+          null,
       },
       urlTabState: {
         kind: 'url',
@@ -280,8 +288,10 @@ export class CloneRepository extends React.Component<
         return 'bitbucket'
       case CloneRepositoryTab.GitLab:
         return 'gitlab'
-      case CloneRepositoryTab.Codeberg:
-        return 'codeberg'
+      case CloneRepositoryTab.Forgejo:
+        return 'forgejo'
+      case CloneRepositoryTab.Gitea:
+        return 'gitea'
       case CloneRepositoryTab.Generic:
         return 'generic'
       default:
@@ -315,30 +325,21 @@ export class CloneRepository extends React.Component<
   }
 
   private initializePath = async () => {
-    const initialPath = await getDefaultDir()
-    const dotComTabState = { ...this.state.dotComTabState, path: initialPath }
-    const enterpriseTabState = {
-      ...this.state.enterpriseTabState,
-      path: initialPath,
-    }
-    const bitbucketTabState = {
-      ...this.state.bitbucketTabState,
-      path: initialPath,
-    }
-    const gitlabTabState = { ...this.state.gitlabTabState, path: initialPath }
-    const codebergTabState = {
-      ...this.state.codebergTabState,
-      path: initialPath,
-    }
-    const urlTabState = { ...this.state.urlTabState, path: initialPath }
+    const withDefaultPath = async <T extends IBaseTabState>(
+      tabState: T
+    ): Promise<T> => ({
+      ...tabState,
+      path: await getDefaultDirForAccount(tabState.selectedAccount),
+    })
+
     this.setState({
-      initialPath,
-      dotComTabState,
-      enterpriseTabState,
-      bitbucketTabState,
-      gitlabTabState,
-      codebergTabState,
-      urlTabState,
+      dotComTabState: await withDefaultPath(this.state.dotComTabState),
+      enterpriseTabState: await withDefaultPath(this.state.enterpriseTabState),
+      bitbucketTabState: await withDefaultPath(this.state.bitbucketTabState),
+      gitlabTabState: await withDefaultPath(this.state.gitlabTabState),
+      forgejoTabState: await withDefaultPath(this.state.forgejoTabState),
+      giteaTabState: await withDefaultPath(this.state.giteaTabState),
+      urlTabState: await withDefaultPath(this.state.urlTabState),
     })
 
     // Update the local path based on the current url now that we have an
@@ -412,8 +413,12 @@ export class CloneRepository extends React.Component<
         return 'Bitbucket'
       case CloneRepositoryTab.GitLab:
         return 'GitLab'
-      case CloneRepositoryTab.Codeberg:
-        return 'Codeberg'
+      case CloneRepositoryTab.Forgejo:
+        return getForgejoNameForAccounts(
+          this.getAccountsForTab(tab, this.props.accounts)
+        )
+      case CloneRepositoryTab.Gitea:
+        return 'Gitea'
       case CloneRepositoryTab.Generic:
         return 'URL'
       default:
@@ -518,7 +523,24 @@ export class CloneRepository extends React.Component<
         { selectedAccount: account },
         this.props.selectedTab
       )
+      this.updatePathForAccount(account, this.props.selectedTab)
     }
+  }
+
+  /**
+   * Point the path field of the given tab to the last clone location used
+   * with the given account, keeping the repository name entered by the user.
+   */
+  private updatePathForAccount = async (
+    account: Account,
+    tab: CloneRepositoryTab
+  ) => {
+    const defaultDir = await getDefaultDirForAccount(account)
+    const { lastParsedIdentifier } = this.getTabState(tab)
+    const path = lastParsedIdentifier
+      ? Path.join(defaultDir, lastParsedIdentifier.name)
+      : defaultDir
+    this.setTabState({ path }, tab, this.validatePath)
   }
 
   private getAccountForTab(tab: CloneRepositoryTab): Account | null {
@@ -537,8 +559,10 @@ export class CloneRepository extends React.Component<
       return this.state.bitbucketTabState
     } else if (tab === CloneRepositoryTab.GitLab) {
       return this.state.gitlabTabState
-    } else if (tab === CloneRepositoryTab.Codeberg) {
-      return this.state.codebergTabState
+    } else if (tab === CloneRepositoryTab.Forgejo) {
+      return this.state.forgejoTabState
+    } else if (tab === CloneRepositoryTab.Gitea) {
+      return this.state.giteaTabState
     } else {
       return assertNever(tab, `Unknown tab: ${tab}`)
     }
@@ -618,11 +642,21 @@ export class CloneRepository extends React.Component<
         }),
         callback
       )
-    } else if (tab === CloneRepositoryTab.Codeberg) {
+    } else if (tab === CloneRepositoryTab.Forgejo) {
       this.setState(
         prevState => ({
-          codebergTabState: {
-            ...prevState.codebergTabState,
+          forgejoTabState: {
+            ...prevState.forgejoTabState,
+            ...state,
+          },
+        }),
+        callback
+      )
+    } else if (tab === CloneRepositoryTab.Gitea) {
+      this.setState(
+        prevState => ({
+          giteaTabState: {
+            ...prevState.giteaTabState,
             ...state,
           },
         }),
@@ -660,9 +694,13 @@ export class CloneRepository extends React.Component<
       this.setState(prevState => ({
         gitlabTabState: merge(prevState.gitlabTabState, tabState),
       }))
-    } else if (tab === CloneRepositoryTab.Codeberg) {
+    } else if (tab === CloneRepositoryTab.Forgejo) {
       this.setState(prevState => ({
-        codebergTabState: merge(prevState.codebergTabState, tabState),
+        forgejoTabState: merge(prevState.forgejoTabState, tabState),
+      }))
+    } else if (tab === CloneRepositoryTab.Gitea) {
+      this.setState(prevState => ({
+        giteaTabState: merge(prevState.giteaTabState, tabState),
       }))
     } else {
       return assertNever(tab, `Unknown tab: ${tab}`)
@@ -686,16 +724,19 @@ export class CloneRepository extends React.Component<
   }
 
   private getSignInAction(tab: NonGenericCloneRepositoryTab) {
+    const { dispatcher } = this.props
     if (tab === CloneRepositoryTab.DotCom) {
-      return this.props.dispatcher.showDotComSignInDialog
+      return () => dispatcher.showDotComSignInDialog()
     } else if (tab === CloneRepositoryTab.Enterprise) {
-      return this.props.dispatcher.showEnterpriseSignInDialog
+      return () => dispatcher.showEnterpriseSignInDialog()
     } else if (tab === CloneRepositoryTab.Bitbucket) {
-      return this.props.dispatcher.showBitbucketSignInDialog
+      return () => dispatcher.showBitbucketSignInDialog()
     } else if (tab === CloneRepositoryTab.GitLab) {
-      return this.props.dispatcher.showGitLabSignInDialog
-    } else if (tab === CloneRepositoryTab.Codeberg) {
-      return this.props.dispatcher.showCodebergSignInDialog
+      return () => dispatcher.showGitLabSignInDialog()
+    } else if (tab === CloneRepositoryTab.Forgejo) {
+      return () => dispatcher.showCodebergSignInDialog()
+    } else if (tab === CloneRepositoryTab.Gitea) {
+      return () => dispatcher.showGiteaSignInDialog()
     } else {
       return assertNever(tab, `Unknown sign in tab: ${tab}`)
     }
@@ -716,9 +757,9 @@ export class CloneRepository extends React.Component<
 
   private validatePath = async () => {
     const tabState = this.getSelectedTabState()
-    const { path, url, error } = tabState
-    const { initialPath } = this.state
-    const isDefaultPath = initialPath === path
+    const { path, url, error, selectedAccount } = tabState
+    const isDefaultPath =
+      (await getDefaultDirForAccount(selectedAccount)) === path
     const isURLNotEntered = url === ''
 
     if (isDefaultPath && isURLNotEntered) {
@@ -759,9 +800,10 @@ export class CloneRepository extends React.Component<
 
     const tabState = this.getSelectedTabState()
     const lastParsedIdentifier = tabState.lastParsedIdentifier
-    const directory = lastParsedIdentifier
-      ? Path.join(path, lastParsedIdentifier.name)
-      : path
+    const safeName = lastParsedIdentifier
+      ? sanitizeCloneName(lastParsedIdentifier.name)
+      : null
+    const directory = safeName ? Path.join(path, safeName) : path
 
     this.setSelectedTabState(
       { path: directory, error: null },
@@ -802,17 +844,19 @@ export class CloneRepository extends React.Component<
       return
     }
 
+    const safeName = parsed ? sanitizeCloneName(parsed.name) : null
+
     let newPath: string
 
     const dirPath = tabState.path
     if (lastParsedIdentifier) {
-      if (parsed) {
-        newPath = Path.join(Path.dirname(dirPath), parsed.name)
+      if (safeName) {
+        newPath = Path.join(Path.dirname(dirPath), safeName)
       } else {
         newPath = Path.dirname(dirPath)
       }
-    } else if (parsed) {
-      newPath = Path.join(dirPath, parsed.name)
+    } else if (safeName) {
+      newPath = Path.join(dirPath, safeName)
     } else {
       newPath = dirPath
     }
@@ -951,10 +995,11 @@ export class CloneRepository extends React.Component<
     login: string | null,
     defaultBranch?: string
   ) {
+    const { selectedAccount } = this.getSelectedTabState()
     this.props.dispatcher.clone(url, path, login, { defaultBranch })
     this.props.onDismissed()
 
-    setDefaultDir(Path.resolve(path, '..'))
+    setDefaultDirForAccount(Path.resolve(path, '..'), selectedAccount)
   }
 
   private onWindowFocus = () => {

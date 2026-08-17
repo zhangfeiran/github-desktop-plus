@@ -1,15 +1,14 @@
 import {
-  getMainWorktreePath,
-  getRepositoryType,
   listWorktrees,
   listWorktreesFromGitDir,
   parseWorktreePorcelainOutput,
+  resolveMainWorktreePath,
   translateWorktreePathForRepository,
 } from '../../../src/lib/git'
 import assert from 'node:assert'
 import * as Path from 'path'
 import { realpath, rm } from 'fs/promises'
-import { describe, it } from 'node:test'
+import { describe, it, type TestContext } from 'node:test'
 import { exec } from 'dugite'
 import { setupEmptyRepository } from '../../helpers/repositories'
 import { makeCommit } from '../../helpers/repository-scaffolding'
@@ -384,14 +383,66 @@ describe('git/worktree', () => {
     })
   })
 
-  describe('getMainWorktreePath', () => {
-    /** Build a Repository pointing at `path`, populating its real `gitDir`. */
-    async function repositoryAt(path: string): Promise<Repository> {
-      const type = await getRepositoryType(path)
-      const gitDir = type.kind === 'regular' ? type.gitDir : undefined
-      return new Repository(
-        path,
-        -1,
+  describe('resolveMainWorktreePath', () => {
+    /**
+     * Sets up a repository with a single linked worktree and returns the
+     * realpath'd main worktree path, the linked worktree path and the linked
+     * worktree's admin git dir.
+     */
+    async function setupWorktree(t: TestContext) {
+      const repo = await setupEmptyRepository(t, 'main')
+      await makeCommit(repo, {
+        entries: [{ path: 'README', contents: 'hello' }],
+      })
+      await exec(['branch', 'feature-a'], repo.path)
+
+      const worktreePath = repo.path + '-wt-a'
+      await exec(['worktree', 'add', worktreePath, 'feature-a'], repo.path)
+
+      const { stdout } = await exec(['rev-parse', '--git-dir'], worktreePath)
+
+      return {
+        repo,
+        mainPath: await realpath(repo.path),
+        worktreePath,
+        gitDir: Path.resolve(worktreePath, stdout.trim()),
+      }
+    }
+
+    it('resolves from the persisted path once the worktree metadata is gone', async t => {
+      const { repo, mainPath, worktreePath, gitDir } = await setupWorktree(t)
+
+      // Desktop switched onto the worktree, recording the main worktree it
+      // came from.
+      const selected = new Repository(
+        worktreePath,
+        1,
+        null,
+        false,
+        null,
+        null,
+        null,
+        {},
+        null,
+        null,
+        false,
+        null,
+        gitDir,
+        mainPath
+      )
+
+      // `git worktree remove` deletes the working directory *and* the admin
+      // metadata under <main>/.git/worktrees/<name>.
+      await exec(['worktree', 'remove', '--force', worktreePath], repo.path)
+
+      assert.strictEqual(await resolveMainWorktreePath(selected), mainPath)
+    })
+
+    it('falls back to the conventional common dir after git worktree remove', async t => {
+      const { repo, mainPath, worktreePath, gitDir } = await setupWorktree(t)
+      const selected = new Repository(
+        worktreePath,
+        1,
         null,
         false,
         null,
@@ -404,75 +455,20 @@ describe('git/worktree', () => {
         null,
         gitDir
       )
-    }
 
-    it('returns the main worktree path for a removed linked worktree', async t => {
-      const repo = await setupEmptyRepository(t, 'main')
-      await makeCommit(repo, {
-        entries: [{ path: 'README', contents: 'hello' }],
-      })
-      await exec(['branch', 'feature-a'], repo.path)
+      await exec(['worktree', 'remove', '--force', worktreePath], repo.path)
 
-      const worktreePath = repo.path + '-wt-a'
-      await exec(['worktree', 'add', worktreePath, 'feature-a'], repo.path)
-
-      const linkedRepo = await repositoryAt(worktreePath)
-
-      await rm(worktreePath, { recursive: true, force: true })
-
-      assert.strictEqual(
-        await getMainWorktreePath(linkedRepo),
-        await realpath(repo.path)
-      )
+      assert.strictEqual(await resolveMainWorktreePath(selected), mainPath)
     })
 
-    it('returns the main worktree path when the linked worktree was fully removed with `git worktree remove`', async t => {
-      const repo = await setupEmptyRepository(t, 'main')
-      await makeCommit(repo, {
-        entries: [{ path: 'README', contents: 'hello' }],
-      })
-      await exec(['branch', 'feature-a'], repo.path)
-      await exec(['branch', 'feature-b'], repo.path)
+    it('falls back to the git dir when no path was persisted', async t => {
+      const { mainPath, worktreePath, gitDir } = await setupWorktree(t)
 
-      const worktreeA = repo.path + '-wt-a'
-      const worktreeB = repo.path + '-wt-b'
-      await exec(['worktree', 'add', worktreeA, 'feature-a'], repo.path)
-      await exec(['worktree', 'add', worktreeB, 'feature-b'], repo.path)
-
-      const linkedRepo = await repositoryAt(worktreeA)
-
-      // `git worktree remove` also deletes the admin files (so `commondir` is
-      // unreadable); worktree B keeps `.git/worktrees` itself on disk.
-      await exec(['worktree', 'remove', '--force', worktreeA], repo.path)
-
-      assert.strictEqual(
-        await getMainWorktreePath(linkedRepo),
-        await realpath(repo.path)
-      )
-    })
-
-    it('returns its own path when called on the main worktree', async t => {
-      const repo = await setupEmptyRepository(t, 'main')
-      await makeCommit(repo, {
-        entries: [{ path: 'README', contents: 'hello' }],
-      })
-
-      const mainRepo = await repositoryAt(repo.path)
-      assert.strictEqual(
-        await getMainWorktreePath(mainRepo),
-        Path.normalize(repo.path)
-      )
-    })
-
-    it('returns null when the repository gitDir is unknown', async t => {
-      const repo = await setupEmptyRepository(t, 'main')
-      assert.strictEqual(await getMainWorktreePath(repo), null)
-    })
-
-    it('returns null when the main worktree no longer exists on disk', async () => {
-      const missingRepo = new Repository(
-        Path.normalize('/this/path/does/not/exist'),
-        -1,
+      // A repository record written before the main worktree path was
+      // persisted has a git dir but no main worktree path.
+      const selected = new Repository(
+        worktreePath,
+        1,
         null,
         false,
         null,
@@ -483,10 +479,71 @@ describe('git/worktree', () => {
         null,
         false,
         null,
-        Path.normalize('/this/path/does/not/exist/.git/worktrees/foo')
+        gitDir
       )
 
-      assert.strictEqual(await getMainWorktreePath(missingRepo), null)
+      // A plain delete leaves the admin metadata intact, so the worktree set
+      // is still discoverable through it.
+      await rm(worktreePath, { recursive: true, force: true })
+
+      assert.strictEqual(await resolveMainWorktreePath(selected), mainPath)
+    })
+
+    it('returns null when the repository is already the main worktree', async t => {
+      const { repo, mainPath } = await setupWorktree(t)
+
+      const selected = new Repository(
+        mainPath,
+        1,
+        null,
+        false,
+        null,
+        null,
+        null,
+        {},
+        null,
+        null,
+        false,
+        null,
+        Path.join(repo.path, '.git'),
+        mainPath
+      )
+
+      assert.strictEqual(await resolveMainWorktreePath(selected), null)
+    })
+
+    it('falls back to the git dir when the persisted path is stale', async t => {
+      const { mainPath, worktreePath, gitDir } = await setupWorktree(t)
+
+      // A persisted path can outlive the location it names — a repository moved
+      // outside Desktop, say. It shouldn't stop us resolving the main worktree
+      // by the means that still work.
+      const selected = new Repository(
+        worktreePath,
+        1,
+        null,
+        false,
+        null,
+        null,
+        null,
+        {},
+        null,
+        null,
+        false,
+        null,
+        gitDir,
+        Path.join(mainPath, 'no', 'longer', 'here')
+      )
+
+      assert.strictEqual(await resolveMainWorktreePath(selected), mainPath)
+    })
+
+    it('returns null when neither a persisted path nor a git dir is available', async t => {
+      const { worktreePath } = await setupWorktree(t)
+
+      const selected = new Repository(worktreePath, 1, null, false)
+
+      assert.strictEqual(await resolveMainWorktreePath(selected), null)
     })
   })
 })

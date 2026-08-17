@@ -141,6 +141,7 @@ import { ValidNotificationPullRequestReviewState } from '../../lib/valid-notific
 import { UnreachableCommitsTab } from '../history/unreachable-commits-dialog'
 import { sendNonFatalException } from '../../lib/helpers/non-fatal-exception'
 import { SignInResult } from '../../lib/stores/sign-in-store'
+import { SelfHostedApiType } from '../../lib/stores/sign-in-store'
 import { ICustomIntegration } from '../../lib/custom-integration'
 import { isAbsolute } from 'path'
 import { CLIAction } from '../../lib/cli-action'
@@ -668,6 +669,13 @@ export class Dispatcher {
           baseBranch,
           commits,
         })
+        // Rebase normally starts from an already open branch-picker dialog.
+        // Direct callers (such as Update from…) need to open the warning
+        // themselves so the operation never remains blocked off-screen.
+        this.showPopup({
+          type: PopupType.MultiCommitOperation,
+          repository,
+        })
         return
       }
     }
@@ -817,9 +825,15 @@ export class Dispatcher {
   public checkoutBranch(
     repository: Repository,
     branch: Branch,
-    strategy?: UncommittedChangesStrategy
+    strategy?: UncommittedChangesStrategy,
+    onCheckedOut?: () => Promise<void>
   ): Promise<Repository> {
-    return this.appStore._checkoutBranch(repository, branch, strategy)
+    return this.appStore._checkoutBranch(
+      repository,
+      branch,
+      strategy,
+      onCheckedOut
+    )
   }
 
   /** Check out the given commit. */
@@ -858,6 +872,17 @@ export class Dispatcher {
   public async pullAllRepositories(): Promise<void> {
     try {
       await this.appStore._pullAllRepositories()
+    } catch (error) {
+      this.postError(error)
+    }
+  }
+
+  /** Pull each of the given repositories (e.g. all repositories in a group). */
+  public async pullRepositories(
+    repositories: ReadonlyArray<Repository>
+  ): Promise<void> {
+    try {
+      await this.appStore._pullRepositories(repositories)
     } catch (error) {
       this.postError(error)
     }
@@ -990,6 +1015,20 @@ export class Dispatcher {
     newGroupName: string | null
   ): Promise<void> {
     return this.appStore._changeRepositoryGroupName(repository, newGroupName)
+  }
+
+  /**
+   * Assigns several repositories to a group at once, or clears their group when
+   * the name is null.
+   */
+  public changeRepositoriesGroupName(
+    repositories: ReadonlyArray<Repository>,
+    newGroupName: string | null
+  ): Promise<void> {
+    return this.appStore._changeRepositoriesGroupName(
+      repositories,
+      newGroupName
+    )
   }
 
   /** Changes the repository's default branch */
@@ -1957,6 +1996,26 @@ export class Dispatcher {
     this.appStore._beginCodebergSignIn(resultCallback)
   }
 
+  public beginGiteaSignIn(resultCallback: (result: SignInResult) => void) {
+    this.appStore._beginGiteaSignIn(resultCallback)
+  }
+
+  public beginSelfHostedSignIn(
+    apiType: SelfHostedApiType,
+    resultCallback?: (result: SignInResult) => void
+  ) {
+    this.appStore._beginSelfHostedSignIn(apiType, resultCallback)
+  }
+
+  /**
+   * Attempt to complete a self-hosted sign in with the given personal access
+   * token. This method must only be called when the sign in store is in the
+   * token entry step.
+   */
+  public setSignInToken(token: string): Promise<void> {
+    return this.appStore._setSignInToken(token)
+  }
+
   public beginBrowserBasedSignIn(
     endpoint: string,
     resultCallback?: (result: SignInResult) => void
@@ -2058,6 +2117,32 @@ export class Dispatcher {
     resultCallback?: (result: SignInResult) => void
   ): Promise<void> {
     this.appStore._beginCodebergSignIn(resultCallback)
+    this.appStore._showPopup({ type: PopupType.SignIn })
+  }
+
+  public async showGiteaSignInDialog(
+    resultCallback?: (result: SignInResult) => void
+  ): Promise<void> {
+    this.appStore._beginGiteaSignIn(resultCallback)
+    this.appStore._showPopup({ type: PopupType.SignIn })
+  }
+
+  /**
+   * Show the sign in dialog for a self-hosted instance of a third-party
+   * provider, optionally skipping the address entry step when the instance is
+   * already known.
+   */
+  public async showSelfHostedSignInDialog(
+    apiType: SelfHostedApiType,
+    webBaseUrl?: string,
+    resultCallback?: (result: SignInResult) => void
+  ): Promise<void> {
+    this.appStore._beginSelfHostedSignIn(apiType, resultCallback)
+
+    if (webBaseUrl !== undefined) {
+      this.appStore._setSignInEndpoint(webBaseUrl)
+    }
+
     this.appStore._showPopup({ type: PopupType.SignIn })
   }
 
@@ -2930,6 +3015,21 @@ export class Dispatcher {
 
     await this.appStore._fetch(repository, FetchType.UserInitiatedTask)
     await this.appStore._resetHardToUpstream(repository)
+  }
+
+  /**
+   * Switch the repository to its default branch and pull it. Used to recover
+   * from a pull that failed because the current branch's remote branch no
+   * longer exists.
+   */
+  public async switchToDefaultBranchAndPull(
+    repository: Repository,
+    staleBranchToDelete: string | null = null
+  ): Promise<void> {
+    return this.appStore._switchToDefaultBranchAndPull(
+      repository,
+      staleBranchToDelete
+    )
   }
 
   public setConfirmDiscardStashSetting(value: boolean) {
