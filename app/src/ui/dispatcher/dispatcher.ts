@@ -1,5 +1,4 @@
 import { Disposable } from 'event-kit'
-import { clipboard } from 'electron'
 
 import {
   IAPIOrganization,
@@ -109,6 +108,7 @@ import {
   executeMenuItem,
   moveToApplicationsFolder,
   isWindowFocused,
+  writeClipboardText,
 } from '../main-process-proxy'
 import {
   CommitStatusStore,
@@ -2726,6 +2726,9 @@ export class Dispatcher {
       case RetryActionType.ResetAndPull:
         return this.resetAndPull(retryAction.repository)
       case RetryActionType.PopStash:
+        if (retryAction.keepStash) {
+          return this.applyStash(retryAction.repository, retryAction.stashEntry)
+        }
         return this.popStash(retryAction.repository, retryAction.stashEntry)
       default:
         return assertNever(retryAction, `Unknown retry action: ${retryAction}`)
@@ -3276,6 +3279,14 @@ export class Dispatcher {
   /** Pop the given stash in the given repository */
   public popStash(repository: Repository, stashEntry: IStashEntry) {
     return this.appStore._popStashEntry(repository, stashEntry)
+  }
+
+  /**
+   * Apply the given stash in the given repository, keeping the stash entry
+   * so that the changes can be restored again later.
+   */
+  public applyStash(repository: Repository, stashEntry: IStashEntry) {
+    return this.appStore._applyStashEntry(repository, stashEntry)
   }
 
   /** Sets or clears (`null`) the custom name of the given stash */
@@ -4686,13 +4697,12 @@ export class Dispatcher {
   }
 
   public copyPathsToClipboard(paths: ReadonlyArray<string>) {
-    clipboard.writeText(
-      paths
-        .map(p =>
-          convertToCopyPath(p, this.appStore.getState().copyPathNormalization)
-        )
-        .join(EOL)
-    )
+    const text = paths
+      .map(p =>
+        convertToCopyPath(p, this.appStore.getState().copyPathNormalization)
+      )
+      .join(EOL)
+    writeClipboardText(text)
   }
 
   public setBranchSortOrder(branchSortOrder: BranchSortOrder) {

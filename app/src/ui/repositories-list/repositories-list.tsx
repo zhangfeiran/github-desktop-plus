@@ -9,12 +9,17 @@ import {
   Repositoryish,
   RepositoryListGroup,
   getGroupKey,
+  getGroupForRepository,
 } from './group-repositories'
 import {
   getPinnedRepositories,
   addPinnedRepository,
   removePinnedRepository,
 } from '../../lib/stores/repository-pinning'
+import {
+  getCollapsedRepositoryGroups,
+  setRepositoryGroupsCollapsed,
+} from '../../lib/stores/repository-group-collapse'
 import { IFilterListGroup } from '../lib/filter-list'
 import { IMatch, IMatches } from '../../lib/fuzzy-find'
 import { ILocalRepositoryState, Repository } from '../../models/repository'
@@ -113,8 +118,11 @@ interface IRepositoriesListState {
   readonly selectedItem: IRepositoryListItem | null
   readonly pinnedRepositoriesIds: ReadonlyArray<number>
 
-  /** The names of the groups currently being pulled */
-  readonly pullingGroups: ReadonlySet<string>
+  /** The keys of the groups currently being pulled */
+  readonly pullingGroupKeys: ReadonlySet<string>
+
+  /** The keys of the groups the user has collapsed */
+  readonly collapsedGroups: ReadonlySet<string>
 }
 
 const RowHeight = 29
@@ -155,72 +163,168 @@ function findMatchingListItem(
 }
 
 interface IRepositoryGroupHeaderProps {
-  readonly groupName: string
+  readonly group: RepositoryListGroup
+
+  /** The name of the group as shown to the user */
+  readonly label: string
+
+  /** Whether only this header is rendered, hiding the group's repositories */
+  readonly collapsed: boolean
+
+  /** The user-given name of the group, or null if it's not a custom group */
+  readonly groupName: string | null
 
   /** Whether the repositories in this group are currently being pulled */
   readonly isPulling: boolean
-  readonly onPullAll: (groupName: string) => void
+  readonly onToggleCollapsed: (group: RepositoryListGroup) => void
+  readonly onPullAll: (group: RepositoryListGroup) => void
   readonly onDelete: (groupName: string) => void
   readonly onContextMenu: (
-    groupName: string,
+    group: RepositoryListGroup,
     event: React.MouseEvent<HTMLDivElement>
   ) => void
 }
 
 /**
- * Wraps a custom repository group header adding buttons to pull all
- * repositories in the group and to delete the group, with the same actions
- * available on right-click.
+ * Wraps a repository group header adding a button to pull all repositories in
+ * the group and, for custom groups, a button to delete the group, with the same
+ * actions available on right-click.
  */
 class RepositoryGroupHeader extends React.Component<IRepositoryGroupHeaderProps> {
   private onContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
-    this.props.onContextMenu(this.props.groupName, event)
+    this.props.onContextMenu(this.props.group, event)
+  }
+
+  private onToggleCollapsed = () => {
+    this.props.onToggleCollapsed(this.props.group)
+  }
+
+  /**
+   * The enclosing list row treats Enter and Space as "activate the selected
+   * repository", cancelling the default action of any button inside it, so
+   * header buttons have to keep those key presses to themselves.
+   */
+  private onButtonKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.stopPropagation()
+    }
   }
 
   private onPullAllClick = (event: React.MouseEvent) => {
     event.stopPropagation()
-    this.props.onPullAll(this.props.groupName)
+    this.props.onPullAll(this.props.group)
   }
 
   private onDeleteClick = (event: React.MouseEvent) => {
     event.stopPropagation()
-    this.props.onDelete(this.props.groupName)
+    if (this.props.groupName !== null) {
+      this.props.onDelete(this.props.groupName)
+    }
+  }
+
+  private renderPullAllButton() {
+    const { isPulling, label } = this.props
+    const pullLabel = `Pull all repositories in "${label}"`
+
+    return (
+      <Button
+        className={classNames('pull-group-button', { pulling: isPulling })}
+        onClick={this.onPullAllClick}
+        onKeyDown={this.onButtonKeyDown}
+        tooltip={pullLabel}
+        ariaLabel={pullLabel}
+        disabled={isPulling}
+      >
+        <Octicon
+          symbol={isPulling ? syncClockwise : octicons.arrowDown}
+          className={isPulling ? 'spin' : undefined}
+        />
+      </Button>
+    )
+  }
+
+  private renderDeleteGroupButton(groupName: string) {
+    const deleteLabel = `Delete group "${groupName}"`
+
+    return (
+      <Button
+        className="delete-group-button"
+        onClick={this.onDeleteClick}
+        onKeyDown={this.onButtonKeyDown}
+        tooltip={deleteLabel}
+        ariaLabel={deleteLabel}
+      >
+        <Octicon symbol={octicons.trash} />
+      </Button>
+    )
   }
 
   public render() {
-    const { isPulling } = this.props
-    const pullLabel = `Pull all repositories in "${this.props.groupName}"`
-    const deleteLabel = `Delete group "${this.props.groupName}"`
+    const { label, collapsed, groupName } = this.props
 
     return (
       <div
         className="repository-group-header"
         onContextMenu={this.onContextMenu}
       >
-        {this.props.children}
-        <Button
-          className={classNames('pull-group-button', { pulling: isPulling })}
-          onClick={this.onPullAllClick}
-          tooltip={pullLabel}
-          ariaLabel={pullLabel}
-          disabled={isPulling}
+        <button
+          type="button"
+          className="repository-group-disclosure"
+          aria-expanded={!collapsed}
+          onClick={this.onToggleCollapsed}
+          onKeyDown={this.onButtonKeyDown}
         >
           <Octicon
-            symbol={isPulling ? syncClockwise : octicons.arrowDown}
-            className={isPulling ? 'spin' : undefined}
+            symbol={collapsed ? octicons.triangleRight : octicons.triangleDown}
           />
-        </Button>
-        <Button
-          className="delete-group-button"
-          onClick={this.onDeleteClick}
-          tooltip={deleteLabel}
-          ariaLabel={deleteLabel}
-        >
-          <Octicon symbol={octicons.trash} />
-        </Button>
+          <TooltippedContent
+            className="filter-list-group-header"
+            tooltip={label}
+            onlyWhenOverflowed={true}
+            tagName="span"
+          >
+            {label}
+          </TooltippedContent>
+        </button>
+        {this.renderPullAllButton()}
+        {groupName !== null && this.renderDeleteGroupButton(groupName)}
       </div>
     )
   }
+}
+
+/**
+ * Returns the user-given name of a group, or null if the group wasn't named by
+ * the user. Pins and recents can contain repositories of other groups so they
+ * never count as custom groups.
+ */
+function getCustomGroupName(group: RepositoryListGroup) {
+  return group.kind !== 'pins' && group.kind !== 'recent'
+    ? group.displayName
+    : null
+}
+
+/**
+ * Maps the key of every rendered group to the repositories it contains.
+ */
+function getGroupRepositories(
+  groups: ReadonlyArray<
+    IFilterListGroup<IRepositoryListItem, RepositoryListGroup>
+  >
+): ReadonlyMap<string, ReadonlyArray<Repository>> {
+  return new Map(
+    groups.map(group => {
+      const repositories = new Map<number, Repository>()
+
+      for (const { repository } of group.items) {
+        if (repository instanceof Repository) {
+          repositories.set(repository.id, repository)
+        }
+      }
+
+      return [getGroupKey(group.identifier), [...repositories.values()]]
+    })
+  )
 }
 
 /** The list of user-added repositories. */
@@ -260,6 +364,22 @@ export class RepositoriesList extends React.Component<
    */
   private getSelectedListItem = memoizeOne(findMatchingListItem)
 
+  /**
+   * The keys of the groups rendered the last time the list was rendered. Used
+   * to know which groups the "collapse all"/"expand all" actions apply to, and
+   * to drop stored state for groups that no longer exist.
+   */
+  private renderedGroupKeys: ReadonlySet<string> = new Set()
+
+  /**
+   * The repositories of each group rendered the last time the list was
+   * rendered, keyed by group key.
+   */
+  private renderedGroupRepositories: ReadonlyMap<
+    string,
+    ReadonlyArray<Repository>
+  > = new Map()
+
   public constructor(props: IRepositoriesListProps) {
     super(props)
 
@@ -268,7 +388,8 @@ export class RepositoriesList extends React.Component<
       pullingRepositories: false,
       selectedItem: null,
       pinnedRepositoriesIds: getPinnedRepositories(),
-      pullingGroups: new Set<string>(),
+      pullingGroupKeys: new Set<string>(),
+      collapsedGroups: getCollapsedRepositoryGroups(),
     }
   }
 
@@ -422,65 +543,154 @@ export class RepositoriesList extends React.Component<
   }
 
   private renderGroupHeader = (group: RepositoryListGroup) => {
-    const label = this.getGroupLabel(group)
+    const groupKey = getGroupKey(group)
 
-    const header = (
-      <TooltippedContent
-        key={getGroupKey(group)}
-        className="filter-list-group-header"
-        tooltip={label}
-        onlyWhenOverflowed={true}
-        tagName="div"
-      >
-        {label}
-      </TooltippedContent>
-    )
-
-    // Custom (user-named) groups get a button to pull all of their
-    // repositories. Pins and recents can contain repositories of other
-    // groups so they don't get one.
-    const customGroupName =
-      group.kind !== 'pins' && group.kind !== 'recent'
-        ? group.displayName
-        : null
-
-    return customGroupName === null ? (
-      header
-    ) : (
+    return (
       <RepositoryGroupHeader
-        key={getGroupKey(group)}
-        groupName={customGroupName}
-        isPulling={this.state.pullingGroups.has(customGroupName)}
+        key={groupKey}
+        group={group}
+        label={this.getGroupLabel(group)}
+        collapsed={this.isGroupCollapsed(group)}
+        groupName={getCustomGroupName(group)}
+        isPulling={this.state.pullingGroupKeys.has(groupKey)}
+        onToggleCollapsed={this.onToggleGroupCollapsed}
         onPullAll={this.onPullAllInGroup}
         onDelete={this.onDeleteGroup}
         onContextMenu={this.onGroupHeaderContextMenu}
-      >
-        {header}
-      </RepositoryGroupHeader>
+      />
     )
   }
 
+  /** The repositories that "Pull all" in the given group applies to. */
+  private getPullableGroupRepositories(
+    group: RepositoryListGroup
+  ): ReadonlyArray<Repository> {
+    return this.renderedGroupRepositories.get(getGroupKey(group)) ?? []
+  }
+
+  // Filtering force-expands every group
+  private isGroupCollapsed = (group: RepositoryListGroup) =>
+    this.props.filterText.length === 0 &&
+    this.state.collapsedGroups.has(getGroupKey(group))
+
+  private canToggleCollapsedGroups = () => this.props.filterText.length === 0
+
+  private setGroupsCollapsed(groupKeys: Iterable<string>, collapsed: boolean) {
+    this.setState({
+      collapsedGroups: setRepositoryGroupsCollapsed(
+        groupKeys,
+        collapsed,
+        this.renderedGroupKeys
+      ),
+    })
+  }
+
+  private onToggleGroupCollapsed = (group: RepositoryListGroup) => {
+    if (!this.canToggleCollapsedGroups()) {
+      return
+    }
+
+    this.setGroupsCollapsed([getGroupKey(group)], !this.isGroupCollapsed(group))
+  }
+
+  private onCollapseAllGroups = () => {
+    this.setGroupsCollapsed(this.renderedGroupKeys, true)
+  }
+
+  private onExpandAllGroups = () => {
+    this.setGroupsCollapsed(this.renderedGroupKeys, false)
+  }
+
   private onGroupHeaderContextMenu = (
-    groupName: string,
+    group: RepositoryListGroup,
     event: React.MouseEvent<HTMLDivElement>
   ) => {
     event.preventDefault()
 
-    showContextualMenu([
+    const collapsed = this.isGroupCollapsed(group)
+    const canToggle = this.canToggleCollapsedGroups()
+    const { collapsedGroups } = this.state
+    const label = this.getGroupLabel(group)
+    const items: ReadonlyArray<IMenuItem> = [
       {
-        label: __DARWIN__
-          ? `Pull All Repositories in "${groupName}"`
-          : `Pull all repositories in "${groupName}"`,
-        action: () => this.onPullAllInGroup(groupName),
+        label: collapsed
+          ? __DARWIN__
+            ? 'Expand Group'
+            : 'Expand group'
+          : __DARWIN__
+          ? 'Collapse Group'
+          : 'Collapse group',
+        action: () => this.onToggleGroupCollapsed(group),
+        enabled: canToggle,
+      },
+      {
+        label: __DARWIN__ ? 'Collapse All Groups' : 'Collapse all groups',
+        action: this.onCollapseAllGroups,
+        enabled:
+          canToggle &&
+          [...this.renderedGroupKeys].some(key => !collapsedGroups.has(key)),
+      },
+      {
+        label: __DARWIN__ ? 'Expand All Groups' : 'Expand all groups',
+        action: this.onExpandAllGroups,
+        enabled:
+          canToggle &&
+          [...this.renderedGroupKeys].some(key => collapsedGroups.has(key)),
       },
       { type: 'separator' },
       {
         label: __DARWIN__
-          ? `Delete Group "${groupName}"`
-          : `Delete group "${groupName}"`,
-        action: () => this.onDeleteGroup(groupName),
+          ? `Pull All Repositories in "${label}"`
+          : `Pull all repositories in "${label}"`,
+        action: () => this.onPullAllInGroup(group),
       },
-    ])
+    ]
+
+    // Pins and recents aren't real groups, so they can't be turned into one
+    const isCustomizable = group.kind !== 'pins' && group.kind !== 'recent'
+    const editItems: ReadonlyArray<IMenuItem> = isCustomizable
+      ? [
+          { type: 'separator' },
+          {
+            label: __DARWIN__ ? 'Edit Group' : 'Edit group',
+            action: () => this.onEditGroup(group),
+          },
+        ]
+      : []
+
+    const groupName = getCustomGroupName(group)
+    const deleteItems: ReadonlyArray<IMenuItem> =
+      groupName === null
+        ? []
+        : [
+            {
+              label: __DARWIN__
+                ? `Delete Group "${groupName}"`
+                : `Delete group "${groupName}"`,
+              action: () => this.onDeleteGroup(groupName),
+            },
+          ]
+
+    showContextualMenu([...items, ...editItems, ...deleteItems])
+  }
+
+  private onEditGroup = (group: RepositoryListGroup) => {
+    const repositories = this.props.repositories.filter(
+      (r): r is Repository => r instanceof Repository
+    )
+
+    const groupKey = getGroupKey(group)
+    const preselectedRepositoryIds = repositories
+      .filter(r => getGroupKey(getGroupForRepository(r)) === groupKey)
+      .map(r => r.id)
+
+    this.props.dispatcher.showPopup({
+      type: PopupType.CreateRepositoryGroup,
+      repositories,
+      preselectedRepositoryIds,
+      // Editing an automatic group creates a new custom group out of it
+      editedGroupName: getCustomGroupName(group) ?? undefined,
+    })
   }
 
   private onDeleteGroup = (groupName: string) => {
@@ -496,22 +706,25 @@ export class RepositoriesList extends React.Component<
     })
   }
 
-  private onPullAllInGroup = async (groupName: string) => {
-    const repositories = this.props.repositories.filter(
-      (r): r is Repository =>
-        r instanceof Repository && r.groupName === groupName
-    )
+  private onPullAllInGroup = async (group: RepositoryListGroup) => {
+    const repositories = this.getPullableGroupRepositories(group)
 
-    this.setState(({ pullingGroups }) => ({
-      pullingGroups: new Set(pullingGroups).add(groupName),
+    if (repositories.length === 0) {
+      return
+    }
+
+    const groupKey = getGroupKey(group)
+
+    this.setState(({ pullingGroupKeys }) => ({
+      pullingGroupKeys: new Set(pullingGroupKeys).add(groupKey),
     }))
 
     await this.props.dispatcher.pullRepositories(repositories)
 
-    this.setState(({ pullingGroups }) => {
-      const remaining = new Set(pullingGroups)
-      remaining.delete(groupName)
-      return { pullingGroups: remaining }
+    this.setState(({ pullingGroupKeys }) => {
+      const remaining = new Set(pullingGroupKeys)
+      remaining.delete(groupKey)
+      return { pullingGroupKeys: remaining }
     })
   }
 
@@ -651,6 +864,8 @@ export class RepositoriesList extends React.Component<
       }
     }
 
+    this.renderedGroupRepositories = getGroupRepositories(groups)
+
     // So there's two types of selection at play here. There's the repository
     // selection for the whole app and then there's the keyboard selection in
     // the list itself. If the user has selected a repository using keyboard
@@ -659,6 +874,8 @@ export class RepositoriesList extends React.Component<
     const selectedItem =
       this.state.selectedItem ??
       this.getSelectedListItem(groups, this.props.selectedRepository)
+
+    this.renderedGroupKeys = new Set(groups.map(g => getGroupKey(g.identifier)))
 
     return (
       <div className="repository-list">
@@ -670,6 +887,7 @@ export class RepositoriesList extends React.Component<
           renderItem={this.renderItem}
           renderRowFocusTooltip={this.renderRowFocusTooltip}
           renderGroupHeader={this.renderGroupHeader}
+          isGroupCollapsed={this.isGroupCollapsed}
           onItemClick={this.onItemClick}
           renderPostFilter={this.renderPostFilter}
           renderNoItems={this.renderNoItems}
@@ -679,6 +897,7 @@ export class RepositoriesList extends React.Component<
             filterText: this.props.filterText,
             localRepositoryStateLookup: this.props.localRepositoryStateLookup,
             showWorktreesInRepoList: this.props.showWorktreesInRepoList,
+            collapsedGroups: this.state.collapsedGroups,
           }}
           onItemContextMenu={this.onItemContextMenu}
           getGroupAriaLabel={this.getGroupAriaLabelGetter(groups)}
@@ -961,7 +1180,7 @@ export class RepositoriesList extends React.Component<
     this.props.dispatcher.showPopup({
       type: PopupType.CreateRepositoryGroup,
       repositories,
-      preselectedRepositoryId: repository.id,
+      preselectedRepositoryIds: [repository.id],
     })
   }
 

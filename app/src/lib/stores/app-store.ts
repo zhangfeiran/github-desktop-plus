@@ -376,6 +376,7 @@ import { isGHES } from '../endpoint-capabilities'
 import { Banner, BannerType } from '../../models/banner'
 import { ComputedAction } from '../../models/computed-action'
 import {
+  applyStashEntry,
   createDesktopStashEntry,
   getLastDesktopStashEntryForBranch,
   popStashEntry,
@@ -455,6 +456,7 @@ import {
 } from '../../models/multi-commit-operation'
 import { reorder } from '../git/reorder'
 import { UseWindowsOpenSSHKey } from '../ssh/ssh'
+import { resolveSSHRemoteAlias } from '../ssh/resolve-ssh-host'
 import { isConflictsFlow } from '../multi-commit-operation'
 import { clamp } from '../clamp'
 import { EndpointToken } from '../endpoint-token'
@@ -6140,6 +6142,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const api = API.fromAccount(account)
 
     const branches = await api.fetchProtectedBranches(owner.login, name)
+    if (branches === null) {
+      return
+    }
 
     await this.repositoriesStore.updateBranchProtections(
       repository.gitHubRepository,
@@ -6157,9 +6162,21 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     const remote = gitStore.defaultRemote
-    return remote !== null
-      ? matchGitHubRepository(this.accounts, remote.url, repository.login)
-      : null
+    if (remote === null) {
+      return null
+    }
+
+    // Match the remote as written first: under setups like `Host github.com`
+    // -> `HostName ssh.github.com` the resolved host serves no web UI, so the
+    // SSH config is only consulted when nothing matched.
+    return (
+      matchGitHubRepository(this.accounts, remote.url, repository.login) ??
+      matchGitHubRepository(
+        this.accounts,
+        await resolveSSHRemoteAlias(remote.url),
+        repository.login
+      )
+    )
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
@@ -10833,6 +10850,21 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.statsStore.increment('stashRestoreCount')
     await this._refreshRepository(repository)
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _applyStashEntry(
+    repository: Repository,
+    stashEntry: IStashEntry
+  ) {
+    await applyStashEntry(repository, stashEntry.stashSha)
+    log.info(
+      `[AppStore. _applyStashEntry] applied stash with commit id ${stashEntry.stashSha}`
+    )
+
+    this.statsStore.increment('stashRestoreCount')
+    await this._refreshRepository(repository)
+    await this._selectWorkingDirectoryFiles(repository)
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
