@@ -174,6 +174,19 @@ New, untracked, and deleted text diffs temporarily render in unified mode even
 when the saved diff display preference is split, since those file states only
 have one meaningful side to inspect.
 
+## Build tooling compatibility
+
+The build dependencies require Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`.
+The repository pins Node.js 24.19.0 for development; Node.js 24.14.1 is too old
+for the current dependencies.
+
+The vendored `printenvz` helper uses node-gyp 13 so Windows builds do not
+inherit Node.js 26's LLVM link-time optimization flags when compiling with
+Visual Studio's MSVC toolchain.
+
+The test runner disables Node.js's built-in Web Storage so browser tests use
+jsdom's `localStorage` and `sessionStorage` on newer Node.js versions.
+
 ## Tests touched by the branch
 
 Focused unit coverage was added or updated for:

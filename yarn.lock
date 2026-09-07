@@ -1584,10 +1584,10 @@ abbrev@^1.0.0:
   resolved "https://registry.yarnpkg.com/abbrev/-/abbrev-1.1.1.tgz#f8f2c887ad10bf67f634f005b6987fed3179aac8"
   integrity sha512-nne9/IiQ/hzIhY6pdDnbBtz7DjPTKrY00P/zvPSm5pOFkl6xuGrGnXn/VtTNNfNtAfZ9/1RtehkszU9qcTii0Q==
 
-abbrev@^4.0.0:
-  version "4.0.0"
-  resolved "https://registry.yarnpkg.com/abbrev/-/abbrev-4.0.0.tgz#ec933f0e27b6cd60e89b5c6b2a304af42209bb05"
-  integrity sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==
+abbrev@^5.0.0:
+  version "5.0.0"
+  resolved "https://registry.yarnpkg.com/abbrev/-/abbrev-5.0.0.tgz#bab70805adca6637a33eeecdb8b7b5474d6d6425"
+  integrity sha512-/XrFJgzQQQHpti1raDJC6m4ws6aNktmjBlhk8Fdlk7LwCEuDoieEJJY9OFHjfiFJFFRM2tK+Ky/IsfbbmlMu1w==
 
 acorn-import-phases@^1.0.3:
   version "1.0.4"
@@ -6063,21 +6063,21 @@ node-api-version@^0.2.0:
   dependencies:
     semver "^7.3.5"
 
-node-gyp@^12.1.0:
-  version "12.4.0"
-  resolved "https://registry.yarnpkg.com/node-gyp/-/node-gyp-12.4.0.tgz#2d017b6ea1ca9294dbbee75be533728f49257024"
-  integrity sha512-OMcPNvqTCFUnNaBlmdgq+lfNqY7gTiSmNRDjY3uAXRyudeKZEZxu3CLtjMQrx4zZxCX2b/mpNqTtwuCJgXhHkw==
+node-gyp@^13.0.2:
+  version "13.0.2"
+  resolved "https://registry.yarnpkg.com/node-gyp/-/node-gyp-13.0.2.tgz#9bff1a63582f25b208c8901da2cfbfe5f3ba5f79"
+  integrity sha512-SXTvw3PxznpowYhJSOD9mVQBgDaCTWXffX+wQZsQ7PbcTV86TsXCUcSZhHnskFQvrvn/OdSzJPMsptT2pIj9ww==
   dependencies:
     env-paths "^2.2.0"
     exponential-backoff "^3.1.1"
     graceful-fs "^4.2.6"
-    nopt "^9.0.0"
-    proc-log "^6.0.0"
+    nopt "^10.0.0"
+    proc-log "^7.0.0"
     semver "^7.3.5"
     tar "^7.5.4"
     tinyglobby "^0.2.12"
-    undici "^6.25.0"
-    which "^6.0.0"
+    undici "^8.4.1"
+    which "^7.0.0"
 
 node-gyp@^9.0.0:
   version "9.4.1"
@@ -6116,19 +6116,19 @@ node-test-parser@^3.0.0:
   resolved "https://registry.yarnpkg.com/node-test-parser/-/node-test-parser-3.1.0.tgz#9e427fc8a0c3a92700f583e00a2397b9d107c7de"
   integrity sha512-e9CLgS/wOMVlpWI63U27wxv8Lq0jMiO2JWirhRKflLsUMHWVoh/ruEibsw1YDCgOwHZiSyNW/QXNTo9cuB7Qpw==
 
+nopt@^10.0.0:
+  version "10.0.1"
+  resolved "https://registry.yarnpkg.com/nopt/-/nopt-10.0.1.tgz#2d53bfda504b31c447967648ba5ea1a44e594d05"
+  integrity sha512-df3sBr/6ax9hSGuC3CspvLlbnX8cP5L5nZwXF8cGN8l0zSWR6BvzmQ6jPUKjvo6+/xdpkNvEcucBNUdBeeV13g==
+  dependencies:
+    abbrev "^5.0.0"
+
 nopt@^6.0.0:
   version "6.0.0"
   resolved "https://registry.yarnpkg.com/nopt/-/nopt-6.0.0.tgz#245801d8ebf409c6df22ab9d95b65e1309cdb16d"
   integrity sha512-ZwLpbTgdhuZUnZzjd7nb1ZV+4DoiC6/sfiVKok72ym/4Tlf+DFdlHYmT2JPmcNNWV6Pi3SDf1kT+A4r9RTuT9g==
   dependencies:
     abbrev "^1.0.0"
-
-nopt@^9.0.0:
-  version "9.0.0"
-  resolved "https://registry.yarnpkg.com/nopt/-/nopt-9.0.0.tgz#6bff0836b2964d24508b6b41b5a9a49c4f4a1f96"
-  integrity sha512-Zhq3a+yFKrYwSBluL4H9XP3m3y5uvQkB/09CwDruCiRmR/UJYnn9W4R48ry0uGC70aeTPKLynBtscP9efFFcPw==
-  dependencies:
-    abbrev "^4.0.0"
 
 normalize-package-data@^2.0.0:
   version "2.4.0"
@@ -6722,12 +6722,12 @@ pretty-error@^4.0.0:
 "printenvz@file:./vendor/printenvz":
   version "1.0.0"
   dependencies:
-    node-gyp "^12.1.0"
+    node-gyp "^13.0.2"
 
-proc-log@^6.0.0:
-  version "6.1.0"
-  resolved "https://registry.yarnpkg.com/proc-log/-/proc-log-6.1.0.tgz#18519482a37d5198e231133a70144a50f21f0215"
-  integrity sha512-iG+GYldRf2BQ0UDUAd6JQ/RwzaQy6mXmsk/IzlYyal4A4SNFw54MeH4/tLkF4I5WoWG9SQwuqWzS99jaFQHBuQ==
+proc-log@^7.0.0:
+  version "7.0.0"
+  resolved "https://registry.yarnpkg.com/proc-log/-/proc-log-7.0.0.tgz#46c9cc943ed4127272b49b34faa8855b44e3a976"
+  integrity sha512-FYgfaA69XZ93zaXLoMNQ+ViDXGGBgR8aLh03txzcFhV+9xOXx7+8DLCULrKKpR9+GsH9ZfHm82aSUPpozX0Ztg==
 
 process-proxy@^0.6.0:
   version "0.6.0"
@@ -8044,7 +8044,7 @@ undici-types@~7.16.0:
   resolved "https://registry.yarnpkg.com/undici-types/-/undici-types-7.16.0.tgz#ffccdff36aea4884cbfce9a750a0580224f58a46"
   integrity sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==
 
-undici@^6.23.0, undici@^6.25.0:
+undici@^6.23.0:
   version "6.28.0"
   resolved "https://registry.yarnpkg.com/undici/-/undici-6.28.0.tgz#9f0e385744fef5021d6596c5bccd783f61193c1c"
   integrity sha512-LIY910g9TI13YS95lrMFrs8Rm/u/irgHeTWoKCoteeJ04CUJ92eEfj0rVn+7VKMPBpUPiUoBKfhNyLI23EE/KA==
@@ -8053,6 +8053,11 @@ undici@^7.24.4:
   version "7.29.0"
   resolved "https://registry.yarnpkg.com/undici/-/undici-7.29.0.tgz#ae0f6f62e06e057a9cbb7b2b5fde2bb74f791b8f"
   integrity sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==
+
+undici@^8.4.1:
+  version "8.10.2"
+  resolved "https://registry.yarnpkg.com/undici/-/undici-8.10.2.tgz#960bcb0b43c267f86910ea7ca408ada843a44bc7"
+  integrity sha512-/y4/bH9YNU5hi9NIrpOuvGXFcxrj3CMrV+/AYpowAYTpHn8gX/XPFjNy766FPoYY0miQhdW977JFWKGNhBdwyQ==
 
 unique-filename@^2.0.0:
   version "2.0.1"
@@ -8378,10 +8383,10 @@ which@^2.0.1, which@^2.0.2:
   dependencies:
     isexe "^2.0.0"
 
-which@^6.0.0:
-  version "6.0.1"
-  resolved "https://registry.yarnpkg.com/which/-/which-6.0.1.tgz#021642443a198fb93b784a5606721cb18cfcbfce"
-  integrity sha512-oGLe46MIrCRqX7ytPUf66EAYvdeMIZYn3WaocqqKZAxrBpkqHfL/qvTyJ/bTk5+AqHCjXmrv3CEWgy368zhRUg==
+which@^7.0.0:
+  version "7.0.0"
+  resolved "https://registry.yarnpkg.com/which/-/which-7.0.0.tgz#cdfdd7bfc31c5af050b97bc7c02b1844731fb8b2"
+  integrity sha512-RancgH2dmbLdHl6LRhEqvklWMgl/Hdnun0Y90KhBOLkMefg8Qa7/Zel8Sm+8HEcP6DEjzsWzpkuBQEZok58isA==
   dependencies:
     isexe "^4.0.0"
 
