@@ -1,4 +1,4 @@
-import { DiffSelection, DiffSelectionType } from './diff'
+import { DiffSelection, DiffSelectionType, FileDiffStats } from './diff'
 
 /**
  * The status entry code as reported by Git.
@@ -263,7 +263,8 @@ export class FileChange {
   public constructor(
     public readonly path: string,
     public readonly status: AppFileStatus,
-    idSuffix: string = ''
+    idSuffix: string = '',
+    public readonly diffStats?: FileDiffStats
   ) {
     if (
       status.kind === AppFileStatusKind.Renamed ||
@@ -299,6 +300,8 @@ export const enum WorkingDirectoryFileChangeDiffType {
 
 /** encapsulate the changes to a file in the working directory */
 export class WorkingDirectoryFileChange extends FileChange {
+  public readonly isStaged: boolean
+
   /**
    * @param path The relative path to the file in the repository.
    * @param status The status of the change to the file.
@@ -312,17 +315,17 @@ export class WorkingDirectoryFileChange extends FileChange {
     isStaged: boolean = false,
     public readonly diffType: WorkingDirectoryFileChangeDiffType = isStaged
       ? WorkingDirectoryFileChangeDiffType.Staged
-      : WorkingDirectoryFileChangeDiffType.Unstaged
+      : WorkingDirectoryFileChangeDiffType.Unstaged,
+    diffStats?: FileDiffStats
   ) {
     super(
       path,
       status,
-      diffType === WorkingDirectoryFileChangeDiffType.Staged ? '+staged' : ''
+      diffType === WorkingDirectoryFileChangeDiffType.Staged ? '+staged' : '',
+      diffStats
     )
     this.isStaged = isStaged
   }
-
-  public readonly isStaged: boolean
 
   /** Create a new WorkingDirectoryFileChange with the given includedness. */
   public withIncludeAll(include: boolean): WorkingDirectoryFileChange {
@@ -340,7 +343,19 @@ export class WorkingDirectoryFileChange extends FileChange {
       this.status,
       selection,
       this.isStaged,
-      this.diffType
+      this.diffType,
+      this.diffStats
+    )
+  }
+
+  public withDiffStats(diffStats: FileDiffStats): WorkingDirectoryFileChange {
+    return new WorkingDirectoryFileChange(
+      this.path,
+      this.status,
+      this.selection,
+      this.isStaged,
+      this.diffType,
+      diffStats
     )
   }
 
@@ -367,11 +382,22 @@ export class CommittedFileChange extends FileChange {
     path: string,
     status: AppFileStatus,
     public readonly commitish: string,
-    public readonly parentCommitish: string
+    public readonly parentCommitish: string,
+    diffStats?: FileDiffStats
   ) {
-    super(path, status)
+    super(path, status, '', diffStats)
 
     this.commitish = commitish
+  }
+
+  public withDiffStats(diffStats: FileDiffStats): CommittedFileChange {
+    return new CommittedFileChange(
+      this.path,
+      this.status,
+      this.commitish,
+      this.parentCommitish,
+      diffStats
+    )
   }
 }
 

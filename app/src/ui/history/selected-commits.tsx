@@ -276,6 +276,7 @@ export class SelectedCommits extends DiffPresentationStateComponent<
     return (
       <DiffHeader
         diff={this.props.currentDiff}
+        diffStats={selectedFile.diffStats}
         path={path}
         status={status}
         showSideBySideDiff={this.props.showSideBySideDiff}

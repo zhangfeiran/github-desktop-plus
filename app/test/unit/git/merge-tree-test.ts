@@ -56,7 +56,11 @@ describe('git/merge-tree', () => {
       assert.equal(mergeFeatureIntoMaster.linesDeleted, 0)
       assert.equal(mergeFeatureIntoMaster.conflictedFiles, 0)
       assert.deepStrictEqual(mergeFeatureIntoMaster.files, [
-        { path: 'feature.txt', status: 'added' },
+        {
+          path: 'feature.txt',
+          status: 'added',
+          diffStats: { kind: 'text', linesAdded: 1, linesDeleted: 0 },
+        },
       ])
 
       const mergeMasterIntoFeature = await getMergePreview(
@@ -74,7 +78,11 @@ describe('git/merge-tree', () => {
       assert.equal(mergeMasterIntoFeature.linesDeleted, 0)
       assert.equal(mergeMasterIntoFeature.conflictedFiles, 0)
       assert.deepStrictEqual(mergeMasterIntoFeature.files, [
-        { path: 'main.txt', status: 'added' },
+        {
+          path: 'main.txt',
+          status: 'added',
+          diffStats: { kind: 'text', linesAdded: 1, linesDeleted: 0 },
+        },
       ])
     })
 
@@ -113,7 +121,15 @@ describe('git/merge-tree', () => {
       assert.ok(preview.linesDeleted > 0)
       assert.equal(preview.conflictedFiles, 1)
       assert.deepStrictEqual(preview.files, [
-        { path: 'conflict.txt', status: 'conflicted' },
+        {
+          path: 'conflict.txt',
+          status: 'conflicted',
+          diffStats: {
+            kind: 'text',
+            linesAdded: preview.linesAdded,
+            linesDeleted: preview.linesDeleted,
+          },
+        },
       ])
     })
 

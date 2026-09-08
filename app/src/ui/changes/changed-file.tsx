@@ -9,6 +9,11 @@ import { TooltipDirection } from '../lib/tooltip'
 import { TooltippedContent } from '../lib/tooltipped-content'
 import { AriaLiveContainer } from '../accessibility/aria-live-container'
 import { IMatches } from '../../lib/fuzzy-find'
+import {
+  FileDiffStats,
+  getDiffStatsLabel,
+  getDiffStatsWidth,
+} from '../diff/file-diff-stats'
 
 interface IChangedFileProps {
   readonly file: WorkingDirectoryFileChange
@@ -53,18 +58,24 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
     } = this.props
     const { status, path } = file
     const fileStatus = mapStatus(status)
+    const diffStats =
+      status.submoduleStatus === undefined ? file.diffStats : undefined
+    const statsWidth = getDiffStatsWidth(diffStats)
 
     const listItemPadding = 10 * 2
     const checkboxWidth = 20
     const statusWidth = 16
     const filePadding = 5
 
-    const availablePathWidth =
+    const availablePathWidth = Math.max(
+      1,
       availableWidth -
-      listItemPadding -
-      checkboxWidth -
-      filePadding -
-      statusWidth
+        listItemPadding -
+        checkboxWidth -
+        filePadding -
+        statusWidth -
+        (statsWidth > 0 ? statsWidth + 5 : 0)
+    )
 
     const stagingText =
       this.props.include === true
@@ -75,7 +86,7 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
 
     const pathScreenReaderMessage = `${path} ${mapStatus(
       status
-    )} ${stagingText}`
+    )} ${stagingText} ${getDiffStatsLabel(diffStats)}`.trim()
 
     return (
       <div className="file">
@@ -102,6 +113,8 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
           ariaHidden={true}
           matches={matches}
         />
+
+        <FileDiffStats stats={diffStats} inFileList={true} />
 
         <AriaLiveContainer message={pathScreenReaderMessage} />
         <TooltippedContent

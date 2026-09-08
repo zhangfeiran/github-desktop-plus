@@ -15,6 +15,7 @@ import { HistoryCommitDiffMode } from '../../models/diff'
 import { parseRawUnfoldedTrailers } from './interpret-trailers'
 import { createLogParser } from './git-delimiter-parser'
 import { forceUnwrap } from '../fatal-error'
+import { parseDiffStats } from '../numstat'
 import assert from 'assert'
 
 // File mode 160000 is used by git specifically for submodules:
@@ -335,8 +336,12 @@ export function parseRawLogWithNumstat(
     } else {
       const match = /^(\d+|-)\t(\d+|-)\t/.exec(line)
       const [, added, deleted] = forceUnwrap('Invalid numstat line', match)
-      linesAdded += added === '-' ? 0 : parseInt(added, 10)
-      linesDeleted += deleted === '-' ? 0 : parseInt(deleted, 10)
+      const stats = parseDiffStats(added, deleted)
+      files[numStatCount] = files[numStatCount].withDiffStats(stats)
+      if (stats.kind === 'text') {
+        linesAdded += stats.linesAdded
+        linesDeleted += stats.linesDeleted
+      }
 
       // If this entry denotes a rename or copy the old and new paths are on
       // two separate fields (separated by \0). Otherwise they're on the same

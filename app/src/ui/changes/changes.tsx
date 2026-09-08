@@ -142,6 +142,7 @@ export class Changes extends DiffPresentationStateComponent<
           path={this.props.file.path}
           status={this.props.file.status}
           diff={this.props.diff}
+          diffStats={this.props.file.diffStats}
           showSideBySideDiff={this.props.showSideBySideDiff}
           onShowSideBySideDiffChanged={this.onShowSideBySideDiffChanged}
           showDiffMinimap={this.props.showDiffMinimap}

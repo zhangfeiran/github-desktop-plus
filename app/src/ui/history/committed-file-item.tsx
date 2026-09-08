@@ -6,6 +6,7 @@ import { PathLabel } from '../lib/path-label'
 import { Octicon, iconForStatus } from '../octicons'
 import { TooltippedContent } from '../lib/tooltipped-content'
 import { TooltipDirection } from '../lib/tooltip'
+import { FileDiffStats, getDiffStatsWidth } from '../diff/file-diff-stats'
 
 interface ICommittedFileItemProps {
   readonly availableWidth: number
@@ -18,15 +19,21 @@ export class CommittedFileItem extends React.Component<ICommittedFileItemProps> 
     const { file, focused } = this.props
     const { status } = file
     const fileStatus = mapStatus(status)
+    const diffStats =
+      status.submoduleStatus === undefined ? file.diffStats : undefined
+    const statsWidth = getDiffStatsWidth(diffStats)
 
     const listItemPadding = 10 * 2
     const statusWidth = 16
     const filePathPadding = 5
-    const availablePathWidth =
+    const availablePathWidth = Math.max(
+      1,
       this.props.availableWidth -
-      listItemPadding -
-      filePathPadding -
-      statusWidth
+        listItemPadding -
+        filePathPadding -
+        statusWidth -
+        (statsWidth > 0 ? statsWidth + 5 : 0)
+    )
 
     return (
       <div className="file">
@@ -36,6 +43,7 @@ export class CommittedFileItem extends React.Component<ICommittedFileItemProps> 
           availableWidth={availablePathWidth}
           ariaHidden={true}
         />
+        <FileDiffStats stats={diffStats} inFileList={true} />
         <TooltippedContent
           ancestorFocused={focused}
           openOnFocus={true}

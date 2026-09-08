@@ -24,6 +24,7 @@ import {
 } from '../../models/diff-font'
 import { EditorOverride } from '../../models/editor-override'
 import { MergePreviewFile } from '../../models/merge'
+import { getWorkingDirectoryDiffStats } from '../git/diff-stats'
 import {
   stageResolvedConflictFiles,
   stageWorkingDirectoryFiles,
@@ -705,6 +706,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
     number,
     ILocalRepositoryState
   >()
+
+  private readonly workingDirectoryStatsRequests = new Map<number, object>()
 
   /** Map from shortcut (e.g., :+1:) to on disk URL. */
   private emoji = new Map<string, Emoji>()
@@ -3865,6 +3868,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
       updateChangedFiles(state, status, clearPartialState)
     )
 
+    this.updateWorkingDirectoryDiffStats(
+      repository,
+      status.workingDirectory.files
+    )
+
     this.repositoryStateCache.updateChangesState(repository, state => ({
       conflictState: updateConflictState(state, status, this.statsStore),
     }))
@@ -3884,6 +3892,42 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.updateChangesWorkingDirectoryDiff(repository)
 
     return status
+  }
+
+  private async updateWorkingDirectoryDiffStats(
+    repository: Repository,
+    files: ReadonlyArray<WorkingDirectoryFileChange>
+  ): Promise<void> {
+    const request = {}
+    this.workingDirectoryStatsRequests.set(repository.id, request)
+    const isCancelled = () =>
+      this.workingDirectoryStatsRequests.get(repository.id) !== request
+
+    try {
+      const stats = await getWorkingDirectoryDiffStats(
+        repository,
+        files,
+        isCancelled
+      )
+      if (isCancelled() || stats.size === 0) {
+        return
+      }
+      this.repositoryStateCache.updateChangesState(repository, state => ({
+        workingDirectory: WorkingDirectoryStatus.fromFiles(
+          state.workingDirectory.files.map(file => {
+            const diffStats = stats.get(file.id)
+            return diffStats === undefined
+              ? file
+              : file.withDiffStats(diffStats)
+          })
+        ),
+      }))
+      this.emitUpdate()
+    } finally {
+      if (!isCancelled()) {
+        this.workingDirectoryStatsRequests.delete(repository.id)
+      }
+    }
   }
 
   public async _loadStatusLight(
@@ -12788,7 +12832,8 @@ function createMergePreviewCommittedFileChange(
     file.path,
     getMergePreviewAppFileStatus(file),
     mergeTree,
-    targetSHA
+    targetSHA,
+    file.diffStats
   )
 }
 

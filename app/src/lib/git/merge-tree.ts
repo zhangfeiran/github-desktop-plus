@@ -9,6 +9,7 @@ import {
 import { Repository } from '../../models/repository'
 import { git, isGitError } from './core'
 import { GitError } from 'dugite'
+import { parseNumstat } from '../numstat'
 
 function parseMergeTreeOutput(stdout: string) {
   const [tree, ...conflictedFiles] = stdout
@@ -96,25 +97,6 @@ function parseMergePreviewFiles(
   return files
 }
 
-function parseMergePreviewLineCounts(stdout: string) {
-  let linesAdded = 0
-  let linesDeleted = 0
-
-  for (const entry of stdout.split('\0')) {
-    const match = /^(\d+|-)\t(\d+|-)\t/.exec(entry)
-
-    if (match === null) {
-      continue
-    }
-
-    const [, added, deleted] = match
-    linesAdded += added === '-' ? 0 : parseInt(added, 10)
-    linesDeleted += deleted === '-' ? 0 : parseInt(deleted, 10)
-  }
-
-  return { linesAdded, linesDeleted }
-}
-
 /**
  * Preview merging `source` into `target` without touching the working tree.
  *
@@ -155,11 +137,19 @@ export async function getMergePreview(
           'getMergePreviewLineCounts'
         ),
       ])
-      const files = parseMergePreviewFiles(diff.stdout, conflictedFiles)
-      const changedFiles = files.length
-      const { linesAdded, linesDeleted } = parseMergePreviewLineCounts(
-        numstat.stdout
+      const statsByPath = parseNumstat(numstat.stdout)
+      const files = parseMergePreviewFiles(diff.stdout, conflictedFiles).map(
+        file => ({ ...file, diffStats: statsByPath.get(file.path) })
       )
+      const changedFiles = files.length
+      let linesAdded = 0
+      let linesDeleted = 0
+      for (const stats of statsByPath.values()) {
+        if (stats.kind === 'text') {
+          linesAdded += stats.linesAdded
+          linesDeleted += stats.linesDeleted
+        }
+      }
 
       return conflictedFiles.length > 0
         ? {

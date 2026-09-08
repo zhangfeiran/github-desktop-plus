@@ -1,4 +1,5 @@
 import { ComputedAction } from './computed-action'
+import { FileDiffStats } from './diff'
 
 export type MergePreviewFileStatus =
   | 'added'
@@ -12,6 +13,7 @@ export type MergePreviewFile = {
   readonly path: string
   readonly oldPath?: string
   readonly status: MergePreviewFileStatus
+  readonly diffStats?: FileDiffStats
 }
 
 interface IBlobResult {

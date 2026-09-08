@@ -353,7 +353,7 @@ describe('git/diff', () => {
 
       const diff = await getTextDiff(repo, files[0])
 
-      assert.equal(diff.hunks.length, 1)
+      assert.equal(diff.hunks.length, 0)
     })
 
     // A renamed file in the working directory is just two staged files

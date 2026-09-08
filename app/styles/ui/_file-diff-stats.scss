@@ -1,0 +1,37 @@
+.file-diff-stats-container {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.file-diff-stats {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-half);
+  margin-right: var(--spacing-half);
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary-color);
+
+  .lines-added {
+    color: var(--color-new);
+  }
+
+  .lines-deleted {
+    color: var(--color-deleted);
+  }
+}
+
+.file-list .list-focus-container.focus-within .list-item.selected {
+  .file-diff-stats,
+  .file-diff-stats .lines-added,
+  .file-diff-stats .lines-deleted {
+    color: inherit;
+  }
+}
+
+.diff-container > .header .file-diff-stats {
+  margin-right: var(--spacing);
+}

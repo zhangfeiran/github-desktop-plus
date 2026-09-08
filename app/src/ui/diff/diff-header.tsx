@@ -1,16 +1,18 @@
 import * as React from 'react'
 import { PathLabel } from '../lib/path-label'
 import { AppFileStatus } from '../../models/status'
-import { IDiff, DiffType } from '../../models/diff'
+import { IDiff, DiffType, FileDiffStats as Stats } from '../../models/diff'
 import { Octicon, iconForStatus } from '../octicons'
 import { mapStatus } from '../../lib/status'
 import { DiffOptions } from './diff-options'
 import { WholeFileToggle } from './whole-file-toggle'
+import { FileDiffStats } from './file-diff-stats'
 
 interface IDiffHeaderProps {
   readonly path: string
   readonly status: AppFileStatus
   readonly diff: IDiff | null
+  readonly diffStats?: Stats
 
   /** Whether we should display side by side diffs. */
   readonly showSideBySideDiff: boolean
@@ -58,6 +60,14 @@ export class DiffHeader extends React.Component<IDiffHeaderProps, {}> {
     return (
       <div className="header">
         <PathLabel path={this.props.path} status={this.props.status} />
+
+        <FileDiffStats
+          stats={
+            status.submoduleStatus === undefined
+              ? this.props.diffStats
+              : undefined
+          }
+        />
 
         {this.renderWholeFileToggle()}
 

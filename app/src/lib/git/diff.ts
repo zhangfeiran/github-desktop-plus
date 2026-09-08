@@ -424,27 +424,10 @@ export async function getCommitRangeChangedFiles(
   return parseRawLogWithNumstat(stdout, latestCommitRef, oldestCommitRef)
 }
 
-/**
- * Render the diff for a file within the repository working directory. The file will be
- * compared against HEAD if it's tracked, if not it'll be compared to an empty file meaning
- * that all content in the file will be treated as additions.
- */
-export async function getWorkingDirectoryDiff(
-  repository: Repository,
-  file: WorkingDirectoryFileChange,
-  hideWhitespaceInDiff: boolean = false
-): Promise<IDiff> {
-  // `--no-ext-diff` should be provided wherever we invoke `git diff` so that any
-  // diff.external program configured by the user is ignored
-  const args = [
-    'diff',
-    ...(hideWhitespaceInDiff ? ['-w'] : []),
-    '--no-ext-diff',
-    '--patch-with-raw',
-    '-z',
-    '--no-color',
-  ]
-  const successExitCodes = new Set([0])
+/** Use the same comparison for a file's patch and its line statistics. */
+export function getWorkingDirectoryDiffArguments(
+  file: WorkingDirectoryFileChange
+): ReadonlyArray<string> {
   const isSubmodule = file.status.submoduleStatus !== undefined
   const isStagedDiff =
     file.diffType === WorkingDirectoryFileChangeDiffType.Staged
@@ -457,43 +440,48 @@ export async function getWorkingDirectoryDiff(
     (file.status.kind === AppFileStatusKind.New ||
       file.status.kind === AppFileStatusKind.Untracked)
   ) {
-    // `git diff --no-index` seems to emulate the exit codes from `diff` irrespective of
-    // whether you set --exit-code
-    //
-    // this is the behavior:
-    // - 0 if no changes found
-    // - 1 if changes found
-    // -   and error otherwise
-    //
-    // citation in source:
-    // https://github.com/git/git/blob/1f66975deb8402131fbf7c14330d0c7cdebaeaa2/diff-no-index.c#L300
-    successExitCodes.add(1)
-    args.push('--no-index', '--', '/dev/null', file.path)
+    return ['--no-index', '--', '/dev/null', file.path]
   } else if (file.status.kind === AppFileStatusKind.Conflicted) {
     // An unqualified `git diff` renders unmerged entries using a combined diff,
     // which our raw diff parser cannot turn into hunks. Compare the worktree
     // file (including conflict markers) to HEAD to produce a normal patch.
-    args.push('HEAD', '--', ensureRelativePath(file.path))
-  } else if (file.status.kind === AppFileStatusKind.Renamed) {
-    // NB: Technically this is incorrect, the best kind of incorrect.
-    // In order to show exactly what will end up in the commit we should
-    // perform a diff between the new file and the old file as it appears
-    // in HEAD. By diffing against the index we won't show any changes
-    // already staged to the renamed file which differs from our other diffs.
-    // The closest I got to that was running hash-object and then using
-    // git diff <blob> <blob> but that seems a bit excessive.
-    if (isStagedDiff) {
-      args.push('--staged')
-    }
-
-    args.push('--', ensureRelativePath(file.path))
-  } else {
-    if (isStagedDiff) {
-      args.push('--staged')
-    }
-
-    args.push('--', ensureRelativePath(file.path))
+    return ['HEAD', '--', ensureRelativePath(file.path)]
+  } else if (
+    file.status.kind === AppFileStatusKind.Renamed ||
+    file.status.kind === AppFileStatusKind.Copied
+  ) {
+    // Diff the source and destination directly: the source path can have its
+    // own separate change, and repository-wide rename detection may differ
+    // from status. Neither should change this row's patch or statistics.
+    return isStagedDiff
+      ? [`HEAD:${file.status.oldPath}`, `:${file.path}`, '--']
+      : [`:${file.status.oldPath}`, '--', ensureRelativePath(file.path)]
   }
+
+  return [
+    ...(isStagedDiff ? ['--staged'] : []),
+    '--',
+    ensureRelativePath(file.path),
+  ]
+}
+
+/** Render a file's staged or unstaged changes, or all content if untracked. */
+export async function getWorkingDirectoryDiff(
+  repository: Repository,
+  file: WorkingDirectoryFileChange,
+  hideWhitespaceInDiff: boolean = false
+): Promise<IDiff> {
+  const args = [
+    'diff',
+    ...(hideWhitespaceInDiff ? ['-w'] : []),
+    '--no-ext-diff',
+    '--patch-with-raw',
+    '-z',
+    '--no-color',
+    ...getWorkingDirectoryDiffArguments(file),
+  ]
+  // --no-index returns 1 for a non-empty diff even without --exit-code.
+  const successExitCodes = new Set(args.includes('--no-index') ? [0, 1] : [0])
 
   const { stdout, stderr } = await git(
     args,

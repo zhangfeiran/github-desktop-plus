@@ -170,6 +170,22 @@ matches.
 The branch adjusts commit detail styling and diff-related parsing to handle
 remerge diff headers and reduce visual bulk in the diff area.
 
+File rows and the current file's diff header show added and removed line counts
+in Changes, History, and Compare, including merge previews and remerge diffs.
+Staged and unstaged rows count their respective changes independently. Counts
+describe the full file change, including whitespace changes, and stay the same
+when contextual lines are expanded. Binary files display **Binary** instead of
+line counts; submodules do not display file line counts.
+
+Working directory statistics load in the background using the repository's
+configured Git source. Ordinary tracked files are batched; new, renamed, and
+copied files use a limited number of concurrent Git calls. Failed statistics
+remain unavailable instead of being displayed as zero.
+
+Working directory diffs for renamed and copied files compare the source and
+destination contents directly, so a pure rename shows zero changed lines and
+separate source-path edits are not mixed into the destination's diff.
+
 New, untracked, and deleted text diffs temporarily render in unified mode even
 when the saved diff display preference is split, since those file states only
 have one meaningful side to inspect.

@@ -182,6 +182,11 @@ describe('git/log', () => {
       )
       assert.equal(remergeChangeset.linesAdded, 1)
       assert.equal(remergeChangeset.linesDeleted, 5)
+      assert.deepStrictEqual(remergeChangeset.files[0].diffStats, {
+        kind: 'text',
+        linesAdded: 1,
+        linesDeleted: 5,
+      })
 
       assert.notEqual(
         remergeChangeset.linesDeleted,

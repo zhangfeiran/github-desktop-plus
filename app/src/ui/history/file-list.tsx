@@ -4,6 +4,7 @@ import { mapStatus } from '../../lib/status'
 import { CommittedFileChange } from '../../models/status'
 import { ClickSource, List } from '../lib/list'
 import { CommittedFileItem } from './committed-file-item'
+import { getDiffStatsLabel } from '../diff/file-diff-stats'
 
 interface IFileListProps {
   readonly files: ReadonlyArray<CommittedFileChange>
@@ -70,7 +71,9 @@ export class FileList extends React.Component<IFileListProps, IFileListState> {
     const file = this.props.files[row]
     const { path, status } = file
     const fileStatus = mapStatus(status)
-    return `${path} ${fileStatus}`
+    const stats =
+      status.submoduleStatus === undefined ? file.diffStats : undefined
+    return `${path} ${fileStatus} ${getDiffStatsLabel(stats)}`.trim()
   }
 
   public render() {
@@ -88,7 +91,11 @@ export class FileList extends React.Component<IFileListProps, IFileListState> {
           onRowKeyboardFocus={this.onRowFocus}
           onRowBlur={this.onRowBlur}
           getRowAriaLabel={this.getFileAriaLabel}
-          invalidationProps={{ focusedRow: this.state.focusedRow }}
+          invalidationProps={{
+            focusedRow: this.state.focusedRow,
+            files: this.props.files,
+            availableWidth: this.props.availableWidth,
+          }}
         />
       </div>
     )
