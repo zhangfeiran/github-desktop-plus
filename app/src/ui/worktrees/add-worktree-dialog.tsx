@@ -25,6 +25,7 @@ interface IAddWorktreeDialogProps {
 }
 
 interface IAddWorktreeDialogState {
+  readonly path: string | null
   readonly fullPath: string | null
   readonly worktreeName: string
   readonly branchName: string
@@ -44,6 +45,7 @@ export class AddWorktreeDialog extends React.Component<
     super(props)
 
     this.state = {
+      path: null,
       fullPath: null,
       worktreeName: '',
       branchName: props.initialBranchName ?? '',
@@ -53,6 +55,10 @@ export class AddWorktreeDialog extends React.Component<
 
   private onFullPathChanged = (fullPath: string | null) => {
     this.setState({ fullPath })
+  }
+
+  private onPathChanged = (path: string) => {
+    this.setState({ path })
   }
 
   private onWorktreeNameChanged = (worktreeName: string) => {
@@ -77,9 +83,9 @@ export class AddWorktreeDialog extends React.Component<
   }
 
   private onSubmit = async () => {
-    const { fullPath } = this.state
+    const { path, fullPath } = this.state
 
-    if (fullPath === null) {
+    if (path === null || fullPath === null) {
       return
     }
 
@@ -127,6 +133,7 @@ export class AddWorktreeDialog extends React.Component<
       return
     }
 
+    RepositoryPath.setDefaultPath(path)
     dispatcher.incrementMetric('worktreeCreatedCount')
     await dispatcher.switchWorktree(repository, worktree)
 
@@ -198,6 +205,7 @@ export class AddWorktreeDialog extends React.Component<
               this.props.initialWorktreeName ?? this.props.initialBranchName
             }
             onFullPathChanged={this.onFullPathChanged}
+            onPathChanged={this.onPathChanged}
             onNameChanged={this.onWorktreeNameChanged}
             nameLabel={__DARWIN__ ? 'Worktree Name' : 'Worktree name'}
             namePlaceholder="worktree name"

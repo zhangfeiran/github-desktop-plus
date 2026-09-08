@@ -72,6 +72,11 @@ the full worktree details on row hover or keyboard focus. The detail tooltip
 includes the branch, full path, last branch-tip modification time, HEAD SHA,
 worktree type, and locked or prunable state when applicable.
 
+The **Add worktree** dialog, including **Checkout in new worktree**, remembers
+the **Local path** from the last successful creation using the shared default
+directory for new repositories. It saves the base directory exactly as entered,
+including when the worktree name contains nested folders such as `feature/foo`.
+
 ## Gitee and GitCode remotes
 
 `my-dev` recognizes `gitee.com` and `gitcode.com` remotes as supported hosting
