@@ -194,6 +194,7 @@ import {
 import { shell } from '../app-shell'
 import {
   CompareAction,
+  ComparisonMode,
   HistoryTabMode,
   Foldout,
   FoldoutType,
@@ -1950,12 +1951,37 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ) {
     const state = this.repositoryStateCache.get(repository)
 
-    if (
-      state.commitSelection.mergePreview !== null &&
-      commitSHAs.length === 0
-    ) {
+    const { mergePreview } = state.commitSelection
+    if (mergePreview !== null) {
+      const { formState } = state.compareState
+      const { tip } = state.branchesState
+      if (
+        formState.kind === HistoryTabMode.Compare &&
+        tip.kind === TipState.Valid &&
+        mergePreview.comparisonMode === formState.comparisonMode
+      ) {
+        const isBehind = formState.comparisonMode === ComparisonMode.Behind
+        const target = isBehind ? tip.branch : formState.comparisonBranch
+        const source = isBehind ? formState.comparisonBranch : tip.branch
+        const commitCount = isBehind
+          ? formState.aheadBehind.behind
+          : formState.aheadBehind.ahead
+
+        if (
+          mergePreview.targetBranchName === target.name &&
+          mergePreview.sourceBranchName === source.name &&
+          mergePreview.targetSHA === target.tip.sha &&
+          mergePreview.sourceSHA === source.tip.sha &&
+          (mergePreview.kind === BranchPreviewKind.Diff || commitCount > 0)
+        ) {
+          // A preview is a selection even though it has no commit SHAs. Keep
+          // its files and diff when focus/background refreshes rebuild the
+          // comparison or refresh history (whose candidate list may be empty).
+          return
+        }
+      }
+
       this.clearSelectedCommit(repository)
-      return
     }
 
     let selectedSHA =

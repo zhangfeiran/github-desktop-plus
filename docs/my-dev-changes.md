@@ -121,6 +121,11 @@ branch tip, so it does not modify the working tree or create a real commit.
 Conflict previews still load as selectable virtual rows and mark conflicted
 files in the right-hand file list.
 
+Repository refreshes, including restoring window focus, preserve the selected
+preview and its file diff while the comparison direction, branches, and tip
+commits remain unchanged. A diff preview remains selected even when the commit
+list is empty. A merge preview is cleared when there are no commits to merge.
+
 ## Changes view staging
 
 The Changes view preserves Git's real index state and splits the working
